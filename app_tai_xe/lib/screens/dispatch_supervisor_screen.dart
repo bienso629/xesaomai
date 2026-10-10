@@ -423,63 +423,28 @@ class _DispatchSupervisorScreenState extends State<DispatchSupervisorScreen> {
                                 )
                               : LayoutBuilder(
                                   builder: (context, constraints) {
-                                    return Column(
-                                      children: [
-                                        // Header bảng cố định, không nằm trong cuộn dọc
-                                        Container(
-                                          decoration: BoxDecoration(
-                                            border: Border(bottom: BorderSide(color: Colors.grey.shade400, width: 1)),
-                                          ),
-                                          child: SingleChildScrollView(
-                                            scrollDirection: Axis.horizontal,
-                                            physics: const ClampingScrollPhysics(),
-                                            child: ConstrainedBox(
-                                              constraints: BoxConstraints(minWidth: constraints.maxWidth),
-                                              child: DataTable(
-                                                headingRowColor: MaterialStateProperty.all(Colors.grey.shade100),
-                                                headingRowHeight: 44,
-                                                dividerThickness: 0,
-                                                dataRowMaxHeight: 0,
-                                                dataRowMinHeight: 0,
-                                                horizontalMargin: 16,
-                                                columnSpacing: 20,
-                                              columns: const [
-                                                DataColumn(label: Text("Ảnh", style: TextStyle(fontWeight: FontWeight.bold, fontSize: 13))),
-                                                DataColumn(label: Text("Tài khoản & Họ tên", style: TextStyle(fontWeight: FontWeight.bold, fontSize: 13))),
-                                                DataColumn(label: Text("Số điện thoại", style: TextStyle(fontWeight: FontWeight.bold, fontSize: 13))),
-                                                DataColumn(label: Text("Vai trò & Phân loại", style: TextStyle(fontWeight: FontWeight.bold, fontSize: 13))),
-                                                DataColumn(label: Text("Trạng thái", style: TextStyle(fontWeight: FontWeight.bold, fontSize: 13))),
-                                                DataColumn(label: Text("Lịch sử", style: TextStyle(fontWeight: FontWeight.bold, fontSize: 13))),
-                                                DataColumn(label: Text("Thao tác", style: TextStyle(fontWeight: FontWeight.bold, fontSize: 13))),
-                                              ],
-                                              rows: const [],
-                                            ),
-                                          ),
-                                        ),
-                                      ),
-                                        // Phần thân bảng dữ liệu cuộn dọc riêng
-                                        Expanded(
-                                          child: SingleChildScrollView(
-                                            scrollDirection: Axis.vertical,
-                                            child: SingleChildScrollView(
-                                              scrollDirection: Axis.horizontal,
-                                              child: ConstrainedBox(
+                                    return SingleChildScrollView(
+                                      scrollDirection: Axis.vertical,
+                                      child: SingleChildScrollView(
+                                        scrollDirection: Axis.horizontal,
+                                        child: ConstrainedBox(
                                           constraints: BoxConstraints(minWidth: constraints.maxWidth),
                                           child: DataTable(
-                                            headingRowHeight: 0,
+                                            headingRowColor: MaterialStateProperty.all(Colors.grey.shade100),
+                                            headingRowHeight: 44,
                                             dividerThickness: 0,
                                             dataRowMaxHeight: 76,
                                             dataRowMinHeight: 72,
                                             horizontalMargin: 16,
                                             columnSpacing: 20,
                                             columns: const [
-                                              DataColumn(label: SizedBox()),
-                                              DataColumn(label: SizedBox()),
-                                              DataColumn(label: SizedBox()),
-                                              DataColumn(label: SizedBox()),
-                                              DataColumn(label: SizedBox()),
-                                              DataColumn(label: SizedBox()),
-                                              DataColumn(label: SizedBox()),
+                                              DataColumn(label: Text("Ảnh", style: TextStyle(fontWeight: FontWeight.bold, fontSize: 13))),
+                                              DataColumn(label: Text("Tài khoản & Họ tên", style: TextStyle(fontWeight: FontWeight.bold, fontSize: 13))),
+                                              DataColumn(label: Text("Số điện thoại", style: TextStyle(fontWeight: FontWeight.bold, fontSize: 13))),
+                                              DataColumn(label: Text("Vai trò & Phân loại", style: TextStyle(fontWeight: FontWeight.bold, fontSize: 13))),
+                                              DataColumn(label: Text("Trạng thái", style: TextStyle(fontWeight: FontWeight.bold, fontSize: 13))),
+                                              DataColumn(label: Text("Lịch sử", style: TextStyle(fontWeight: FontWeight.bold, fontSize: 13))),
+                                              DataColumn(label: Text("Thao tác", style: TextStyle(fontWeight: FontWeight.bold, fontSize: 13))),
                                             ],
                                             rows: List.generate(paginatedUsers.length, (rowIndex) {
                                               final u = paginatedUsers[rowIndex];
@@ -726,11 +691,8 @@ class _DispatchSupervisorScreenState extends State<DispatchSupervisorScreen> {
                                           ),
                                         ),
                                       ),
-                                    ),
-                                  ),
-                                ],
-                              );
-                            },
+                                    );
+                                  },
                           ),
                         ),
                       // THANH ĐIỀU HƯỚNG PHÂN TRANG (PAGINATION BAR)
