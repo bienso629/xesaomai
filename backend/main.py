@@ -1035,7 +1035,7 @@ def get_active_shifts(current_user: dict = Depends(get_current_user)):
     conn = get_db()
     cur = conn.cursor()
     cur.execute("""
-        SELECT s.id, s.user_id, s.shift_name, s.started_at, s.status, s.note,
+        SELECT s.id, s.user_id, s.shift_name, s.started_at, s.status, s.note, s.handover_note,
                u.username, u.full_name, u.phone, u.avatar_url
         FROM dispatcher_shifts s
         JOIN users u ON s.user_id = u.id
@@ -1046,6 +1046,31 @@ def get_active_shifts(current_user: dict = Depends(get_current_user)):
     cur.close()
     conn.close()
     return shifts
+
+@app.get("/api/v1/shifts/history")
+def get_shift_history(user_id: Optional[int] = None, limit: int = 50, current_user: dict = Depends(get_current_user)):
+    """Lấy danh sách toàn bộ lịch sử các ca trực điều phối viên đã hoàn thành hoặc đang trực"""
+    conn = get_db()
+    cur = conn.cursor()
+    query = """
+        SELECT s.id, s.user_id, s.shift_name, s.started_at, s.ended_at, s.status, s.note, s.handover_note, s.created_at,
+               ROUND(EXTRACT(EPOCH FROM (COALESCE(s.ended_at, CURRENT_TIMESTAMP) - s.started_at)) / 3600.0, 2) AS duration_hours,
+               u.username, u.full_name, u.phone, u.avatar_url
+        FROM dispatcher_shifts s
+        JOIN users u ON s.user_id = u.id
+    """
+    params = []
+    if user_id:
+        query += " WHERE s.user_id = %s"
+        params.append(user_id)
+    query += " ORDER BY s.started_at DESC LIMIT %s"
+    params.append(limit)
+
+    cur.execute(query, tuple(params))
+    history = cur.fetchall()
+    cur.close()
+    conn.close()
+    return history
 
 @app.post("/api/v1/shifts/checkin", status_code=status.HTTP_201_CREATED)
 def checkin_shift(req: ShiftCheckin, current_user: dict = Depends(get_current_user)):
@@ -1086,7 +1111,7 @@ def checkout_shift(req: ShiftCheckout, current_user: dict = Depends(get_current_
             UPDATE dispatcher_shifts 
             SET ended_at = CURRENT_TIMESTAMP,
                 status = 'completed',
-                note = COALESCE(%s, note)
+                handover_note = COALESCE(%s, handover_note)
             WHERE user_id = %s AND status = 'active'
             RETURNING *
         """, (req.note, user_id))

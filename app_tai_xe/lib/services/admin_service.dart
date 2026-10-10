@@ -379,4 +379,23 @@ class AdminService {
       return {'success': false, 'message': 'Không thể kết nối API: $e'};
     }
   }
+
+  /// Lấy toàn bộ lịch sử ca trực của các điều phối viên
+  static Future<List<dynamic>> fetchShiftHistory({int? userId, int limit = 50}) async {
+    try {
+      String url = '$baseUrl/shifts/history?limit=$limit';
+      if (userId != null) {
+        url += '&user_id=$userId';
+      }
+      final res = await http.get(
+        Uri.parse(url),
+        headers: await _headers(),
+      ).timeout(const Duration(seconds: 8));
+
+      if (res.statusCode == 200) {
+        return jsonDecode(res.body) as List<dynamic>;
+      }
+    } catch (_) {}
+    return [];
+  }
 }

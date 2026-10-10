@@ -1235,77 +1235,100 @@ class _DispatchSupervisorScreenState extends State<DispatchSupervisorScreen> {
                     ),
                   ],
                 ),
-                // Nút Nhận ca / Kết thúc ca cho Điều phối viên
-                if (isDispatcher) ...[
-                  if (!isInShift)
-                    ElevatedButton.icon(
-                      style: ElevatedButton.styleFrom(
-                        backgroundColor: Colors.blue.shade800,
-                        foregroundColor: Colors.white,
+                // Nút thao tác ca trực
+                Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    // Nút Lịch sử ca trực cho tất cả (Admin, Manager, Dispatcher)
+                    OutlinedButton.icon(
+                      style: OutlinedButton.styleFrom(
+                        foregroundColor: Colors.blue.shade900,
+                        side: BorderSide(color: Colors.blue.shade300),
                         elevation: 0,
                         minimumSize: const Size(0, 36),
-                        padding: const EdgeInsets.symmetric(horizontal: 14),
+                        padding: const EdgeInsets.symmetric(horizontal: 12),
                         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(4)),
                       ),
-                      icon: const Icon(Icons.login, size: 16),
+                      icon: const Icon(Icons.history, size: 16),
                       label: const Text(
-                        "Nhận ca trực",
+                        "Lịch sử ca trực",
                         style: TextStyle(fontSize: 12.5, fontWeight: FontWeight.bold),
                       ),
-                      onPressed: () => _handleCheckinShift(state),
-                    )
-                  else
-                    Row(
-                      mainAxisSize: MainAxisSize.min,
-                      children: [
-                        Container(
-                          padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-                          decoration: BoxDecoration(
-                            color: Colors.green.shade50,
-                            borderRadius: BorderRadius.circular(4),
-                            border: Border.all(color: Colors.green.shade300),
-                          ),
-                          child: Row(
-                            children: [
-                              Container(
-                                width: 8,
-                                height: 8,
-                                decoration: const BoxDecoration(
-                                  color: Colors.green,
-                                  shape: BoxShape.circle,
-                                ),
-                              ),
-                              const SizedBox(width: 6),
-                              Text(
-                                "Bạn đang trong ca (${myActiveShift['shift_name'] ?? 'Ca ngày'})",
-                                style: TextStyle(
-                                  fontSize: 11.5,
-                                  fontWeight: FontWeight.bold,
-                                  color: Colors.green.shade800,
-                                ),
-                              ),
-                            ],
-                          ),
-                        ),
-                        const SizedBox(width: 8),
-                        OutlinedButton.icon(
-                          style: OutlinedButton.styleFrom(
-                            foregroundColor: Colors.red.shade700,
-                            side: BorderSide(color: Colors.red.shade300),
-                            minimumSize: const Size(0, 34),
-                            padding: const EdgeInsets.symmetric(horizontal: 10),
+                      onPressed: () => _showShiftHistoryDialog(),
+                    ),
+                    if (isDispatcher) ...[
+                      const SizedBox(width: 8),
+                      if (!isInShift)
+                        ElevatedButton.icon(
+                          style: ElevatedButton.styleFrom(
+                            backgroundColor: Colors.blue.shade800,
+                            foregroundColor: Colors.white,
+                            elevation: 0,
+                            minimumSize: const Size(0, 36),
+                            padding: const EdgeInsets.symmetric(horizontal: 14),
                             shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(4)),
                           ),
-                          icon: const Icon(Icons.logout, size: 15),
+                          icon: const Icon(Icons.login, size: 16),
                           label: const Text(
-                            "Bàn giao / Hết ca",
-                            style: TextStyle(fontSize: 12, fontWeight: FontWeight.w600),
+                            "Nhận ca trực",
+                            style: TextStyle(fontSize: 12.5, fontWeight: FontWeight.bold),
                           ),
-                          onPressed: () => _handleCheckoutShift(),
+                          onPressed: () => _handleCheckinShift(state),
+                        )
+                      else
+                        Row(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            Container(
+                              padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                              decoration: BoxDecoration(
+                                color: Colors.green.shade50,
+                                borderRadius: BorderRadius.circular(4),
+                                border: Border.all(color: Colors.green.shade300),
+                              ),
+                              child: Row(
+                                children: [
+                                  Container(
+                                    width: 8,
+                                    height: 8,
+                                    decoration: const BoxDecoration(
+                                      color: Colors.green,
+                                      shape: BoxShape.circle,
+                                    ),
+                                  ),
+                                  const SizedBox(width: 6),
+                                  Text(
+                                    "Bạn đang trong ca (${myActiveShift['shift_name'] ?? 'Ca ngày'})",
+                                    style: TextStyle(
+                                      fontSize: 11.5,
+                                      fontWeight: FontWeight.bold,
+                                      color: Colors.green.shade800,
+                                    ),
+                                  ),
+                                ],
+                              ),
+                            ),
+                            const SizedBox(width: 8),
+                            OutlinedButton.icon(
+                              style: OutlinedButton.styleFrom(
+                                foregroundColor: Colors.red.shade700,
+                                side: BorderSide(color: Colors.red.shade300),
+                                minimumSize: const Size(0, 34),
+                                padding: const EdgeInsets.symmetric(horizontal: 10),
+                                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(4)),
+                              ),
+                              icon: const Icon(Icons.logout, size: 15),
+                              label: const Text(
+                                "Bàn giao / Hết ca",
+                                style: TextStyle(fontSize: 12, fontWeight: FontWeight.w600),
+                              ),
+                              onPressed: () => _handleCheckoutShift(),
+                            ),
+                          ],
                         ),
-                      ],
-                    ),
-                ],
+                    ],
+                  ],
+                ),
               ],
             ),
             const Divider(height: 24),
@@ -1605,6 +1628,300 @@ class _DispatchSupervisorScreenState extends State<DispatchSupervisorScreen> {
         ),
       );
     }
+  }
+
+  Future<void> _showShiftHistoryDialog() async {
+    showDialog(
+      context: context,
+      barrierDismissible: true,
+      builder: (dialogCtx) {
+        return StatefulBuilder(
+          builder: (ctx, setDialogState) {
+            return Dialog(
+              elevation: 0,
+              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(4)),
+              child: Container(
+                width: 900,
+                height: 600,
+                padding: const EdgeInsets.all(20),
+                child: FutureBuilder<List<dynamic>>(
+                  future: AdminService.fetchShiftHistory(limit: 100),
+                  builder: (context, snapshot) {
+                    return Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Row(
+                          mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                          children: [
+                            Row(
+                              children: [
+                                Container(
+                                  padding: const EdgeInsets.all(8),
+                                  decoration: BoxDecoration(
+                                    color: Colors.blue.shade50,
+                                    borderRadius: BorderRadius.circular(4),
+                                  ),
+                                  child: Icon(Icons.history, color: Colors.blue.shade800, size: 22),
+                                ),
+                                const SizedBox(width: 12),
+                                Column(
+                                  crossAxisAlignment: CrossAxisAlignment.start,
+                                  children: [
+                                    const Text(
+                                      "Nhật ký & Lịch sử ca trực Điều phối viên",
+                                      style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
+                                    ),
+                                    Text(
+                                      "Ghi nhận chi tiết thời gian nhận ca, kết thúc, bàn giao công việc của từng điều phối viên",
+                                      style: TextStyle(fontSize: 12, color: Colors.grey.shade600),
+                                    ),
+                                  ],
+                                ),
+                              ],
+                            ),
+                            IconButton(
+                              icon: const Icon(Icons.close),
+                              tooltip: "Đóng",
+                              onPressed: () => Navigator.of(dialogCtx).pop(),
+                            ),
+                          ],
+                        ),
+                        const Divider(height: 24),
+                        if (snapshot.connectionState == ConnectionState.waiting)
+                          const Expanded(
+                            child: Center(
+                              child: CircularProgressIndicator(),
+                            ),
+                          )
+                        else if (snapshot.hasError)
+                          Expanded(
+                            child: Center(
+                              child: Text(
+                                "Lỗi tải lịch sử ca trực: ${snapshot.error}",
+                                style: const TextStyle(color: Colors.red),
+                              ),
+                            ),
+                          )
+                        else if (!snapshot.hasData || snapshot.data!.isEmpty)
+                          Expanded(
+                            child: Center(
+                              child: Column(
+                                mainAxisAlignment: MainAxisAlignment.center,
+                                children: [
+                                  Icon(Icons.event_busy, size: 48, color: Colors.blueGrey.shade300),
+                                  const SizedBox(height: 12),
+                                  Text(
+                                    "Chưa có dữ liệu lịch sử ca trực nào được ghi nhận.",
+                                    style: TextStyle(fontSize: 14, color: Colors.blueGrey.shade600),
+                                  ),
+                                ],
+                              ),
+                            ),
+                          )
+                        else
+                          Expanded(
+                            child: Container(
+                              decoration: BoxDecoration(
+                                border: Border.all(color: Colors.grey.shade300),
+                                borderRadius: BorderRadius.circular(4),
+                              ),
+                              child: ClipRRect(
+                                borderRadius: BorderRadius.circular(4),
+                                child: ListView.separated(
+                                  itemCount: snapshot.data!.length,
+                                  separatorBuilder: (_, __) => Divider(height: 1, color: Colors.grey.shade200),
+                                  itemBuilder: (context, index) {
+                                    final shift = snapshot.data![index];
+                                    final fullName = shift['full_name'] ?? shift['username'] ?? 'Điều phối';
+                                    final username = shift['username'] ?? '';
+                                    final shiftName = shift['shift_name'] ?? 'Ca ngày';
+                                    final status = shift['status'] ?? 'active';
+                                    final isActive = status == 'active';
+                                    final note = shift['note']?.toString() ?? '';
+                                    final handoverNote = shift['handover_note']?.toString() ?? '';
+                                    final durationHours = shift['duration_hours']?.toString() ?? '';
+
+                                    final startedAtStr = shift['started_at']?.toString() ?? '';
+                                    final endedAtStr = shift['ended_at']?.toString() ?? '';
+
+                                    String startFmt = '-';
+                                    if (startedAtStr.isNotEmpty) {
+                                      try {
+                                        final dt = DateTime.parse(startedAtStr).toLocal();
+                                        startFmt = "${dt.hour.toString().padLeft(2, '0')}:${dt.minute.toString().padLeft(2, '0')} ngày ${dt.day.toString().padLeft(2, '0')}/${dt.month.toString().padLeft(2, '0')}/${dt.year}";
+                                      } catch (_) {
+                                        startFmt = startedAtStr;
+                                      }
+                                    }
+
+                                    String endFmt = 'Đang diễn ra';
+                                    if (endedAtStr.isNotEmpty) {
+                                      try {
+                                        final dt = DateTime.parse(endedAtStr).toLocal();
+                                        endFmt = "${dt.hour.toString().padLeft(2, '0')}:${dt.minute.toString().padLeft(2, '0')} ngày ${dt.day.toString().padLeft(2, '0')}/${dt.month.toString().padLeft(2, '0')}/${dt.year}";
+                                      } catch (_) {
+                                        endFmt = endedAtStr;
+                                      }
+                                    }
+
+                                    return Container(
+                                      color: isActive ? Colors.blue.shade50.withOpacity(0.3) : Colors.white,
+                                      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+                                      child: Row(
+                                        crossAxisAlignment: CrossAxisAlignment.start,
+                                        children: [
+                                          _buildUserAvatarItem(shift, size: 40),
+                                          const SizedBox(width: 14),
+                                          Expanded(
+                                            flex: 3,
+                                            child: Column(
+                                              crossAxisAlignment: CrossAxisAlignment.start,
+                                              children: [
+                                                Row(
+                                                  children: [
+                                                    Text(
+                                                      fullName,
+                                                      style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 13.5),
+                                                    ),
+                                                    const SizedBox(width: 6),
+                                                    Text(
+                                                      "(@$username)",
+                                                      style: TextStyle(fontSize: 12, color: Colors.blueGrey.shade600),
+                                                    ),
+                                                  ],
+                                                ),
+                                                const SizedBox(height: 4),
+                                                Container(
+                                                  padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                                                  decoration: BoxDecoration(
+                                                    color: Colors.blue.shade50,
+                                                    borderRadius: BorderRadius.circular(3),
+                                                    border: Border.all(color: Colors.blue.shade200),
+                                                  ),
+                                                  child: Text(
+                                                    shiftName,
+                                                    style: TextStyle(fontSize: 11, fontWeight: FontWeight.bold, color: Colors.blue.shade900),
+                                                  ),
+                                                ),
+                                              ],
+                                            ),
+                                          ),
+                                          const SizedBox(width: 12),
+                                          Expanded(
+                                            flex: 4,
+                                            child: Column(
+                                              crossAxisAlignment: CrossAxisAlignment.start,
+                                              children: [
+                                                Row(
+                                                  children: [
+                                                    Icon(Icons.login, size: 14, color: Colors.green.shade700),
+                                                    const SizedBox(width: 6),
+                                                    Text("Bắt đầu: $startFmt", style: const TextStyle(fontSize: 12)),
+                                                  ],
+                                                ),
+                                                const SizedBox(height: 4),
+                                                Row(
+                                                  children: [
+                                                    Icon(Icons.logout, size: 14, color: isActive ? Colors.orange.shade700 : Colors.blueGrey.shade700),
+                                                    const SizedBox(width: 6),
+                                                    Text(
+                                                      "Kết thúc: $endFmt",
+                                                      style: TextStyle(
+                                                        fontSize: 12,
+                                                        color: isActive ? Colors.green.shade800 : Colors.black87,
+                                                        fontWeight: isActive ? FontWeight.bold : FontWeight.normal,
+                                                      ),
+                                                    ),
+                                                  ],
+                                                ),
+                                                if (durationHours.isNotEmpty) ...[
+                                                  const SizedBox(height: 4),
+                                                  Text(
+                                                    "Thời lượng trực: $durationHours giờ",
+                                                    style: TextStyle(fontSize: 11, color: Colors.blueGrey.shade600, fontStyle: FontStyle.italic),
+                                                  ),
+                                                ],
+                                              ],
+                                            ),
+                                          ),
+                                          const SizedBox(width: 12),
+                                          Expanded(
+                                            flex: 4,
+                                            child: Column(
+                                              crossAxisAlignment: CrossAxisAlignment.start,
+                                              children: [
+                                                if (note.isNotEmpty)
+                                                  Text(
+                                                    "Ghi chú nhận ca: $note",
+                                                    style: const TextStyle(fontSize: 11.5, color: Colors.black87),
+                                                    maxLines: 2,
+                                                    overflow: TextOverflow.ellipsis,
+                                                  ),
+                                                if (handoverNote.isNotEmpty) ...[
+                                                  if (note.isNotEmpty) const SizedBox(height: 4),
+                                                  Text(
+                                                    "Bàn giao ca sau: $handoverNote",
+                                                    style: TextStyle(fontSize: 11.5, color: Colors.teal.shade900, fontWeight: FontWeight.w600),
+                                                    maxLines: 2,
+                                                    overflow: TextOverflow.ellipsis,
+                                                  ),
+                                                ],
+                                                if (note.isEmpty && handoverNote.isEmpty)
+                                                  Text(
+                                                    "Không có ghi chú",
+                                                    style: TextStyle(fontSize: 11, color: Colors.grey.shade500, fontStyle: FontStyle.italic),
+                                                  ),
+                                              ],
+                                            ),
+                                          ),
+                                          const SizedBox(width: 12),
+                                          Container(
+                                            padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                                            decoration: BoxDecoration(
+                                              color: isActive ? Colors.green.shade50 : Colors.grey.shade100,
+                                              borderRadius: BorderRadius.circular(4),
+                                              border: Border.all(color: isActive ? Colors.green.shade400 : Colors.grey.shade400),
+                                            ),
+                                            child: Text(
+                                              isActive ? "Đang trực" : "Đã hoàn thành",
+                                              style: TextStyle(
+                                                fontSize: 11,
+                                                fontWeight: FontWeight.bold,
+                                                color: isActive ? Colors.green.shade800 : Colors.grey.shade700,
+                                              ),
+                                            ),
+                                          ),
+                                        ],
+                                      ),
+                                    );
+                                  },
+                                ),
+                              ),
+                            ),
+                          ),
+                        const SizedBox(height: 16),
+                        Row(
+                          mainAxisAlignment: MainAxisAlignment.end,
+                          children: [
+                            OutlinedButton(
+                              style: OutlinedButton.styleFrom(
+                                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(4)),
+                              ),
+                              onPressed: () => Navigator.of(dialogCtx).pop(),
+                              child: const Text("Đóng"),
+                            ),
+                          ],
+                        ),
+                      ],
+                    );
+                  },
+                ),
+              ),
+            );
+          },
+        );
+      },
+    );
   }
 
   Future<void> _pickAndUploadImage({
