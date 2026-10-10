@@ -16,6 +16,9 @@ class DispatchSupervisorScreen extends StatefulWidget {
     this.onTabChanged,
   });
 
+  static Future<void> showShiftHistoryDialog(BuildContext context) =>
+      _DispatchSupervisorScreenState.showShiftHistoryDialog(context);
+
   @override
   State<DispatchSupervisorScreen> createState() => _DispatchSupervisorScreenState();
 }
@@ -1631,6 +1634,10 @@ class _DispatchSupervisorScreenState extends State<DispatchSupervisorScreen> {
   }
 
   Future<void> _showShiftHistoryDialog() async {
+    showShiftHistoryDialog(context);
+  }
+
+  static Future<void> showShiftHistoryDialog(BuildContext context) async {
     showDialog(
       context: context,
       barrierDismissible: true,
@@ -3269,7 +3276,7 @@ class _DispatchSupervisorScreenState extends State<DispatchSupervisorScreen> {
     );
   }
 
-  Widget _buildUserAvatarItem(Map<String, dynamic> u, {double size = 48.0}) {
+  static Widget _buildUserAvatarItem(Map<String, dynamic> u, {double size = 48.0}) {
     final avatarUrl = u['avatar_url']?.toString().trim();
     final isDispatcher = u['role_codes'] != null && (u['role_codes'] as List<dynamic>).contains('dispatcher');
     final double avatarSize = size;
