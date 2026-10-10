@@ -115,18 +115,17 @@ class _MainNavigationScreenState extends State<MainNavigationScreen> {
                 appBar: AppBar(
                   elevation: 0,
                   scrolledUnderElevation: 0,
-                  title: Row(
-                    children: [
-                      Text(
-                        _getAppTitle(),
-                        style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16, color: Colors.blueGrey.shade900),
-                      ),
-                      if (_currentRoot == 2 && _activeManagementTab == 3) ...[
-                        const SizedBox(width: 20),
-                        _buildUserSubTabSwitch(),
-                      ],
-                    ],
+                  title: Text(
+                    _getAppTitle(),
+                    style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16, color: Colors.blueGrey.shade900),
                   ),
+                  actions: [
+                    if (_currentRoot == 2 && _activeManagementTab == 3)
+                      Padding(
+                        padding: const EdgeInsets.only(right: 16),
+                        child: _buildUserSubTabSwitch(),
+                      ),
+                  ],
                   backgroundColor: Colors.transparent, // Không dùng màu background
                   foregroundColor: Colors.blueGrey.shade900,
                   automaticallyImplyLeading: false,
@@ -467,11 +466,11 @@ class _MainNavigationScreenState extends State<MainNavigationScreen> {
 
   Widget _buildUserSubTabSwitch({bool isCompact = false}) {
     return Container(
-      height: 32,
-      padding: const EdgeInsets.all(2),
+      height: 36,
+      padding: const EdgeInsets.all(3),
       decoration: BoxDecoration(
         color: Colors.grey.shade200,
-        borderRadius: BorderRadius.circular(6),
+        borderRadius: BorderRadius.circular(4),
         border: Border.all(color: Colors.grey.shade300, width: 1),
       ),
       child: Row(
@@ -483,6 +482,7 @@ class _MainNavigationScreenState extends State<MainNavigationScreen> {
             label: "Danh sách Tài khoản",
             isCompact: isCompact,
           ),
+          const SizedBox(width: 2),
           _buildSwitchItem(
             index: 1,
             icon: Icons.verified_user,
@@ -512,7 +512,8 @@ class _MainNavigationScreenState extends State<MainNavigationScreen> {
       borderRadius: BorderRadius.circular(4),
       child: AnimatedContainer(
         duration: const Duration(milliseconds: 150),
-        padding: EdgeInsets.symmetric(horizontal: isCompact ? 10 : 12, vertical: 4),
+        alignment: Alignment.center,
+        padding: EdgeInsets.symmetric(horizontal: isCompact ? 12 : 16, vertical: 5),
         decoration: BoxDecoration(
           color: isSelected ? Colors.white : Colors.transparent,
           borderRadius: BorderRadius.circular(4),
