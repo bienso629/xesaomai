@@ -1641,8 +1641,8 @@ class _DispatchSupervisorScreenState extends State<DispatchSupervisorScreen> {
               elevation: 0,
               shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(4)),
               child: Container(
-                width: 900,
-                height: 600,
+                width: 980,
+                height: 620,
                 padding: const EdgeInsets.all(20),
                 child: FutureBuilder<List<dynamic>>(
                   future: AdminService.fetchShiftHistory(limit: 100),
@@ -1748,17 +1748,17 @@ class _DispatchSupervisorScreenState extends State<DispatchSupervisorScreen> {
                                     if (startedAtStr.isNotEmpty) {
                                       try {
                                         final dt = DateTime.parse(startedAtStr).toLocal();
-                                        startFmt = "${dt.hour.toString().padLeft(2, '0')}:${dt.minute.toString().padLeft(2, '0')} ngày ${dt.day.toString().padLeft(2, '0')}/${dt.month.toString().padLeft(2, '0')}/${dt.year}";
+                                        startFmt = "${dt.hour.toString().padLeft(2, '0')}:${dt.minute.toString().padLeft(2, '0')} (${dt.day.toString().padLeft(2, '0')}/${dt.month.toString().padLeft(2, '0')})";
                                       } catch (_) {
                                         startFmt = startedAtStr;
                                       }
                                     }
 
-                                    String endFmt = 'Đang diễn ra';
+                                    String endFmt = 'Đang trực';
                                     if (endedAtStr.isNotEmpty) {
                                       try {
                                         final dt = DateTime.parse(endedAtStr).toLocal();
-                                        endFmt = "${dt.hour.toString().padLeft(2, '0')}:${dt.minute.toString().padLeft(2, '0')} ngày ${dt.day.toString().padLeft(2, '0')}/${dt.month.toString().padLeft(2, '0')}/${dt.year}";
+                                        endFmt = "${dt.hour.toString().padLeft(2, '0')}:${dt.minute.toString().padLeft(2, '0')} (${dt.day.toString().padLeft(2, '0')}/${dt.month.toString().padLeft(2, '0')})";
                                       } catch (_) {
                                         endFmt = endedAtStr;
                                       }
@@ -1768,31 +1768,32 @@ class _DispatchSupervisorScreenState extends State<DispatchSupervisorScreen> {
                                       color: isActive ? Colors.blue.shade50.withOpacity(0.3) : Colors.white,
                                       padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
                                       child: Row(
-                                        crossAxisAlignment: CrossAxisAlignment.start,
+                                        crossAxisAlignment: CrossAxisAlignment.center,
                                         children: [
                                           _buildUserAvatarItem(shift, size: 40),
-                                          const SizedBox(width: 14),
+                                          const SizedBox(width: 12),
+                                          // Cột 1: Thông tin nhân sự và ca
                                           Expanded(
                                             flex: 3,
                                             child: Column(
                                               crossAxisAlignment: CrossAxisAlignment.start,
                                               children: [
-                                                Row(
-                                                  children: [
-                                                    Text(
-                                                      fullName,
-                                                      style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 13.5),
-                                                    ),
-                                                    const SizedBox(width: 6),
-                                                    Text(
-                                                      "(@$username)",
-                                                      style: TextStyle(fontSize: 12, color: Colors.blueGrey.shade600),
-                                                    ),
-                                                  ],
+                                                Text(
+                                                  fullName,
+                                                  style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 13.5),
+                                                  maxLines: 1,
+                                                  overflow: TextOverflow.ellipsis,
+                                                ),
+                                                const SizedBox(height: 2),
+                                                Text(
+                                                  "@$username",
+                                                  style: TextStyle(fontSize: 11.5, color: Colors.blueGrey.shade600),
+                                                  maxLines: 1,
+                                                  overflow: TextOverflow.ellipsis,
                                                 ),
                                                 const SizedBox(height: 4),
                                                 Container(
-                                                  padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                                                  padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 1.5),
                                                   decoration: BoxDecoration(
                                                     color: Colors.blue.shade50,
                                                     borderRadius: BorderRadius.circular(3),
@@ -1800,36 +1801,48 @@ class _DispatchSupervisorScreenState extends State<DispatchSupervisorScreen> {
                                                   ),
                                                   child: Text(
                                                     shiftName,
-                                                    style: TextStyle(fontSize: 11, fontWeight: FontWeight.bold, color: Colors.blue.shade900),
+                                                    style: TextStyle(fontSize: 10.5, fontWeight: FontWeight.bold, color: Colors.blue.shade900),
                                                   ),
                                                 ),
                                               ],
                                             ),
                                           ),
                                           const SizedBox(width: 12),
+                                          // Cột 2: Thời gian bắt đầu và kết thúc
                                           Expanded(
-                                            flex: 4,
+                                            flex: 3,
                                             child: Column(
                                               crossAxisAlignment: CrossAxisAlignment.start,
                                               children: [
                                                 Row(
                                                   children: [
                                                     Icon(Icons.login, size: 14, color: Colors.green.shade700),
-                                                    const SizedBox(width: 6),
-                                                    Text("Bắt đầu: $startFmt", style: const TextStyle(fontSize: 12)),
+                                                    const SizedBox(width: 5),
+                                                    Expanded(
+                                                      child: Text(
+                                                        "Bắt đầu: $startFmt",
+                                                        style: const TextStyle(fontSize: 12),
+                                                        maxLines: 1,
+                                                        overflow: TextOverflow.ellipsis,
+                                                      ),
+                                                    ),
                                                   ],
                                                 ),
                                                 const SizedBox(height: 4),
                                                 Row(
                                                   children: [
                                                     Icon(Icons.logout, size: 14, color: isActive ? Colors.orange.shade700 : Colors.blueGrey.shade700),
-                                                    const SizedBox(width: 6),
-                                                    Text(
-                                                      "Kết thúc: $endFmt",
-                                                      style: TextStyle(
-                                                        fontSize: 12,
-                                                        color: isActive ? Colors.green.shade800 : Colors.black87,
-                                                        fontWeight: isActive ? FontWeight.bold : FontWeight.normal,
+                                                    const SizedBox(width: 5),
+                                                    Expanded(
+                                                      child: Text(
+                                                        "Kết thúc: $endFmt",
+                                                        style: TextStyle(
+                                                          fontSize: 12,
+                                                          color: isActive ? Colors.green.shade800 : Colors.black87,
+                                                          fontWeight: isActive ? FontWeight.bold : FontWeight.normal,
+                                                        ),
+                                                        maxLines: 1,
+                                                        overflow: TextOverflow.ellipsis,
                                                       ),
                                                     ),
                                                   ],
@@ -1837,7 +1850,7 @@ class _DispatchSupervisorScreenState extends State<DispatchSupervisorScreen> {
                                                 if (durationHours.isNotEmpty) ...[
                                                   const SizedBox(height: 4),
                                                   Text(
-                                                    "Thời lượng trực: $durationHours giờ",
+                                                    "Thời lượng: $durationHours giờ",
                                                     style: TextStyle(fontSize: 11, color: Colors.blueGrey.shade600, fontStyle: FontStyle.italic),
                                                   ),
                                                 ],
@@ -1845,6 +1858,7 @@ class _DispatchSupervisorScreenState extends State<DispatchSupervisorScreen> {
                                             ),
                                           ),
                                           const SizedBox(width: 12),
+                                          // Cột 3: Ghi chú nhận ca & bàn giao
                                           Expanded(
                                             flex: 4,
                                             child: Column(
@@ -1875,8 +1889,9 @@ class _DispatchSupervisorScreenState extends State<DispatchSupervisorScreen> {
                                             ),
                                           ),
                                           const SizedBox(width: 12),
+                                          // Cột 4: Tag trạng thái ca
                                           Container(
-                                            padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                                            padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
                                             decoration: BoxDecoration(
                                               color: isActive ? Colors.green.shade50 : Colors.grey.shade100,
                                               borderRadius: BorderRadius.circular(4),
