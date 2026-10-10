@@ -1242,25 +1242,7 @@ class _DispatchSupervisorScreenState extends State<DispatchSupervisorScreen> {
                 Row(
                   mainAxisSize: MainAxisSize.min,
                   children: [
-                    // Nút Lịch sử ca trực cho tất cả (Admin, Manager, Dispatcher)
-                    OutlinedButton.icon(
-                      style: OutlinedButton.styleFrom(
-                        foregroundColor: Colors.blue.shade900,
-                        side: BorderSide(color: Colors.blue.shade300),
-                        elevation: 0,
-                        minimumSize: const Size(0, 36),
-                        padding: const EdgeInsets.symmetric(horizontal: 12),
-                        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(4)),
-                      ),
-                      icon: const Icon(Icons.history, size: 16),
-                      label: const Text(
-                        "Lịch sử ca trực",
-                        style: TextStyle(fontSize: 12.5, fontWeight: FontWeight.bold),
-                      ),
-                      onPressed: () => _showShiftHistoryDialog(),
-                    ),
                     if (isDispatcher) ...[
-                      const SizedBox(width: 8),
                       if (!isInShift)
                         ElevatedButton.icon(
                           style: ElevatedButton.styleFrom(
