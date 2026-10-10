@@ -339,19 +339,6 @@ class _MainNavigationScreenState extends State<MainNavigationScreen> {
                     subtitle: "Quản lý nhân viên, Dynamic RBAC",
                     onTap: () => _onSelectManagementTab(3),
                   ),
-                _buildDrawerItem(
-                  isSelected: false,
-                  icon: Icons.history_outlined,
-                  activeIcon: Icons.history,
-                  title: "Lịch sử trực ca",
-                  subtitle: "Nhật ký nhận & bàn giao ca điều phối",
-                  onTap: () {
-                    if (_scaffoldKey.currentState?.isDrawerOpen ?? false) {
-                      Navigator.of(context).pop();
-                    }
-                    DispatchSupervisorScreen.showShiftHistoryDialog(context);
-                  },
-                ),
               ],
             ),
           ),
