@@ -16,8 +16,8 @@ class DispatchSupervisorScreen extends StatefulWidget {
     this.onTabChanged,
   });
 
-  static Future<void> showShiftHistoryDialog(BuildContext context) =>
-      _DispatchSupervisorScreenState.showShiftHistoryDialog(context);
+  static Future<void> showShiftHistoryDialog(BuildContext context, {Map<String, dynamic>? targetUser}) =>
+      _DispatchSupervisorScreenState.showShiftHistoryDialog(context, targetUser: targetUser);
 
   @override
   State<DispatchSupervisorScreen> createState() => _DispatchSupervisorScreenState();
@@ -449,6 +449,7 @@ class _DispatchSupervisorScreenState extends State<DispatchSupervisorScreen> {
                                                 DataColumn(label: Text("Số điện thoại", style: TextStyle(fontWeight: FontWeight.bold, fontSize: 13))),
                                                 DataColumn(label: Text("Vai trò & Phân loại", style: TextStyle(fontWeight: FontWeight.bold, fontSize: 13))),
                                                 DataColumn(label: Text("Trạng thái", style: TextStyle(fontWeight: FontWeight.bold, fontSize: 13))),
+                                                DataColumn(label: Text("Lịch sử", style: TextStyle(fontWeight: FontWeight.bold, fontSize: 13))),
                                                 DataColumn(label: Text("Thao tác", style: TextStyle(fontWeight: FontWeight.bold, fontSize: 13))),
                                               ],
                                               rows: const [],
@@ -472,6 +473,7 @@ class _DispatchSupervisorScreenState extends State<DispatchSupervisorScreen> {
                                             horizontalMargin: 16,
                                             columnSpacing: 20,
                                             columns: const [
+                                              DataColumn(label: SizedBox()),
                                               DataColumn(label: SizedBox()),
                                               DataColumn(label: SizedBox()),
                                               DataColumn(label: SizedBox()),
@@ -642,7 +644,37 @@ class _DispatchSupervisorScreenState extends State<DispatchSupervisorScreen> {
                                                       ),
                                                     ),
                                                   ),
-                                                  // Cột 7: Cụm nút thao tác
+                                                  // Cột 7: Lịch sử trực ca
+                                                  makeCell(
+                                                    Builder(
+                                                      builder: (context) {
+                                                        final roleCodes = (u['role_codes'] as List<dynamic>?)?.map((e) => e.toString()).toList() ?? [];
+                                                        final isDispatcherUser = roleCodes.contains('dispatcher');
+
+                                                        if (isDispatcherUser) {
+                                                          return OutlinedButton.icon(
+                                                            style: OutlinedButton.styleFrom(
+                                                              foregroundColor: Colors.blue.shade900,
+                                                              side: BorderSide(color: Colors.blue.shade300),
+                                                              padding: const EdgeInsets.symmetric(horizontal: 8),
+                                                              minimumSize: const Size(0, 32),
+                                                              tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                                                              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(4)),
+                                                            ),
+                                                            icon: const Icon(Icons.history, size: 14),
+                                                            label: const Text("Lịch sử ca trực", style: TextStyle(fontSize: 11, fontWeight: FontWeight.bold)),
+                                                            onPressed: () => showShiftHistoryDialog(context, targetUser: u),
+                                                          );
+                                                        } else {
+                                                          return Text(
+                                                            "-",
+                                                            style: TextStyle(color: Colors.grey.shade400, fontSize: 13),
+                                                          );
+                                                        }
+                                                      },
+                                                    ),
+                                                  ),
+                                                  // Cột 8: Cụm nút thao tác
                                                   makeCell(
                                                     Row(
                                                       mainAxisSize: MainAxisSize.min,
@@ -1619,7 +1651,10 @@ class _DispatchSupervisorScreenState extends State<DispatchSupervisorScreen> {
     showShiftHistoryDialog(context);
   }
 
-  static Future<void> showShiftHistoryDialog(BuildContext context) async {
+  static Future<void> showShiftHistoryDialog(BuildContext context, {Map<String, dynamic>? targetUser}) async {
+    final int? filterUserId = targetUser?['id'] as int?;
+    final String? filterFullName = targetUser?['full_name'] as String? ?? targetUser?['username'] as String?;
+
     showDialog(
       context: context,
       barrierDismissible: true,
@@ -1634,7 +1669,7 @@ class _DispatchSupervisorScreenState extends State<DispatchSupervisorScreen> {
                 height: 620,
                 padding: const EdgeInsets.all(20),
                 child: FutureBuilder<List<dynamic>>(
-                  future: AdminService.fetchShiftHistory(limit: 100),
+                  future: AdminService.fetchShiftHistory(userId: filterUserId, limit: 100),
                   builder: (context, snapshot) {
                     return Column(
                       crossAxisAlignment: CrossAxisAlignment.start,
@@ -1656,12 +1691,16 @@ class _DispatchSupervisorScreenState extends State<DispatchSupervisorScreen> {
                                 Column(
                                   crossAxisAlignment: CrossAxisAlignment.start,
                                   children: [
-                                    const Text(
-                                      "Nhật ký & Lịch sử ca trực Điều phối viên",
-                                      style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
+                                    Text(
+                                      filterFullName != null
+                                          ? "Nhật ký & Lịch sử ca trực - $filterFullName"
+                                          : "Nhật ký & Lịch sử ca trực Điều phối viên",
+                                      style: const TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
                                     ),
                                     Text(
-                                      "Ghi nhận chi tiết thời gian nhận ca, kết thúc, bàn giao công việc của từng điều phối viên",
+                                      filterFullName != null
+                                          ? "Ghi nhận chi tiết thời gian nhận ca, kết thúc, bàn giao công việc của $filterFullName"
+                                          : "Ghi nhận chi tiết thời gian nhận ca, kết thúc, bàn giao công việc của từng điều phối viên",
                                       style: TextStyle(fontSize: 12, color: Colors.grey.shade600),
                                     ),
                                   ],
@@ -1700,7 +1739,9 @@ class _DispatchSupervisorScreenState extends State<DispatchSupervisorScreen> {
                                   Icon(Icons.event_busy, size: 48, color: Colors.blueGrey.shade300),
                                   const SizedBox(height: 12),
                                   Text(
-                                    "Chưa có dữ liệu lịch sử ca trực nào được ghi nhận.",
+                                    filterFullName != null
+                                        ? "Điều phối viên $filterFullName chưa có lịch sử ca trực nào."
+                                        : "Chưa có dữ liệu lịch sử ca trực nào được ghi nhận.",
                                     style: TextStyle(fontSize: 14, color: Colors.blueGrey.shade600),
                                   ),
                                 ],
