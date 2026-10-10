@@ -13,8 +13,8 @@ enum UserRole {
 }
 
 class AppState extends ChangeNotifier {
-  // Vai trò người dùng hiện tại (Mặc định hoặc chuyển đổi giữa Quản lý và Tài xế)
-  UserRole currentRole = UserRole.driver;
+  // Vai trò người dùng hiện tại (Mặc định mở Tổng quan Quản lý hoặc chuyển đổi với Tài xế)
+  UserRole currentRole = UserRole.manager;
 
   // Phiên đăng nhập thực tế từ Backend API
   String? authToken;
@@ -35,7 +35,7 @@ class AppState extends ChangeNotifier {
     currentUsername = username;
     currentFullName = fullName;
     userRoles = roles;
-    if (roles.contains('manager') || roles.contains('dispatcher') || roles.contains('mechanic')) {
+    if (roles.contains('admin') || roles.contains('manager') || roles.contains('dispatcher') || roles.contains('mechanic') || username.toLowerCase() == 'admin') {
       currentRole = UserRole.manager;
     } else {
       currentRole = UserRole.driver;
