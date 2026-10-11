@@ -1074,6 +1074,13 @@ def get_shift_history(user_id: Optional[int] = None, limit: int = 50, current_us
 
 @app.post("/api/v1/shifts/checkin", status_code=status.HTTP_201_CREATED)
 def checkin_shift(req: ShiftCheckin, current_user: dict = Depends(get_current_user)):
+    user_roles = current_user.get("roles", [])
+    if "dispatcher" not in user_roles and "admin" not in user_roles:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Chỉ tài khoản Điều phối viên mới được phép nhận ca trực."
+        )
+
     user_id = current_user["id"]
     conn = get_db()
     cur = conn.cursor()
