@@ -1776,53 +1776,60 @@ class _DispatchSupervisorScreenState extends State<DispatchSupervisorScreen> {
                                             ),
                                           ),
                                           const SizedBox(width: 12),
-                                          // Cột 2: Thời gian bắt đầu và kết thúc
-                                          Expanded(
-                                            flex: 3,
-                                            child: Column(
-                                              crossAxisAlignment: CrossAxisAlignment.start,
+                                          // Cột 2: Thời gian bắt đầu
+                                          SizedBox(
+                                            width: 175,
+                                            child: Row(
                                               children: [
-                                                Row(
-                                                  children: [
-                                                    Icon(Icons.login, size: 14, color: Colors.green.shade700),
-                                                    const SizedBox(width: 5),
-                                                    Expanded(
-                                                      child: Text(
-                                                        "Bắt đầu: $startFmt",
-                                                        style: const TextStyle(fontSize: 12),
-                                                        maxLines: 1,
-                                                        overflow: TextOverflow.ellipsis,
-                                                      ),
-                                                    ),
-                                                  ],
-                                                ),
-                                                const SizedBox(height: 4),
-                                                Row(
-                                                  children: [
-                                                    Icon(Icons.logout, size: 14, color: isActive ? Colors.orange.shade700 : Colors.blueGrey.shade700),
-                                                    const SizedBox(width: 5),
-                                                    Expanded(
-                                                      child: Text(
-                                                        "Kết thúc: $endFmt",
-                                                        style: TextStyle(
-                                                          fontSize: 12,
-                                                          color: isActive ? Colors.green.shade800 : Colors.black87,
-                                                          fontWeight: isActive ? FontWeight.bold : FontWeight.normal,
-                                                        ),
-                                                        maxLines: 1,
-                                                        overflow: TextOverflow.ellipsis,
-                                                      ),
-                                                    ),
-                                                  ],
-                                                ),
-                                                if (durationHours.isNotEmpty) ...[
-                                                  const SizedBox(height: 4),
-                                                  Text(
-                                                    "Thời lượng: $durationHours giờ",
-                                                    style: TextStyle(fontSize: 11, color: Colors.blueGrey.shade600, fontStyle: FontStyle.italic),
+                                                Icon(Icons.login, size: 14, color: Colors.green.shade700),
+                                                const SizedBox(width: 6),
+                                                Expanded(
+                                                  child: Text(
+                                                    "Bắt đầu: $startFmt",
+                                                    style: const TextStyle(fontSize: 12),
+                                                    maxLines: 1,
+                                                    overflow: TextOverflow.ellipsis,
                                                   ),
-                                                ],
+                                                ),
                                               ],
+                                            ),
+                                          ),
+                                          const SizedBox(width: 12),
+                                          // Cột 3: Thời gian kết thúc
+                                          SizedBox(
+                                            width: 175,
+                                            child: Row(
+                                              children: [
+                                                Icon(Icons.logout, size: 14, color: isActive ? Colors.orange.shade700 : Colors.blueGrey.shade700),
+                                                const SizedBox(width: 6),
+                                                Expanded(
+                                                  child: Text(
+                                                    "Kết thúc: $endFmt",
+                                                    style: TextStyle(
+                                                      fontSize: 12,
+                                                      color: isActive ? Colors.green.shade800 : Colors.black87,
+                                                      fontWeight: isActive ? FontWeight.bold : FontWeight.normal,
+                                                    ),
+                                                    maxLines: 1,
+                                                    overflow: TextOverflow.ellipsis,
+                                                  ),
+                                                ),
+                                              ],
+                                            ),
+                                          ),
+                                          const SizedBox(width: 12),
+                                          // Cột 4: Thời lượng ca
+                                          SizedBox(
+                                            width: 130,
+                                            child: Text(
+                                              durationHours.isNotEmpty ? "Thời lượng: $durationHours giờ" : "-",
+                                              style: TextStyle(
+                                                fontSize: 11.5,
+                                                color: Colors.blueGrey.shade700,
+                                                fontStyle: FontStyle.italic,
+                                              ),
+                                              maxLines: 1,
+                                              overflow: TextOverflow.ellipsis,
                                             ),
                                           ),
                                           const SizedBox(width: 12),
