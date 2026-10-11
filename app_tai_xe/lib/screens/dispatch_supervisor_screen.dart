@@ -1631,11 +1631,16 @@ class _DispatchSupervisorScreenState extends State<DispatchSupervisorScreen> {
           builder: (ctx, setDialogState) {
             return Dialog(
               elevation: 0,
+              backgroundColor: Colors.white,
               shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(4)),
               child: Container(
                 width: 980,
                 height: 620,
                 padding: const EdgeInsets.all(20),
+                decoration: BoxDecoration(
+                  color: Colors.white,
+                  borderRadius: BorderRadius.circular(4),
+                ),
                 child: FutureBuilder<List<dynamic>>(
                   future: AdminService.fetchShiftHistory(userId: filterUserId, limit: 100),
                   builder: (context, snapshot) {
@@ -1828,6 +1833,7 @@ class _DispatchSupervisorScreenState extends State<DispatchSupervisorScreen> {
                                   return Container(
                                     width: double.infinity,
                                     decoration: BoxDecoration(
+                                      color: Colors.white,
                                       border: Border.all(color: Colors.grey.shade300),
                                       borderRadius: BorderRadius.circular(4),
                                     ),
@@ -1874,6 +1880,7 @@ class _DispatchSupervisorScreenState extends State<DispatchSupervisorScreen> {
                                     Expanded(
                                       child: Container(
                                         decoration: BoxDecoration(
+                                          color: Colors.white,
                                           border: Border.all(color: Colors.grey.shade300),
                                           borderRadius: const BorderRadius.vertical(top: Radius.circular(4)),
                                         ),
