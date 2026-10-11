@@ -499,57 +499,95 @@ class _DispatchSupervisorScreenState extends State<DispatchSupervisorScreen> {
                                           ),
                                         ),
                                       ),
-                                      // Cột 4: Tài xế chỉ định
+                                      // Cột 4: Tài xế chỉ định (Bấm vào để mở chi tiết tài khoản)
                                       makeCell(
                                         driverName.isNotEmpty
-                                            ? Column(
-                                                crossAxisAlignment: CrossAxisAlignment.start,
-                                                mainAxisAlignment: MainAxisAlignment.center,
-                                                children: [
-                                                  Row(
-                                                    mainAxisSize: MainAxisSize.min,
+                                            ? InkWell(
+                                                borderRadius: BorderRadius.circular(4),
+                                                onTap: () {
+                                                  final driverId = v['default_driver_id'];
+                                                  dynamic matchedUser;
+                                                  if (driverId != null) {
+                                                    for (final u in _users) {
+                                                      if (u is Map && u['id'] == driverId) {
+                                                        matchedUser = u;
+                                                        break;
+                                                      }
+                                                    }
+                                                  }
+                                                  if (matchedUser == null && driverUsername.isNotEmpty) {
+                                                    for (final u in _users) {
+                                                      if (u is Map && u['username'] == driverUsername) {
+                                                        matchedUser = u;
+                                                        break;
+                                                      }
+                                                    }
+                                                  }
+                                                  if (matchedUser != null) {
+                                                    _showEditUserDialog(Map<String, dynamic>.from(matchedUser as Map));
+                                                  } else {
+                                                    ScaffoldMessenger.of(context).showSnackBar(
+                                                      const SnackBar(
+                                                        backgroundColor: Colors.orange,
+                                                        content: Text("Không tìm thấy thông tin tài khoản người dùng."),
+                                                      ),
+                                                    );
+                                                  }
+                                                },
+                                                child: Padding(
+                                                  padding: const EdgeInsets.symmetric(vertical: 4, horizontal: 2),
+                                                  child: Column(
+                                                    crossAxisAlignment: CrossAxisAlignment.start,
+                                                    mainAxisAlignment: MainAxisAlignment.center,
                                                     children: [
-                                                      const Icon(Icons.person, size: 15, color: Colors.teal),
-                                                      const SizedBox(width: 4),
-                                                      Text(
-                                                        driverName,
-                                                        style: const TextStyle(
-                                                          fontSize: 12.5,
-                                                          fontWeight: FontWeight.bold,
-                                                          color: Colors.teal,
-                                                        ),
+                                                      Row(
+                                                        mainAxisSize: MainAxisSize.min,
+                                                        children: [
+                                                          const Icon(Icons.person, size: 15, color: Colors.teal),
+                                                          const SizedBox(width: 4),
+                                                          Text(
+                                                            driverName,
+                                                            style: const TextStyle(
+                                                              fontSize: 12.5,
+                                                              fontWeight: FontWeight.bold,
+                                                              color: Colors.teal,
+                                                              decoration: TextDecoration.underline,
+                                                              decorationColor: Colors.teal,
+                                                            ),
+                                                          ),
+                                                        ],
+                                                      ),
+                                                      const SizedBox(height: 2),
+                                                      Row(
+                                                        mainAxisSize: MainAxisSize.min,
+                                                        children: [
+                                                          if (driverUsername.isNotEmpty)
+                                                            Text(
+                                                              "@$driverUsername",
+                                                              style: TextStyle(
+                                                                fontSize: 11,
+                                                                color: Colors.blueGrey.shade700,
+                                                                fontWeight: FontWeight.w500,
+                                                              ),
+                                                            ),
+                                                          if (driverUsername.isNotEmpty && driverPhone.isNotEmpty)
+                                                            Text(
+                                                              " • ",
+                                                              style: TextStyle(fontSize: 11, color: Colors.grey.shade400),
+                                                            ),
+                                                          if (driverPhone.isNotEmpty)
+                                                            Text(
+                                                              driverPhone,
+                                                              style: TextStyle(
+                                                                fontSize: 11,
+                                                                color: Colors.grey.shade600,
+                                                              ),
+                                                            ),
+                                                        ],
                                                       ),
                                                     ],
                                                   ),
-                                                  const SizedBox(height: 2),
-                                                  Row(
-                                                    mainAxisSize: MainAxisSize.min,
-                                                    children: [
-                                                      if (driverUsername.isNotEmpty)
-                                                        Text(
-                                                          "@$driverUsername",
-                                                          style: TextStyle(
-                                                            fontSize: 11,
-                                                            color: Colors.blueGrey.shade700,
-                                                            fontWeight: FontWeight.w500,
-                                                          ),
-                                                        ),
-                                                      if (driverUsername.isNotEmpty && driverPhone.isNotEmpty)
-                                                        Text(
-                                                          " • ",
-                                                          style: TextStyle(fontSize: 11, color: Colors.grey.shade400),
-                                                        ),
-                                                      if (driverPhone.isNotEmpty)
-                                                        Text(
-                                                          driverPhone,
-                                                          style: TextStyle(
-                                                            fontSize: 11,
-                                                            color: Colors.grey.shade600,
-                                                          ),
-                                                        ),
-                                                    ],
-                                                  ),
-                                                ],
+                                                ),
                                               )
                                             : Text(
                                                 "Chưa phân bổ",
