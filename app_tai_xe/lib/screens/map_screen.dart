@@ -8,7 +8,15 @@ import '../services/quanlyxe_service.dart';
 
 class MapScreen extends StatefulWidget {
   final VoidCallback? onOpenDrawer;
-  const MapScreen({super.key, this.onOpenDrawer});
+  final VoidCallback? onToggleDesktopSidebar;
+  final bool isDesktopSidebarCollapsed;
+
+  const MapScreen({
+    super.key,
+    this.onOpenDrawer,
+    this.onToggleDesktopSidebar,
+    this.isDesktopSidebarCollapsed = false,
+  });
 
   @override
   State<MapScreen> createState() => _MapScreenState();
@@ -194,7 +202,13 @@ class _MapScreenState extends State<MapScreen> {
                 tooltip: "Mở menu chức năng",
                 onPressed: widget.onOpenDrawer,
               )
-            : null,
+            : (widget.onToggleDesktopSidebar != null && widget.isDesktopSidebarCollapsed
+                ? IconButton(
+                    icon: const Icon(Icons.menu),
+                    tooltip: "Mở rộng thanh điều hướng",
+                    onPressed: widget.onToggleDesktopSidebar,
+                  )
+                : null),
         title: Row(
           children: [
             const Text(

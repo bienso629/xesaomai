@@ -18,6 +18,7 @@ class _MainNavigationScreenState extends State<MainNavigationScreen> {
   final GlobalKey<ScaffoldState> _scaffoldKey = GlobalKey<ScaffoldState>();
   int _currentRoot = 2; // 0: GPS, 1: Driver, 2: Management
   int _activeManagementTab = 0;
+  bool _isDesktopSidebarVisible = true;
 
   @override
   void initState() {
@@ -100,26 +101,27 @@ class _MainNavigationScreenState extends State<MainNavigationScreen> {
     // Mobile: màn hình hẹp (< 768px), Tablet/iPad/Desktop: >= 768px luôn ưu tiên ghim sidebar cố định
     final isMobile = width < 768;
 
-    final sidebarContent = _buildSidebarContent(state);
+    final sidebarContent = _buildSidebarContent(state, isMobile: isMobile);
 
     if (!isMobile) {
-      // Bố cục Desktop / iPad / Tablet: Sidebar luôn hiển thị cố định bên trái
+      // Bố cục Desktop / iPad / Tablet: Sidebar có thể toggle ẩn/hiện linh hoạt
       return Scaffold(
         key: _scaffoldKey,
         body: Row(
           children: [
-            SizedBox(
-              width: width >= 1200 ? 300 : 270,
-              child: Container(
-                decoration: const BoxDecoration(
-                  color: Color(0xFF10172A), // Màu Slate đậm hơn Header (0xFF1E293B / BlueGrey 900)
-                  border: Border(
-                    right: BorderSide(color: Color(0xFF1E293B), width: 1), // Viền tối đồng bộ màu, không còn vệt trắng
+            if (_isDesktopSidebarVisible)
+              SizedBox(
+                width: width >= 1200 ? 300 : 270,
+                child: Container(
+                  decoration: const BoxDecoration(
+                    color: Color(0xFF10172A), // Màu Slate đậm hơn Header (0xFF1E293B / BlueGrey 900)
+                    border: Border(
+                      right: BorderSide(color: Color(0xFF1E293B), width: 1), // Viền tối đồng bộ màu, không còn vệt trắng
+                    ),
                   ),
+                  child: sidebarContent,
                 ),
-                child: sidebarContent,
               ),
-            ),
             Expanded(
               child: Scaffold(
                 appBar: _currentRoot == 0
@@ -127,6 +129,17 @@ class _MainNavigationScreenState extends State<MainNavigationScreen> {
                     : AppBar(
                         elevation: 0,
                         scrolledUnderElevation: 0,
+                        leading: !_isDesktopSidebarVisible
+                            ? IconButton(
+                                icon: Icon(Icons.menu, color: Colors.blueGrey.shade900),
+                                tooltip: "Mở rộng thanh điều hướng",
+                                onPressed: () {
+                                  setState(() {
+                                    _isDesktopSidebarVisible = true;
+                                  });
+                                },
+                              )
+                            : null,
                         title: Text(
                           _getAppTitle(),
                           style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16, color: Colors.blueGrey.shade900),
@@ -191,14 +204,14 @@ class _MainNavigationScreenState extends State<MainNavigationScreen> {
     );
   }
 
-  Widget _buildSidebarContent(AppState state) {
+  Widget _buildSidebarContent(AppState state, {bool isMobile = false}) {
     return Container(
       color: const Color(0xFF0F172A), // Nền Sidebar tối đậm Slate 900 (đậm hơn Header 0xFF1E293B)
       child: Column(
         children: [
           Container(
             width: double.infinity,
-            padding: const EdgeInsets.fromLTRB(20, 24, 20, 18),
+            padding: const EdgeInsets.fromLTRB(16, 20, 12, 16),
             decoration: const BoxDecoration(
               color: Color(0xFF0F172A),
               border: Border(
@@ -215,18 +228,18 @@ class _MainNavigationScreenState extends State<MainNavigationScreen> {
                       borderRadius: BorderRadius.circular(8),
                       child: Image.asset(
                         'assets/images/app_icon.png',
-                        width: 48,
-                        height: 48,
+                        width: 44,
+                        height: 44,
                         fit: BoxFit.cover,
                         errorBuilder: (_, __, ___) => Container(
-                          width: 48,
-                          height: 48,
+                          width: 44,
+                          height: 44,
                           color: Colors.white12,
                           child: const Icon(Icons.local_shipping, color: Colors.white),
                         ),
                       ),
                     ),
-                    const SizedBox(width: 12),
+                    const SizedBox(width: 10),
                     Expanded(
                       child: Column(
                         crossAxisAlignment: CrossAxisAlignment.start,
@@ -235,7 +248,7 @@ class _MainNavigationScreenState extends State<MainNavigationScreen> {
                             state.currentFullName ?? "Người dùng",
                             style: const TextStyle(
                               color: Colors.white,
-                              fontSize: 15,
+                              fontSize: 14.5,
                               fontWeight: FontWeight.bold,
                             ),
                             maxLines: 1,
@@ -251,6 +264,18 @@ class _MainNavigationScreenState extends State<MainNavigationScreen> {
                         ],
                       ),
                     ),
+                    if (!isMobile)
+                      IconButton(
+                        icon: const Icon(Icons.menu_open, color: Colors.white70, size: 22),
+                        tooltip: "Thu gọn thanh điều hướng",
+                        padding: EdgeInsets.zero,
+                        constraints: const BoxConstraints(minWidth: 36, minHeight: 36),
+                        onPressed: () {
+                          setState(() {
+                            _isDesktopSidebarVisible = false;
+                          });
+                        },
+                      ),
                   ],
                 ),
               ],
@@ -401,6 +426,14 @@ class _MainNavigationScreenState extends State<MainNavigationScreen> {
     if (_currentRoot == 0) {
       return MapScreen(
         onOpenDrawer: isMobile ? () => _scaffoldKey.currentState?.openDrawer() : null,
+        onToggleDesktopSidebar: !isMobile
+            ? () {
+                setState(() {
+                  _isDesktopSidebarVisible = !_isDesktopSidebarVisible;
+                });
+              }
+            : null,
+        isDesktopSidebarCollapsed: !_isDesktopSidebarVisible,
       );
     } else if (_currentRoot == 1) {
       return const HomeDriverScreen();
