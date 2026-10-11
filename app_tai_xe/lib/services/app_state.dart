@@ -58,7 +58,9 @@ class AppState extends ChangeNotifier {
   List<String> availableVehicles = ["50H-891.21", "50H-538.61", "50H-882.60", "51D-477.61", "51D-477.41"];
   List<QuanLyXeInfo> liveVehicles = [];
   QuanLyXeStatus? currentGpsStatus;
+  Map<String, QuanLyXeStatus> allFleetVehiclesStatus = {};
   bool isLoadingGps = false;
+  bool isLoadingFleetGps = false;
 
   // 11 Lý do chờ bơm (đúng theo đặc tả)
   static const List<String> waitingReasons = [
@@ -109,6 +111,7 @@ class AppState extends ChangeNotifier {
         }
       }
       await refreshCurrentVehicleGps();
+      await refreshAllFleetGps();
     } catch (e) {
       debugPrint("initQuanLyXeData error: $e");
     } finally {
@@ -132,6 +135,26 @@ class AppState extends ChangeNotifier {
       debugPrint("refreshCurrentVehicleGps error: $e");
     } finally {
       isLoadingGps = false;
+      notifyListeners();
+    }
+  }
+
+  Future<void> refreshAllFleetGps() async {
+    isLoadingFleetGps = true;
+    notifyListeners();
+    try {
+      final statuses = await QuanLyXeService.fetchAllVehiclesStatus();
+      if (statuses.isNotEmpty) {
+        allFleetVehiclesStatus = statuses;
+        // Nếu xe đang chọn có trong danh sách statuses thì cập nhật luôn currentGpsStatus
+        if (statuses.containsKey(selectedPlate)) {
+          currentGpsStatus = statuses[selectedPlate];
+        }
+      }
+    } catch (e) {
+      debugPrint("refreshAllFleetGps error: $e");
+    } finally {
+      isLoadingFleetGps = false;
       notifyListeners();
     }
   }

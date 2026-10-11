@@ -35,6 +35,9 @@ class QuanLyXeStatus {
   final bool isAccOn;
   final int odoKm;
   final DateTime? gpsTime;
+  final double heading;
+  final int status;
+  final int satellite;
 
   QuanLyXeStatus({
     required this.id,
@@ -47,6 +50,9 @@ class QuanLyXeStatus {
     required this.isAccOn,
     required this.odoKm,
     this.gpsTime,
+    this.heading = 0.0,
+    this.status = 0,
+    this.satellite = 0,
   });
 
   factory QuanLyXeStatus.fromJson(Map<String, dynamic> json) {
@@ -54,6 +60,9 @@ class QuanLyXeStatus {
     final double lng = (json['X'] as num?)?.toDouble() ?? 0.0;
     final double spd = (json['Speed'] as num?)?.toDouble() ?? 0.0;
     final int odo = (json['LastOdoMile'] as num?)?.toInt() ?? 0;
+    final double hdg = (json['Heading'] as num?)?.toDouble() ?? 0.0;
+    final int st = (json['Status'] as num?)?.toInt() ?? 0;
+    final int sat = (json['Satellite'] as num?)?.toInt() ?? 0;
     DateTime? time;
     if (json['GpsTime'] != null) {
       time = DateTime.tryParse(json['GpsTime'].toString());
@@ -70,6 +79,9 @@ class QuanLyXeStatus {
       isAccOn: json['IsAccOn'] as bool? ?? false,
       odoKm: odo,
       gpsTime: time,
+      heading: hdg,
+      status: st,
+      satellite: sat,
     );
   }
 }
