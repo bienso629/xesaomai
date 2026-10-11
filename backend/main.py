@@ -751,7 +751,7 @@ def get_vehicles(current_user: dict = Depends(get_current_user)):
     conn = get_db()
     cur = conn.cursor()
     cur.execute("""
-        SELECT v.*, u.full_name as driver_name 
+        SELECT v.*, u.full_name as driver_name, u.username as driver_username, u.phone as driver_phone 
         FROM vehicles v 
         LEFT JOIN users u ON v.default_driver_id = u.id 
         ORDER BY v.plate_number ASC

@@ -422,6 +422,8 @@ class _DispatchSupervisorScreenState extends State<DispatchSupervisorScreen> {
                                   final vtype = (v['vehicle_type'] ?? 'Xe tải').toString();
                                   final ownType = (v['ownership_type'] ?? 'INTERNAL').toString();
                                   final driverName = (v['driver_name'] ?? '').toString();
+                                  final driverUsername = (v['driver_username'] ?? '').toString();
+                                  final driverPhone = (v['driver_phone'] ?? '').toString();
                                   final ownerCompany = (v['owner_company'] ?? 'Sao Mai Logistics').toString();
 
                                   DataCell makeCell(Widget child) {
@@ -500,18 +502,52 @@ class _DispatchSupervisorScreenState extends State<DispatchSupervisorScreen> {
                                       // Cột 4: Tài xế chỉ định
                                       makeCell(
                                         driverName.isNotEmpty
-                                            ? Row(
-                                                mainAxisSize: MainAxisSize.min,
+                                            ? Column(
+                                                crossAxisAlignment: CrossAxisAlignment.start,
+                                                mainAxisAlignment: MainAxisAlignment.center,
                                                 children: [
-                                                  const Icon(Icons.person, size: 16, color: Colors.teal),
-                                                  const SizedBox(width: 6),
-                                                  Text(
-                                                    driverName,
-                                                    style: const TextStyle(
-                                                      fontSize: 12.5,
-                                                      fontWeight: FontWeight.w600,
-                                                      color: Colors.teal,
-                                                    ),
+                                                  Row(
+                                                    mainAxisSize: MainAxisSize.min,
+                                                    children: [
+                                                      const Icon(Icons.person, size: 15, color: Colors.teal),
+                                                      const SizedBox(width: 4),
+                                                      Text(
+                                                        driverName,
+                                                        style: const TextStyle(
+                                                          fontSize: 12.5,
+                                                          fontWeight: FontWeight.bold,
+                                                          color: Colors.teal,
+                                                        ),
+                                                      ),
+                                                    ],
+                                                  ),
+                                                  const SizedBox(height: 2),
+                                                  Row(
+                                                    mainAxisSize: MainAxisSize.min,
+                                                    children: [
+                                                      if (driverUsername.isNotEmpty)
+                                                        Text(
+                                                          "@$driverUsername",
+                                                          style: TextStyle(
+                                                            fontSize: 11,
+                                                            color: Colors.blueGrey.shade700,
+                                                            fontWeight: FontWeight.w500,
+                                                          ),
+                                                        ),
+                                                      if (driverUsername.isNotEmpty && driverPhone.isNotEmpty)
+                                                        Text(
+                                                          " • ",
+                                                          style: TextStyle(fontSize: 11, color: Colors.grey.shade400),
+                                                        ),
+                                                      if (driverPhone.isNotEmpty)
+                                                        Text(
+                                                          driverPhone,
+                                                          style: TextStyle(
+                                                            fontSize: 11,
+                                                            color: Colors.grey.shade600,
+                                                          ),
+                                                        ),
+                                                    ],
                                                   ),
                                                 ],
                                               )
