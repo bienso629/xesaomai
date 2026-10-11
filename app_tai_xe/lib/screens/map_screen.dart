@@ -184,6 +184,10 @@ class _MapScreenState extends State<MapScreen> {
 
     return Scaffold(
       appBar: AppBar(
+        elevation: 0,
+        scrolledUnderElevation: 0,
+        backgroundColor: Colors.transparent,
+        foregroundColor: Colors.blueGrey.shade900,
         leading: widget.onOpenDrawer != null
             ? IconButton(
                 icon: const Icon(Icons.menu),
@@ -237,6 +241,13 @@ class _MapScreenState extends State<MapScreen> {
             },
           ),
         ],
+        bottom: PreferredSize(
+          preferredSize: const Size.fromHeight(1),
+          child: Container(
+            color: Colors.grey.shade300,
+            height: 1,
+          ),
+        ),
       ),
       body: Row(
         children: [
