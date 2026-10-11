@@ -36,9 +36,37 @@ class _MapScreenState extends State<MapScreen> {
   bool _showPanel = true;
   String _statusFilter = 'all'; // 'all', 'running', 'stopped', 'off'
 
-  // Toạ độ mặc định fallback cho các xe thuộc hệ thống khi mất tín hiệu GPS
+  // Toạ độ mặc định fallback cho các xe thuộc hệ thống khi mất tín hiệu GPS (khớp với vị trí trên Web Vietmap)
   static const Map<String, LatLng> _offlineFallbackLocations = {
-    '50E-889.50': LatLng(10.7500, 106.6500),
+    'BON SG-9999': LatLng(10.3800, 105.4200), // Long Xuyên, An Giang
+    'SC-9964-3': LatLng(10.1800, 106.6000), // Bình Đại, Bến Tre
+    'SG-9963 MŨI': LatLng(9.6500, 106.5200), // Duyên Hải, Trà Vinh
+    'CT-079.18': LatLng(10.0452, 105.7469), // Cần Thơ
+    'CT-079.18(02)': LatLng(10.0350, 105.7700), // Cái Răng, Cần Thơ
+    'CT-103.02': LatLng(10.0200, 105.7800), // Cần Thơ
+    '51D-743.06': LatLng(10.7200, 106.7300), // Quận 7, TP.HCM
+    '51H-665.69': LatLng(10.8200, 106.6800), // Bình Thạnh, TP.HCM
+    'CT-10933': LatLng(9.7800, 105.4700), // Vị Thanh, Hậu Giang
+    'SG-9963': LatLng(10.7500, 106.6500), // Quận 5, TP.HCM
+    '50H-999.88': LatLng(10.9300, 106.8500), // Biên Hòa, Đồng Nai
+    '50H-888.99': LatLng(10.7000, 106.9400), // Nhơn Trạch, Đồng Nai
+    '51D-999.00': LatLng(10.8600, 106.7800), // Thủ Đức, TP.HCM
+  };
+
+  static const Map<String, Map<String, String>> _offlineVehicleDetails = {
+    'BON SG-9999': {'address': 'Châu Thành, An Giang', 'driver': 'Chưa đăng nhập', 'time': '16-04 06:50'},
+    'CT-079.18': {'address': 'Cần Thơ', 'driver': 'Chưa đăng nhập', 'time': 'Mất GPS'},
+    'CT-079.18(02)': {'address': 'Cái Răng, Cần Thơ', 'driver': 'Chưa đăng nhập', 'time': 'Mất GPS'},
+    'CT-103.02': {'address': 'Cần Thơ', 'driver': 'Chưa đăng nhập', 'time': 'Mất GPS'},
+    'SG-9963 MŨI': {'address': 'Long Phú, Sóc Trăng', 'driver': 'Chưa đăng nhập', 'time': '16-05 10:43'},
+    '51D-743.06': {'address': 'Vĩnh Lộc B, Bình Chánh, TP.HCM', 'driver': 'Chưa đăng nhập', 'time': '30-03 16:56'},
+    '51H-665.69': {'address': 'Bình Thạnh, TP.HCM', 'driver': 'Chưa đăng nhập', 'time': 'Mất GPS'},
+    'CT-10933': {'address': 'Phụng Hiệp, Hậu Giang', 'driver': 'Chưa đăng nhập', 'time': '11-10 21:06'},
+    'SC-9964-3': {'address': 'Đồng Nai', 'driver': 'Chưa đăng nhập', 'time': '08-08 09:34'},
+    'SG-9963': {'address': 'TP. Đồng Hới, Quảng Bình', 'driver': 'Chưa đăng nhập', 'time': '11-10 21:06'},
+    '50H-999.88': {'address': 'Biên Hòa, Đồng Nai', 'driver': 'Chưa đăng nhập', 'time': 'Mất GPS'},
+    '50H-888.99': {'address': 'Nhơn Trạch, Đồng Nai', 'driver': 'Chưa đăng nhập', 'time': 'Mất GPS'},
+    '51D-999.00': {'address': 'Thủ Đức, TP.HCM', 'driver': 'Chưa đăng nhập', 'time': 'Mất GPS'},
   };
 
   Timer? _autoRefreshTimer;
@@ -85,16 +113,17 @@ class _MapScreenState extends State<MapScreen> {
         );
       } else {
         final fallback = _offlineFallbackLocations[plate] ?? defaultCenter;
+        final offlineInfo = _offlineVehicleDetails[plate];
         return _VehicleMapItem(
           plate: plate,
           position: fallback,
           speed: 0,
           isAccOn: false,
-          address: 'Vị trí bãi / Trạm vệ tinh',
-          driverName: 'Chưa gắn ca',
+          address: offlineInfo?['address'] ?? 'Vị trí bãi / Trạm vệ tinh',
+          driverName: offlineInfo?['driver'] ?? 'Chưa gắn ca',
           odoKm: 0,
           isOnline: false,
-          statusText: 'Mất tín hiệu / Tắt máy',
+          statusText: offlineInfo?['time'] != null ? 'Mất tín hiệu (${offlineInfo!['time']})' : 'Mất tín hiệu / Tắt máy',
         );
       }
     }).toList();
