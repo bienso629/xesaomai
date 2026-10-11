@@ -36,21 +36,9 @@ class _MapScreenState extends State<MapScreen> {
   bool _showPanel = true;
   String _statusFilter = 'all'; // 'all', 'running', 'stopped', 'off'
 
-  // Toạ độ định vị cố định/lịch sử của các xe offline trong hệ thống
+  // Toạ độ mặc định fallback cho các xe thuộc hệ thống khi mất tín hiệu GPS
   static const Map<String, LatLng> _offlineFallbackLocations = {
-    'BON SG-9999': LatLng(10.3800, 105.4200), // Long Xuyên, An Giang
-    'SC-9964-3': LatLng(10.1800, 106.6000), // Bình Đại, Bến Tre
-    'SG-9963 MŨI': LatLng(9.6500, 106.5200), // Duyên Hải, Trà Vinh
-    'CT-079.18': LatLng(10.0452, 105.7469), // Cần Thơ
-    'CT-079.18(02)': LatLng(10.0350, 105.7700), // Cái Răng, Cần Thơ
-    'CT-103.02': LatLng(10.0200, 105.7800), // Cần Thơ
-    '51D-743.06': LatLng(10.7200, 106.7300), // Quận 7, TP.HCM
-    '51H-665.69': LatLng(10.8200, 106.6800), // Bình Thạnh, TP.HCM
-    'CT-10933': LatLng(9.7800, 105.4700), // Vị Thanh, Hậu Giang
-    'SG-9963': LatLng(10.7500, 106.6500), // Quận 5, TP.HCM
-    '50H-999.88': LatLng(10.9300, 106.8500), // Biên Hòa, Đồng Nai
-    '50H-888.99': LatLng(10.7000, 106.9400), // Nhơn Trạch, Đồng Nai
-    '51D-999.00': LatLng(10.8600, 106.7800), // Thủ Đức, TP.HCM
+    '50E-889.50': LatLng(10.7500, 106.6500),
   };
 
   Timer? _autoRefreshTimer;
@@ -223,7 +211,7 @@ class _MapScreenState extends State<MapScreen> {
                 borderRadius: BorderRadius.circular(4),
               ),
               child: Text(
-                '28 Xe',
+                '${allVehicles.length} Xe',
                 style: TextStyle(
                   color: Colors.blue.shade900,
                   fontWeight: FontWeight.bold,
@@ -314,7 +302,7 @@ class _MapScreenState extends State<MapScreen> {
                       scrollDirection: Axis.horizontal,
                       child: Row(
                         children: [
-                          _buildFilterChip('Tất cả (28)', 'all'),
+                          _buildFilterChip('Tất cả (${allVehicles.length})', 'all'),
                           const SizedBox(width: 4),
                           _buildFilterChip('Đang chạy ($runningCount)', 'running'),
                           const SizedBox(width: 4),
@@ -550,7 +538,7 @@ class _MapScreenState extends State<MapScreen> {
                       const SizedBox(height: 12),
                       FloatingActionButton(
                         heroTag: 'btn_overview_all',
-                        tooltip: 'Xem toàn bộ 28 xe',
+                        tooltip: 'Xem toàn bộ đội xe (${allVehicles.length} xe)',
                         backgroundColor: Colors.white,
                         onPressed: () {
                           _mapController.move(defaultCenter, 9.5);
