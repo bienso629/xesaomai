@@ -100,11 +100,13 @@ class _DispatchSupervisorScreenState extends State<DispatchSupervisorScreen> {
       case 2:
         return _buildVehiclesTab();
       case 3:
-        return _buildUsersAndRbacTab();
+        return _buildUserListSubtab();
       case 4:
         return _buildGasStationsTab();
       case 5:
         return _buildProductsTab();
+      case 6:
+        return _buildRolesSubtab();
       default:
         return _buildOverviewTab(state);
     }

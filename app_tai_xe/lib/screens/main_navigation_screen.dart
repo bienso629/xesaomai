@@ -18,7 +18,6 @@ class _MainNavigationScreenState extends State<MainNavigationScreen> {
   final GlobalKey<ScaffoldState> _scaffoldKey = GlobalKey<ScaffoldState>();
   int _currentRoot = 2; // 0: GPS, 1: Driver, 2: Management
   int _activeManagementTab = 0;
-  int _usersSubTab = 0; // 0: Danh sách Tài khoản, 1: Cấu hình Vai trò & Quyền
 
   @override
   void initState() {
@@ -46,9 +45,10 @@ class _MainNavigationScreenState extends State<MainNavigationScreen> {
     "Tổng Quan & Báo Cáo Tuân Thủ",
     "Quản Lý Đơn Hàng Vận Tải",
     "Quản Lý Đội Xe & Phương Tiện",
-    "Quản Lý Tài Khoản & Phân Quyền",
+    "Quản Lý Tài Khoản",
     "Cây Dầu & Đối Soát Nhiên Liệu",
     "Danh Mục Sản Phẩm & Vật Liệu",
+    "Cấu Hình Vai Trò & Quyền",
   ];
 
   String _getAppTitle() {
@@ -129,13 +129,7 @@ class _MainNavigationScreenState extends State<MainNavigationScreen> {
                     _getAppTitle(),
                     style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16, color: Colors.blueGrey.shade900),
                   ),
-                  actions: [
-                    if (_currentRoot == 2 && _activeManagementTab == 3)
-                      Padding(
-                        padding: const EdgeInsets.only(right: 16),
-                        child: _buildUserSubTabSwitch(),
-                      ),
-                  ],
+                  actions: const [],
                   backgroundColor: Colors.transparent, // Không dùng màu background
                   foregroundColor: Colors.blueGrey.shade900,
                   automaticallyImplyLeading: false,
@@ -172,13 +166,7 @@ class _MainNavigationScreenState extends State<MainNavigationScreen> {
           _getAppTitle(),
           style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16, color: Colors.blueGrey.shade900),
         ),
-        actions: [
-          if (_currentRoot == 2 && _activeManagementTab == 3)
-            Padding(
-              padding: const EdgeInsets.only(right: 12),
-              child: _buildUserSubTabSwitch(isCompact: true),
-            ),
-        ],
+        actions: const [],
         backgroundColor: Colors.transparent, // Không dùng màu background
         foregroundColor: Colors.blueGrey.shade900,
         bottom: PreferredSize(
@@ -330,15 +318,24 @@ class _MainNavigationScreenState extends State<MainNavigationScreen> {
                   subtitle: "Xi măng rời, xi măng bao, phụ gia",
                   onTap: () => _onSelectManagementTab(5),
                 ),
-                if (state.currentUsername == 'admin' || state.userRoles.contains('admin'))
+                if (state.currentUsername == 'admin' || state.userRoles.contains('admin')) ...[
                   _buildDrawerItem(
                     isSelected: _currentRoot == 2 && _activeManagementTab == 3,
-                    icon: Icons.admin_panel_settings_outlined,
-                    activeIcon: Icons.admin_panel_settings,
-                    title: "Tài khoản & Phân quyền",
-                    subtitle: "Quản lý nhân viên, Dynamic RBAC",
+                    icon: Icons.people_outline,
+                    activeIcon: Icons.people,
+                    title: "Quản lý Tài khoản",
+                    subtitle: "Danh sách nhân viên, thông tin tài xế",
                     onTap: () => _onSelectManagementTab(3),
                   ),
+                  _buildDrawerItem(
+                    isSelected: _currentRoot == 2 && _activeManagementTab == 6,
+                    icon: Icons.verified_user_outlined,
+                    activeIcon: Icons.verified_user,
+                    title: "Cấu hình Vai trò & Quyền",
+                    subtitle: "Quản lý nhóm vai trò, Dynamic RBAC",
+                    onTap: () => _onSelectManagementTab(6),
+                  ),
+                ],
               ],
             ),
           ),
@@ -402,7 +399,6 @@ class _MainNavigationScreenState extends State<MainNavigationScreen> {
     } else {
       return DispatchSupervisorScreen(
         activeTab: _activeManagementTab,
-        usersSubTab: _usersSubTab,
         onTabChanged: (index) {
           setState(() {
             _activeManagementTab = index;
@@ -469,94 +465,6 @@ class _MainNavigationScreenState extends State<MainNavigationScreen> {
           ),
           selected: isSelected,
           onTap: onTap,
-        ),
-      ),
-    );
-  }
-
-  Widget _buildUserSubTabSwitch({bool isCompact = false}) {
-    return Container(
-      height: 36,
-      padding: const EdgeInsets.all(3),
-      decoration: BoxDecoration(
-        color: Colors.grey.shade200,
-        borderRadius: BorderRadius.circular(4),
-        border: Border.all(color: Colors.grey.shade300, width: 1),
-      ),
-      child: Row(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          _buildSwitchItem(
-            index: 0,
-            icon: Icons.person,
-            label: "Danh sách Tài khoản",
-            isCompact: isCompact,
-          ),
-          const SizedBox(width: 2),
-          _buildSwitchItem(
-            index: 1,
-            icon: Icons.verified_user,
-            label: "Cấu hình Vai trò & Quyền",
-            isCompact: isCompact,
-          ),
-        ],
-      ),
-    );
-  }
-
-  Widget _buildSwitchItem({
-    required int index,
-    required IconData icon,
-    required String label,
-    required bool isCompact,
-  }) {
-    final isSelected = _usersSubTab == index;
-    return InkWell(
-      onTap: () {
-        if (_usersSubTab != index) {
-          setState(() {
-            _usersSubTab = index;
-          });
-        }
-      },
-      borderRadius: BorderRadius.circular(4),
-      child: AnimatedContainer(
-        duration: const Duration(milliseconds: 150),
-        alignment: Alignment.center,
-        padding: EdgeInsets.symmetric(horizontal: isCompact ? 12 : 16, vertical: 5),
-        decoration: BoxDecoration(
-          color: isSelected ? Colors.white : Colors.transparent,
-          borderRadius: BorderRadius.circular(4),
-          boxShadow: isSelected
-              ? [
-                  BoxShadow(
-                    color: Colors.black.withOpacity(0.08),
-                    blurRadius: 3,
-                    offset: const Offset(0, 1),
-                  ),
-                ]
-              : null,
-        ),
-        child: Row(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            Icon(
-              icon,
-              size: 15,
-              color: isSelected ? Colors.blue.shade800 : Colors.blueGrey.shade600,
-            ),
-            if (!isCompact) ...[
-              const SizedBox(width: 6),
-              Text(
-                label,
-                style: TextStyle(
-                  fontSize: 12,
-                  fontWeight: isSelected ? FontWeight.bold : FontWeight.w500,
-                  color: isSelected ? Colors.blue.shade900 : Colors.blueGrey.shade700,
-                ),
-              ),
-            ],
-          ],
         ),
       ),
     );
