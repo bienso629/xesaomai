@@ -1726,8 +1726,6 @@ class _DispatchSupervisorScreenState extends State<DispatchSupervisorScreen> {
                                   separatorBuilder: (_, __) => Divider(height: 1, color: Colors.grey.shade200),
                                   itemBuilder: (context, index) {
                                     final shift = snapshot.data![index];
-                                    final fullName = shift['full_name'] ?? shift['username'] ?? 'Điều phối';
-                                    final username = shift['username'] ?? '';
                                     final shiftName = shift['shift_name'] ?? 'Ca ngày';
                                     final status = shift['status'] ?? 'active';
                                     final isActive = status == 'active';
@@ -1764,41 +1762,17 @@ class _DispatchSupervisorScreenState extends State<DispatchSupervisorScreen> {
                                       child: Row(
                                         crossAxisAlignment: CrossAxisAlignment.center,
                                         children: [
-                                          _buildUserAvatarItem(shift, size: 40),
-                                          const SizedBox(width: 12),
-                                          // Cột 1: Thông tin nhân sự và ca
-                                          Expanded(
-                                            flex: 3,
-                                            child: Column(
-                                              crossAxisAlignment: CrossAxisAlignment.start,
-                                              children: [
-                                                Text(
-                                                  fullName,
-                                                  style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 13.5),
-                                                  maxLines: 1,
-                                                  overflow: TextOverflow.ellipsis,
-                                                ),
-                                                const SizedBox(height: 2),
-                                                Text(
-                                                  "@$username",
-                                                  style: TextStyle(fontSize: 11.5, color: Colors.blueGrey.shade600),
-                                                  maxLines: 1,
-                                                  overflow: TextOverflow.ellipsis,
-                                                ),
-                                                const SizedBox(height: 4),
-                                                Container(
-                                                  padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 1.5),
-                                                  decoration: BoxDecoration(
-                                                    color: Colors.blue.shade50,
-                                                    borderRadius: BorderRadius.circular(3),
-                                                    border: Border.all(color: Colors.blue.shade200),
-                                                  ),
-                                                  child: Text(
-                                                    shiftName,
-                                                    style: TextStyle(fontSize: 10.5, fontWeight: FontWeight.bold, color: Colors.blue.shade900),
-                                                  ),
-                                                ),
-                                              ],
+                                          // Thông tin ca trực (đã bỏ avatar, tên đầy đủ và username theo yêu cầu)
+                                          Container(
+                                            padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                                            decoration: BoxDecoration(
+                                              color: Colors.blue.shade50,
+                                              borderRadius: BorderRadius.circular(4),
+                                              border: Border.all(color: Colors.blue.shade200),
+                                            ),
+                                            child: Text(
+                                              shiftName,
+                                              style: TextStyle(fontSize: 12, fontWeight: FontWeight.bold, color: Colors.blue.shade900),
                                             ),
                                           ),
                                           const SizedBox(width: 12),
