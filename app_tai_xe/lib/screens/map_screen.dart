@@ -18,7 +18,8 @@ class _MapScreenState extends State<MapScreen> {
   static const LatLng defaultCenter = LatLng(10.8500, 107.0000);
 
   final MapController _mapController = MapController();
-  final String _vietMapApiKey = '7GDc6Vk0KdTGBx6yRKYZGM6eQKHThzA4';
+  // Key bản đồ số Map Tiles Vietmap (được hệ thống quanlyxe.vn sử dụng tải tile)
+  final String _vietMapApiKey = 'edfac336d2c0462850d93fd5859878b1ad84b769ddfed745';
 
   // Bộ lọc tìm kiếm và hiển thị
   String _searchQuery = '';
