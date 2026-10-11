@@ -1619,6 +1619,10 @@ class _DispatchSupervisorScreenState extends State<DispatchSupervisorScreen> {
     final int? filterUserId = targetUser?['id'] as int?;
     final String? filterFullName = targetUser?['full_name'] as String? ?? targetUser?['username'] as String?;
 
+    DateTime? filterDate;
+    int shiftCurrentPage = 1;
+    int shiftPageSize = 10;
+
     showDialog(
       context: context,
       barrierDismissible: true,
@@ -1678,7 +1682,95 @@ class _DispatchSupervisorScreenState extends State<DispatchSupervisorScreen> {
                             ),
                           ],
                         ),
-                        const Divider(height: 24),
+                        // THANH BỘ LỌC THEO NGÀY THÁNG NĂM
+                        Container(
+                          margin: const EdgeInsets.only(top: 8, bottom: 12),
+                          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                          decoration: BoxDecoration(
+                            color: Colors.grey.shade50,
+                            borderRadius: BorderRadius.circular(4),
+                            border: Border.all(color: Colors.grey.shade300),
+                          ),
+                          child: Row(
+                            children: [
+                              Icon(Icons.filter_alt, size: 18, color: Colors.blue.shade800),
+                              const SizedBox(width: 8),
+                              const Text(
+                                "Lọc theo ngày:",
+                                style: TextStyle(fontWeight: FontWeight.bold, fontSize: 13),
+                              ),
+                              const SizedBox(width: 10),
+                              InkWell(
+                                onTap: () async {
+                                  final picked = await showDatePicker(
+                                    context: dialogCtx,
+                                    initialDate: filterDate ?? DateTime.now(),
+                                    firstDate: DateTime(2020),
+                                    lastDate: DateTime(2035),
+                                    helpText: "CHỌN NGÀY CA TRỰC",
+                                    cancelText: "HỦY",
+                                    confirmText: "CHỌN",
+                                  );
+                                  if (picked != null) {
+                                    setDialogState(() {
+                                      filterDate = picked;
+                                      shiftCurrentPage = 1;
+                                    });
+                                  }
+                                },
+                                borderRadius: BorderRadius.circular(4),
+                                child: Container(
+                                  padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+                                  decoration: BoxDecoration(
+                                    color: Colors.white,
+                                    borderRadius: BorderRadius.circular(4),
+                                    border: Border.all(color: filterDate != null ? Colors.blue.shade600 : Colors.grey.shade400),
+                                  ),
+                                  child: Row(
+                                    mainAxisSize: MainAxisSize.min,
+                                    children: [
+                                      Icon(Icons.calendar_today, size: 14, color: filterDate != null ? Colors.blue.shade800 : Colors.grey.shade700),
+                                      const SizedBox(width: 6),
+                                      Text(
+                                        filterDate != null
+                                            ? "${filterDate!.day.toString().padLeft(2, '0')}/${filterDate!.month.toString().padLeft(2, '0')}/${filterDate!.year}"
+                                            : "Tất cả các ngày",
+                                        style: TextStyle(
+                                          fontSize: 12.5,
+                                          fontWeight: filterDate != null ? FontWeight.bold : FontWeight.normal,
+                                          color: filterDate != null ? Colors.blue.shade900 : Colors.black87,
+                                        ),
+                                      ),
+                                    ],
+                                  ),
+                                ),
+                              ),
+                              if (filterDate != null) ...[
+                                const SizedBox(width: 8),
+                                TextButton.icon(
+                                  style: TextButton.styleFrom(
+                                    padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                                    minimumSize: Size.zero,
+                                    tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                                  ),
+                                  icon: const Icon(Icons.clear, size: 15, color: Colors.red),
+                                  label: const Text("Xóa lọc ngày", style: TextStyle(fontSize: 12, color: Colors.red)),
+                                  onPressed: () {
+                                    setDialogState(() {
+                                      filterDate = null;
+                                      shiftCurrentPage = 1;
+                                    });
+                                  },
+                                ),
+                              ],
+                              const Spacer(),
+                              Text(
+                                "Định dạng: Ngày/Tháng/Năm",
+                                style: TextStyle(fontSize: 11, color: Colors.grey.shade600, fontStyle: FontStyle.italic),
+                              ),
+                            ],
+                          ),
+                        ),
                         if (snapshot.connectionState == ConnectionState.waiting)
                           const Expanded(
                             child: Center(
@@ -1714,179 +1806,346 @@ class _DispatchSupervisorScreenState extends State<DispatchSupervisorScreen> {
                           )
                         else
                           Expanded(
-                            child: Container(
-                              decoration: BoxDecoration(
-                                border: Border.all(color: Colors.grey.shade300),
-                                borderRadius: BorderRadius.circular(4),
-                              ),
-                              child: ClipRRect(
-                                borderRadius: BorderRadius.circular(4),
-                                child: ListView.separated(
-                                  itemCount: snapshot.data!.length,
-                                  separatorBuilder: (_, __) => Divider(height: 1, color: Colors.grey.shade200),
-                                  itemBuilder: (context, index) {
-                                    final shift = snapshot.data![index];
-                                    final shiftName = shift['shift_name'] ?? 'Ca ngày';
-                                    final status = shift['status'] ?? 'active';
-                                    final isActive = status == 'active';
-                                    final note = shift['note']?.toString() ?? '';
-                                    final handoverNote = shift['handover_note']?.toString() ?? '';
-                                    final durationHours = shift['duration_hours']?.toString() ?? '';
+                            child: Builder(
+                              builder: (context) {
+                                final allShifts = snapshot.data!;
+                                // Lọc theo ngày nếu có chọn filterDate
+                                final filteredShifts = allShifts.where((shift) {
+                                  if (filterDate == null) return true;
+                                  final startedAtStr = shift['started_at']?.toString() ?? '';
+                                  if (startedAtStr.isEmpty) return false;
+                                  try {
+                                    final dt = DateTime.parse(startedAtStr).toLocal();
+                                    return dt.year == filterDate!.year &&
+                                        dt.month == filterDate!.month &&
+                                        dt.day == filterDate!.day;
+                                  } catch (_) {
+                                    return false;
+                                  }
+                                }).toList();
 
-                                    final startedAtStr = shift['started_at']?.toString() ?? '';
-                                    final endedAtStr = shift['ended_at']?.toString() ?? '';
-
-                                    String startFmt = '-';
-                                    if (startedAtStr.isNotEmpty) {
-                                      try {
-                                        final dt = DateTime.parse(startedAtStr).toLocal();
-                                        startFmt = "${dt.hour.toString().padLeft(2, '0')}:${dt.minute.toString().padLeft(2, '0')} (${dt.day.toString().padLeft(2, '0')}/${dt.month.toString().padLeft(2, '0')})";
-                                      } catch (_) {
-                                        startFmt = startedAtStr;
-                                      }
-                                    }
-
-                                    String endFmt = 'Đang trực';
-                                    if (endedAtStr.isNotEmpty) {
-                                      try {
-                                        final dt = DateTime.parse(endedAtStr).toLocal();
-                                        endFmt = "${dt.hour.toString().padLeft(2, '0')}:${dt.minute.toString().padLeft(2, '0')} (${dt.day.toString().padLeft(2, '0')}/${dt.month.toString().padLeft(2, '0')})";
-                                      } catch (_) {
-                                        endFmt = endedAtStr;
-                                      }
-                                    }
-
-                                    return Container(
-                                      color: isActive ? Colors.blue.shade50.withOpacity(0.3) : Colors.white,
-                                      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
-                                      child: Row(
-                                        crossAxisAlignment: CrossAxisAlignment.center,
+                                if (filteredShifts.isEmpty) {
+                                  return Container(
+                                    width: double.infinity,
+                                    decoration: BoxDecoration(
+                                      border: Border.all(color: Colors.grey.shade300),
+                                      borderRadius: BorderRadius.circular(4),
+                                    ),
+                                    child: Center(
+                                      child: Column(
+                                        mainAxisAlignment: MainAxisAlignment.center,
                                         children: [
-                                          // Thông tin ca trực (đã bỏ avatar, tên đầy đủ và username theo yêu cầu)
-                                          Container(
-                                            padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
-                                            decoration: BoxDecoration(
-                                              color: Colors.blue.shade50,
-                                              borderRadius: BorderRadius.circular(4),
-                                              border: Border.all(color: Colors.blue.shade200),
-                                            ),
-                                            child: Text(
-                                              shiftName,
-                                              style: TextStyle(fontSize: 12, fontWeight: FontWeight.bold, color: Colors.blue.shade900),
-                                            ),
+                                          Icon(Icons.search_off, size: 48, color: Colors.blueGrey.shade300),
+                                          const SizedBox(height: 12),
+                                          Text(
+                                            "Không tìm thấy ca trực nào trong ngày ${filterDate!.day.toString().padLeft(2, '0')}/${filterDate!.month.toString().padLeft(2, '0')}/${filterDate!.year}",
+                                            style: TextStyle(fontSize: 13.5, color: Colors.blueGrey.shade700),
                                           ),
-                                          const SizedBox(width: 12),
-                                          // Cột 2: Thời gian bắt đầu
-                                          SizedBox(
-                                            width: 175,
-                                            child: Row(
-                                              children: [
-                                                Icon(Icons.login, size: 14, color: Colors.green.shade700),
-                                                const SizedBox(width: 6),
-                                                Expanded(
-                                                  child: Text(
-                                                    "Bắt đầu: $startFmt",
-                                                    style: const TextStyle(fontSize: 12),
-                                                    maxLines: 1,
-                                                    overflow: TextOverflow.ellipsis,
-                                                  ),
-                                                ),
-                                              ],
+                                          const SizedBox(height: 8),
+                                          OutlinedButton(
+                                            style: OutlinedButton.styleFrom(
+                                              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+                                              minimumSize: Size.zero,
+                                              tapTargetSize: MaterialTapTargetSize.shrinkWrap,
                                             ),
-                                          ),
-                                          const SizedBox(width: 12),
-                                          // Cột 3: Thời gian kết thúc
-                                          SizedBox(
-                                            width: 175,
-                                            child: Row(
-                                              children: [
-                                                Icon(Icons.logout, size: 14, color: isActive ? Colors.orange.shade700 : Colors.blueGrey.shade700),
-                                                const SizedBox(width: 6),
-                                                Expanded(
-                                                  child: Text(
-                                                    "Kết thúc: $endFmt",
-                                                    style: TextStyle(
-                                                      fontSize: 12,
-                                                      color: isActive ? Colors.green.shade800 : Colors.black87,
-                                                      fontWeight: isActive ? FontWeight.bold : FontWeight.normal,
-                                                    ),
-                                                    maxLines: 1,
-                                                    overflow: TextOverflow.ellipsis,
-                                                  ),
-                                                ),
-                                              ],
-                                            ),
-                                          ),
-                                          const SizedBox(width: 12),
-                                          // Cột 4: Thời lượng ca
-                                          SizedBox(
-                                            width: 130,
-                                            child: Text(
-                                              durationHours.isNotEmpty ? "Thời lượng: $durationHours giờ" : "-",
-                                              style: TextStyle(
-                                                fontSize: 11.5,
-                                                color: Colors.blueGrey.shade700,
-                                                fontStyle: FontStyle.italic,
-                                              ),
-                                              maxLines: 1,
-                                              overflow: TextOverflow.ellipsis,
-                                            ),
-                                          ),
-                                          const SizedBox(width: 12),
-                                          // Cột 3: Ghi chú nhận ca & bàn giao
-                                          Expanded(
-                                            flex: 4,
-                                            child: Column(
-                                              crossAxisAlignment: CrossAxisAlignment.start,
-                                              children: [
-                                                if (note.isNotEmpty)
-                                                  Text(
-                                                    "Ghi chú nhận ca: $note",
-                                                    style: const TextStyle(fontSize: 11.5, color: Colors.black87),
-                                                    maxLines: 2,
-                                                    overflow: TextOverflow.ellipsis,
-                                                  ),
-                                                if (handoverNote.isNotEmpty) ...[
-                                                  if (note.isNotEmpty) const SizedBox(height: 4),
-                                                  Text(
-                                                    "Bàn giao ca sau: $handoverNote",
-                                                    style: TextStyle(fontSize: 11.5, color: Colors.teal.shade900, fontWeight: FontWeight.w600),
-                                                    maxLines: 2,
-                                                    overflow: TextOverflow.ellipsis,
-                                                  ),
-                                                ],
-                                                if (note.isEmpty && handoverNote.isEmpty)
-                                                  Text(
-                                                    "Không có ghi chú",
-                                                    style: TextStyle(fontSize: 11, color: Colors.grey.shade500, fontStyle: FontStyle.italic),
-                                                  ),
-                                              ],
-                                            ),
-                                          ),
-                                          const SizedBox(width: 12),
-                                          // Cột 4: Tag trạng thái ca
-                                          Container(
-                                            padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
-                                            decoration: BoxDecoration(
-                                              color: isActive ? Colors.green.shade50 : Colors.grey.shade100,
-                                              borderRadius: BorderRadius.circular(4),
-                                              border: Border.all(color: isActive ? Colors.green.shade400 : Colors.grey.shade400),
-                                            ),
-                                            child: Text(
-                                              isActive ? "Đang trực" : "Đã hoàn thành",
-                                              style: TextStyle(
-                                                fontSize: 11,
-                                                fontWeight: FontWeight.bold,
-                                                color: isActive ? Colors.green.shade800 : Colors.grey.shade700,
-                                              ),
-                                            ),
+                                            onPressed: () {
+                                              setDialogState(() {
+                                                filterDate = null;
+                                                shiftCurrentPage = 1;
+                                              });
+                                            },
+                                            child: const Text("Hiển thị tất cả", style: TextStyle(fontSize: 12)),
                                           ),
                                         ],
                                       ),
-                                    );
-                                  },
-                                ),
-                              ),
+                                    ),
+                                  );
+                                }
+
+                                final totalItems = filteredShifts.length;
+                                final totalPages = (totalItems / shiftPageSize).ceil();
+                                final validPage = shiftCurrentPage > totalPages ? totalPages : (shiftCurrentPage < 1 ? 1 : shiftCurrentPage);
+                                final startIndex = (validPage - 1) * shiftPageSize;
+                                final endIndex = (startIndex + shiftPageSize > totalItems) ? totalItems : startIndex + shiftPageSize;
+                                final pagedShifts = filteredShifts.sublist(startIndex, endIndex);
+
+                                return Column(
+                                  children: [
+                                    Expanded(
+                                      child: Container(
+                                        decoration: BoxDecoration(
+                                          border: Border.all(color: Colors.grey.shade300),
+                                          borderRadius: const BorderRadius.vertical(top: Radius.circular(4)),
+                                        ),
+                                        child: ClipRRect(
+                                          borderRadius: const BorderRadius.vertical(top: Radius.circular(4)),
+                                          child: ListView.separated(
+                                            itemCount: pagedShifts.length,
+                                            separatorBuilder: (_, __) => Divider(height: 1, color: Colors.grey.shade200),
+                                            itemBuilder: (context, index) {
+                                              final shift = pagedShifts[index];
+                                              final shiftName = shift['shift_name'] ?? 'Ca ngày';
+                                              final status = shift['status'] ?? 'active';
+                                              final isActive = status == 'active';
+                                              final note = shift['note']?.toString() ?? '';
+                                              final handoverNote = shift['handover_note']?.toString() ?? '';
+                                              final durationHours = shift['duration_hours']?.toString() ?? '';
+
+                                              final startedAtStr = shift['started_at']?.toString() ?? '';
+                                              final endedAtStr = shift['ended_at']?.toString() ?? '';
+
+                                              String startFmt = '-';
+                                              if (startedAtStr.isNotEmpty) {
+                                                try {
+                                                  final dt = DateTime.parse(startedAtStr).toLocal();
+                                                  startFmt = "${dt.hour.toString().padLeft(2, '0')}:${dt.minute.toString().padLeft(2, '0')} (${dt.day.toString().padLeft(2, '0')}/${dt.month.toString().padLeft(2, '0')}/${dt.year})";
+                                                } catch (_) {
+                                                  startFmt = startedAtStr;
+                                                }
+                                              }
+
+                                              String endFmt = 'Đang trực';
+                                              if (endedAtStr.isNotEmpty) {
+                                                try {
+                                                  final dt = DateTime.parse(endedAtStr).toLocal();
+                                                  endFmt = "${dt.hour.toString().padLeft(2, '0')}:${dt.minute.toString().padLeft(2, '0')} (${dt.day.toString().padLeft(2, '0')}/${dt.month.toString().padLeft(2, '0')}/${dt.year})";
+                                                } catch (_) {
+                                                  endFmt = endedAtStr;
+                                                }
+                                              }
+
+                                              return Container(
+                                                color: isActive ? Colors.blue.shade50.withOpacity(0.3) : Colors.white,
+                                                padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+                                                child: Row(
+                                                  crossAxisAlignment: CrossAxisAlignment.center,
+                                                  children: [
+                                                    // Thông tin ca trực (đã bỏ avatar, tên đầy đủ và username theo yêu cầu)
+                                                    Container(
+                                                      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                                                      decoration: BoxDecoration(
+                                                        color: Colors.blue.shade50,
+                                                        borderRadius: BorderRadius.circular(4),
+                                                        border: Border.all(color: Colors.blue.shade200),
+                                                      ),
+                                                      child: Text(
+                                                        shiftName,
+                                                        style: TextStyle(fontSize: 12, fontWeight: FontWeight.bold, color: Colors.blue.shade900),
+                                                      ),
+                                                    ),
+                                                    const SizedBox(width: 12),
+                                                    // Cột 2: Thời gian bắt đầu
+                                                    SizedBox(
+                                                      width: 175,
+                                                      child: Row(
+                                                        children: [
+                                                          Icon(Icons.login, size: 14, color: Colors.green.shade700),
+                                                          const SizedBox(width: 6),
+                                                          Expanded(
+                                                            child: Text(
+                                                              "Bắt đầu: $startFmt",
+                                                              style: const TextStyle(fontSize: 12),
+                                                              maxLines: 1,
+                                                              overflow: TextOverflow.ellipsis,
+                                                            ),
+                                                          ),
+                                                        ],
+                                                      ),
+                                                    ),
+                                                    const SizedBox(width: 12),
+                                                    // Cột 3: Thời gian kết thúc
+                                                    SizedBox(
+                                                      width: 175,
+                                                      child: Row(
+                                                        children: [
+                                                          Icon(Icons.logout, size: 14, color: isActive ? Colors.orange.shade700 : Colors.blueGrey.shade700),
+                                                          const SizedBox(width: 6),
+                                                          Expanded(
+                                                            child: Text(
+                                                              "Kết thúc: $endFmt",
+                                                              style: TextStyle(
+                                                                fontSize: 12,
+                                                                color: isActive ? Colors.green.shade800 : Colors.black87,
+                                                                fontWeight: isActive ? FontWeight.bold : FontWeight.normal,
+                                                              ),
+                                                              maxLines: 1,
+                                                              overflow: TextOverflow.ellipsis,
+                                                            ),
+                                                          ),
+                                                        ],
+                                                      ),
+                                                    ),
+                                                    const SizedBox(width: 12),
+                                                    // Cột 4: Thời lượng ca
+                                                    SizedBox(
+                                                      width: 130,
+                                                      child: Text(
+                                                        durationHours.isNotEmpty ? "Thời lượng: $durationHours giờ" : "-",
+                                                        style: TextStyle(
+                                                          fontSize: 11.5,
+                                                          color: Colors.blueGrey.shade700,
+                                                          fontStyle: FontStyle.italic,
+                                                        ),
+                                                        maxLines: 1,
+                                                        overflow: TextOverflow.ellipsis,
+                                                      ),
+                                                    ),
+                                                    const SizedBox(width: 12),
+                                                    // Cột 5: Ghi chú nhận ca & bàn giao
+                                                    Expanded(
+                                                      flex: 4,
+                                                      child: Column(
+                                                        crossAxisAlignment: CrossAxisAlignment.start,
+                                                        children: [
+                                                          if (note.isNotEmpty)
+                                                            Text(
+                                                              "Ghi chú nhận ca: $note",
+                                                              style: const TextStyle(fontSize: 11.5, color: Colors.black87),
+                                                              maxLines: 2,
+                                                              overflow: TextOverflow.ellipsis,
+                                                            ),
+                                                          if (handoverNote.isNotEmpty) ...[
+                                                            if (note.isNotEmpty) const SizedBox(height: 4),
+                                                            Text(
+                                                              "Bàn giao ca sau: $handoverNote",
+                                                              style: TextStyle(fontSize: 11.5, color: Colors.teal.shade900, fontWeight: FontWeight.w600),
+                                                              maxLines: 2,
+                                                              overflow: TextOverflow.ellipsis,
+                                                            ),
+                                                          ],
+                                                          if (note.isEmpty && handoverNote.isEmpty)
+                                                            Text(
+                                                              "Không có ghi chú",
+                                                              style: TextStyle(fontSize: 11, color: Colors.grey.shade500, fontStyle: FontStyle.italic),
+                                                            ),
+                                                        ],
+                                                      ),
+                                                    ),
+                                                    const SizedBox(width: 12),
+                                                    // Cột 6: Tag trạng thái ca
+                                                    Container(
+                                                      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
+                                                      decoration: BoxDecoration(
+                                                        color: isActive ? Colors.green.shade50 : Colors.grey.shade100,
+                                                        borderRadius: BorderRadius.circular(4),
+                                                        border: Border.all(color: isActive ? Colors.green.shade400 : Colors.grey.shade400),
+                                                      ),
+                                                      child: Text(
+                                                        isActive ? "Đang trực" : "Đã hoàn thành",
+                                                        style: TextStyle(
+                                                          fontSize: 11,
+                                                          fontWeight: FontWeight.bold,
+                                                          color: isActive ? Colors.green.shade800 : Colors.grey.shade700,
+                                                        ),
+                                                      ),
+                                                    ),
+                                                  ],
+                                                ),
+                                              );
+                                            },
+                                          ),
+                                        ),
+                                      ),
+                                    ),
+                                    // THANH PHÂN TRANG CHO CA TRỰC
+                                    Container(
+                                      height: 40,
+                                      padding: const EdgeInsets.symmetric(horizontal: 16),
+                                      decoration: BoxDecoration(
+                                        color: Colors.white,
+                                        border: Border(
+                                          left: BorderSide(color: Colors.grey.shade300, width: 1),
+                                          right: BorderSide(color: Colors.grey.shade300, width: 1),
+                                          bottom: BorderSide(color: Colors.grey.shade300, width: 1),
+                                        ),
+                                        borderRadius: const BorderRadius.vertical(bottom: Radius.circular(4)),
+                                      ),
+                                      child: Row(
+                                        mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                                        children: [
+                                          Text(
+                                            "Hiển thị ${startIndex + 1} - ${endIndex} trên tổng số ${totalItems} ca trực",
+                                            style: TextStyle(fontSize: 12, color: Colors.grey.shade700, fontWeight: FontWeight.w500),
+                                          ),
+                                          Row(
+                                            children: [
+                                              const Text("Số dòng/trang: ", style: TextStyle(fontSize: 12, color: Colors.black87)),
+                                              const SizedBox(width: 4),
+                                              DropdownButton<int>(
+                                                value: shiftPageSize,
+                                                underline: const SizedBox(),
+                                                isDense: true,
+                                                style: const TextStyle(fontSize: 12, color: Colors.blueGrey, fontWeight: FontWeight.bold),
+                                                items: const [
+                                                  DropdownMenuItem(value: 5, child: Text("5")),
+                                                  DropdownMenuItem(value: 10, child: Text("10")),
+                                                  DropdownMenuItem(value: 20, child: Text("20")),
+                                                  DropdownMenuItem(value: 50, child: Text("50")),
+                                                ],
+                                                onChanged: (val) {
+                                                  if (val != null) {
+                                                    setDialogState(() {
+                                                      shiftPageSize = val;
+                                                      shiftCurrentPage = 1;
+                                                    });
+                                                  }
+                                                },
+                                              ),
+                                              const SizedBox(width: 12),
+                                              IconButton(
+                                                icon: const Icon(Icons.first_page, size: 18),
+                                                tooltip: "Trang đầu",
+                                                padding: EdgeInsets.zero,
+                                                constraints: const BoxConstraints(minWidth: 28, minHeight: 28),
+                                                splashRadius: 16,
+                                                onPressed: validPage > 1 ? () => setDialogState(() => shiftCurrentPage = 1) : null,
+                                              ),
+                                              IconButton(
+                                                icon: const Icon(Icons.chevron_left, size: 18),
+                                                tooltip: "Trang trước",
+                                                padding: EdgeInsets.zero,
+                                                constraints: const BoxConstraints(minWidth: 28, minHeight: 28),
+                                                splashRadius: 16,
+                                                onPressed: validPage > 1 ? () => setDialogState(() => shiftCurrentPage = validPage - 1) : null,
+                                              ),
+                                              const SizedBox(width: 4),
+                                              Container(
+                                                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+                                                decoration: BoxDecoration(
+                                                  color: Colors.blue.shade50,
+                                                  borderRadius: BorderRadius.circular(4),
+                                                  border: Border.all(color: Colors.blue.shade200),
+                                                ),
+                                                child: Text(
+                                                  "Trang $validPage / $totalPages",
+                                                  style: TextStyle(fontSize: 11, fontWeight: FontWeight.bold, color: Colors.blue.shade800),
+                                                ),
+                                              ),
+                                              const SizedBox(width: 4),
+                                              IconButton(
+                                                icon: const Icon(Icons.chevron_right, size: 18),
+                                                tooltip: "Trang sau",
+                                                padding: EdgeInsets.zero,
+                                                constraints: const BoxConstraints(minWidth: 28, minHeight: 28),
+                                                splashRadius: 16,
+                                                onPressed: validPage < totalPages ? () => setDialogState(() => shiftCurrentPage = validPage + 1) : null,
+                                              ),
+                                              IconButton(
+                                                icon: const Icon(Icons.last_page, size: 18),
+                                                tooltip: "Trang cuối",
+                                                padding: EdgeInsets.zero,
+                                                constraints: const BoxConstraints(minWidth: 28, minHeight: 28),
+                                                splashRadius: 16,
+                                                onPressed: validPage < totalPages ? () => setDialogState(() => shiftCurrentPage = totalPages) : null,
+                                              ),
+                                            ],
+                                          ),
+                                        ],
+                                      ),
+                                    ),
+                                  ],
+                                );
+                              },
                             ),
                           ),
                         const SizedBox(height: 16),
