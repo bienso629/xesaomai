@@ -7,7 +7,8 @@ import '../services/app_state.dart';
 import '../services/quanlyxe_service.dart';
 
 class MapScreen extends StatefulWidget {
-  const MapScreen({super.key});
+  final VoidCallback? onOpenDrawer;
+  const MapScreen({super.key, this.onOpenDrawer});
 
   @override
   State<MapScreen> createState() => _MapScreenState();
@@ -183,6 +184,13 @@ class _MapScreenState extends State<MapScreen> {
 
     return Scaffold(
       appBar: AppBar(
+        leading: widget.onOpenDrawer != null
+            ? IconButton(
+                icon: const Icon(Icons.menu),
+                tooltip: "Mở menu chức năng",
+                onPressed: widget.onOpenDrawer,
+              )
+            : null,
         title: Row(
           children: [
             const Text(

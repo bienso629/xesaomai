@@ -122,26 +122,28 @@ class _MainNavigationScreenState extends State<MainNavigationScreen> {
             ),
             Expanded(
               child: Scaffold(
-                appBar: AppBar(
-                  elevation: 0,
-                  scrolledUnderElevation: 0,
-                  title: Text(
-                    _getAppTitle(),
-                    style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16, color: Colors.blueGrey.shade900),
-                  ),
-                  actions: const [],
-                  backgroundColor: Colors.transparent, // Không dùng màu background
-                  foregroundColor: Colors.blueGrey.shade900,
-                  automaticallyImplyLeading: false,
-                  bottom: PreferredSize(
-                    preferredSize: const Size.fromHeight(1),
-                    child: Container(
-                      color: Colors.grey.shade300,
-                      height: 1,
-                    ),
-                  ),
-                ),
-                body: _buildCurrentBody(),
+                appBar: _currentRoot == 0
+                    ? null
+                    : AppBar(
+                        elevation: 0,
+                        scrolledUnderElevation: 0,
+                        title: Text(
+                          _getAppTitle(),
+                          style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16, color: Colors.blueGrey.shade900),
+                        ),
+                        actions: const [],
+                        backgroundColor: Colors.transparent, // Không dùng màu background
+                        foregroundColor: Colors.blueGrey.shade900,
+                        automaticallyImplyLeading: false,
+                        bottom: PreferredSize(
+                          preferredSize: const Size.fromHeight(1),
+                          child: Container(
+                            color: Colors.grey.shade300,
+                            height: 1,
+                          ),
+                        ),
+                      ),
+                body: _buildCurrentBody(isMobile: false),
               ),
             ),
           ],
@@ -152,38 +154,40 @@ class _MainNavigationScreenState extends State<MainNavigationScreen> {
     // Bố cục Mobile: Dùng Drawer phủ đè
     return Scaffold(
       key: _scaffoldKey,
-      appBar: AppBar(
-        elevation: 0,
-        scrolledUnderElevation: 0,
-        leading: IconButton(
-          icon: Icon(Icons.menu, color: Colors.blueGrey.shade900),
-          tooltip: "Mở menu chức năng",
-          onPressed: () {
-            _scaffoldKey.currentState?.openDrawer();
-          },
-        ),
-        title: Text(
-          _getAppTitle(),
-          style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16, color: Colors.blueGrey.shade900),
-        ),
-        actions: const [],
-        backgroundColor: Colors.transparent, // Không dùng màu background
-        foregroundColor: Colors.blueGrey.shade900,
-        bottom: PreferredSize(
-          preferredSize: const Size.fromHeight(1),
-          child: Container(
-            color: Colors.grey.shade300,
-            height: 1,
-          ),
-        ),
-      ),
+      appBar: _currentRoot == 0
+          ? null
+          : AppBar(
+              elevation: 0,
+              scrolledUnderElevation: 0,
+              leading: IconButton(
+                icon: Icon(Icons.menu, color: Colors.blueGrey.shade900),
+                tooltip: "Mở menu chức năng",
+                onPressed: () {
+                  _scaffoldKey.currentState?.openDrawer();
+                },
+              ),
+              title: Text(
+                _getAppTitle(),
+                style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16, color: Colors.blueGrey.shade900),
+              ),
+              actions: const [],
+              backgroundColor: Colors.transparent, // Không dùng màu background
+              foregroundColor: Colors.blueGrey.shade900,
+              bottom: PreferredSize(
+                preferredSize: const Size.fromHeight(1),
+                child: Container(
+                  color: Colors.grey.shade300,
+                  height: 1,
+                ),
+              ),
+            ),
       drawer: Drawer(
         width: width * 0.85,
         backgroundColor: Colors.white,
         elevation: 0,
         child: sidebarContent,
       ),
-      body: _buildCurrentBody(),
+      body: _buildCurrentBody(isMobile: true),
     );
   }
 
@@ -393,9 +397,11 @@ class _MainNavigationScreenState extends State<MainNavigationScreen> {
     );
   }
 
-  Widget _buildCurrentBody() {
+  Widget _buildCurrentBody({bool isMobile = false}) {
     if (_currentRoot == 0) {
-      return const MapScreen();
+      return MapScreen(
+        onOpenDrawer: isMobile ? () => _scaffoldKey.currentState?.openDrawer() : null,
+      );
     } else if (_currentRoot == 1) {
       return const HomeDriverScreen();
     } else {
