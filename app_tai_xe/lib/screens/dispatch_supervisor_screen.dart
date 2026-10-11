@@ -1847,12 +1847,18 @@ class _DispatchSupervisorScreenState extends State<DispatchSupervisorScreen> {
                                             "Không tìm thấy ca trực nào trong ngày ${filterDate!.day.toString().padLeft(2, '0')}/${filterDate!.month.toString().padLeft(2, '0')}/${filterDate!.year}",
                                             style: TextStyle(fontSize: 13.5, color: Colors.blueGrey.shade700),
                                           ),
-                                          const SizedBox(height: 8),
-                                          OutlinedButton(
+                                          const SizedBox(height: 12),
+                                          OutlinedButton.icon(
                                             style: OutlinedButton.styleFrom(
-                                              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
-                                              minimumSize: Size.zero,
-                                              tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                                              padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 10),
+                                              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(4)),
+                                              side: BorderSide(color: Colors.blue.shade600, width: 1.2),
+                                              foregroundColor: Colors.blue.shade800,
+                                            ),
+                                            icon: const Icon(Icons.refresh, size: 16),
+                                            label: const Text(
+                                              "Hiển thị tất cả",
+                                              style: TextStyle(fontSize: 13.5, fontWeight: FontWeight.w600),
                                             ),
                                             onPressed: () {
                                               setDialogState(() {
@@ -1860,7 +1866,6 @@ class _DispatchSupervisorScreenState extends State<DispatchSupervisorScreen> {
                                                 shiftCurrentPage = 1;
                                               });
                                             },
-                                            child: const Text("Hiển thị tất cả", style: TextStyle(fontSize: 12)),
                                           ),
                                         ],
                                       ),
