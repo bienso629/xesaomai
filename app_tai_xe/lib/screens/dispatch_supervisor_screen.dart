@@ -42,6 +42,13 @@ class _DispatchSupervisorScreenState extends State<DispatchSupervisorScreen> {
   int _userCurrentPage = 1;
   int _userPageSize = 10;
 
+  // Tìm kiếm, Lọc và Phân trang đội xe & phương tiện
+  String _vehicleSearchQuery = '';
+  String _selectedOwnershipFilter = 'ALL';
+  final TextEditingController _vehicleSearchCtrl = TextEditingController();
+  int _vehicleCurrentPage = 1;
+  int _vehiclePageSize = 10;
+
   @override
   void initState() {
     super.initState();
@@ -51,6 +58,7 @@ class _DispatchSupervisorScreenState extends State<DispatchSupervisorScreen> {
   @override
   void dispose() {
     _userSearchCtrl.dispose();
+    _vehicleSearchCtrl.dispose();
     super.dispose();
   }
 
@@ -230,30 +238,451 @@ class _DispatchSupervisorScreenState extends State<DispatchSupervisorScreen> {
     );
   }
 
-  // TAB 3: Đội xe & Phương tiện
+  // TAB 3: Đội xe & Phương tiện (Dữ liệu thực tế từ hệ thống GPS & Doanh nghiệp)
   Widget _buildVehiclesTab() {
-    return ListView.builder(
-      padding: const EdgeInsets.all(16),
-      itemCount: _vehicles.length,
-      itemBuilder: (context, index) {
-        final v = _vehicles[index];
-        return Card(
-          elevation: 0,
-          margin: const EdgeInsets.only(bottom: 12),
-          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(4), side: BorderSide(color: Colors.grey.shade400, width: 1)),
-          child: ListTile(
-            leading: CircleAvatar(
-              backgroundColor: Colors.blue.shade100,
-              child: const Icon(Icons.local_shipping, color: Colors.blue),
+    return Builder(
+      builder: (context) {
+        final query = _vehicleSearchQuery.toLowerCase().trim();
+        final filteredVehicles = _vehicles.where((v) {
+          // 1. Kiểm tra hình thức sở hữu (Ownership Filter)
+          if (_selectedOwnershipFilter != 'ALL') {
+            final own = (v['ownership_type'] ?? '').toString();
+            if (own != _selectedOwnershipFilter) {
+              return false;
+            }
+          }
+
+          // 2. Kiểm tra từ khóa tìm kiếm (Search Query)
+          if (query.isNotEmpty) {
+            final plate = (v['plate_number'] ?? '').toString().toLowerCase();
+            final vtype = (v['vehicle_type'] ?? '').toString().toLowerCase();
+            final driverName = (v['driver_name'] ?? '').toString().toLowerCase();
+            final ownerCompany = (v['owner_company'] ?? '').toString().toLowerCase();
+
+            final match = plate.contains(query) ||
+                vtype.contains(query) ||
+                driverName.contains(query) ||
+                ownerCompany.contains(query);
+            if (!match) return false;
+          }
+
+          return true;
+        }).toList();
+
+        final totalItems = filteredVehicles.length;
+        final totalPages = (totalItems / _vehiclePageSize).ceil().clamp(1, 99999);
+        final validPage = _vehicleCurrentPage.clamp(1, totalPages);
+        final startIndex = totalItems == 0 ? 0 : (validPage - 1) * _vehiclePageSize;
+        final endIndex = (startIndex + _vehiclePageSize > totalItems) ? totalItems : startIndex + _vehiclePageSize;
+        final paginatedVehicles = totalItems == 0 ? [] : filteredVehicles.sublist(startIndex, endIndex);
+
+        return Column(
+          children: [
+            // Thanh công cụ 1 hàng: Tìm kiếm + Lọc sở hữu + Thống kê số lượng + Nút làm mới
+            Container(
+              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+              color: Colors.white,
+              child: Row(
+                children: [
+                  // Ô tìm kiếm xe
+                  Expanded(
+                    flex: 4,
+                    child: SizedBox(
+                      height: 44,
+                      child: TextField(
+                        controller: _vehicleSearchCtrl,
+                        onChanged: (val) {
+                          setState(() {
+                            _vehicleSearchQuery = val;
+                            _vehicleCurrentPage = 1;
+                          });
+                        },
+                        decoration: InputDecoration(
+                          hintText: "Tìm theo biển số xe, loại xe, tài xế phụ trách...",
+                          hintStyle: const TextStyle(fontSize: 13),
+                          prefixIcon: const Icon(Icons.search, size: 20),
+                          suffixIcon: _vehicleSearchQuery.isNotEmpty
+                              ? IconButton(
+                                  icon: const Icon(Icons.clear, size: 18),
+                                  onPressed: () {
+                                    _vehicleSearchCtrl.clear();
+                                    setState(() {
+                                      _vehicleSearchQuery = '';
+                                      _vehicleCurrentPage = 1;
+                                    });
+                                  },
+                                )
+                              : null,
+                          contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 0),
+                        ),
+                      ),
+                    ),
+                  ),
+                  const SizedBox(width: 12),
+                  // Bộ lọc theo Hình thức sở hữu
+                  Expanded(
+                    flex: 2,
+                    child: SizedBox(
+                      height: 44,
+                      child: DropdownButtonFormField<String>(
+                        value: _selectedOwnershipFilter,
+                        decoration: const InputDecoration(
+                          prefixIcon: Icon(Icons.filter_alt_outlined, size: 20),
+                          contentPadding: EdgeInsets.symmetric(horizontal: 12, vertical: 0),
+                        ),
+                        items: const [
+                          DropdownMenuItem(value: 'ALL', child: Text("Tất cả sở hữu")),
+                          DropdownMenuItem(value: 'INTERNAL', child: Text("Xe nội bộ")),
+                          DropdownMenuItem(value: 'RENTAL', child: Text("Xe thuê ngoài")),
+                          DropdownMenuItem(value: 'CUSTOMER_SELF', child: Text("Xe khách hàng")),
+                        ],
+                        onChanged: (val) {
+                          if (val != null) {
+                            setState(() {
+                              _selectedOwnershipFilter = val;
+                              _vehicleCurrentPage = 1;
+                            });
+                          }
+                        },
+                      ),
+                    ),
+                  ),
+                  const SizedBox(width: 14),
+                  // Thống kê số lượng phương tiện
+                  Text(
+                    "(${filteredVehicles.length}/${_vehicles.length} phương tiện)",
+                    style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 13, color: Colors.blueGrey),
+                  ),
+                  const SizedBox(width: 14),
+                  // Nút làm mới dữ liệu
+                  SizedBox(
+                    height: 38,
+                    child: OutlinedButton.icon(
+                      style: OutlinedButton.styleFrom(
+                        foregroundColor: Colors.blue.shade800,
+                        side: BorderSide(color: Colors.blue.shade300),
+                        minimumSize: Size.zero,
+                        tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                        padding: const EdgeInsets.symmetric(horizontal: 12),
+                        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(4)),
+                      ),
+                      icon: const Icon(Icons.refresh, size: 16),
+                      label: const Text("Tải lại danh sách", style: TextStyle(fontWeight: FontWeight.w600, fontSize: 13)),
+                      onPressed: _loadAllManagementData,
+                    ),
+                  ),
+                ],
+              ),
             ),
-            title: Text(v['plate_number'] ?? 'BIỂN SỐ', style: const TextStyle(fontWeight: FontWeight.bold)),
-            subtitle: Text("Loại xe: ${v['vehicle_type']} | Sở hữu: ${_translateOwnershipType(v['ownership_type'])}\nTài xế chỉ định: ${v['driver_name'] ?? 'Tài xế nội bộ'}"),
-            trailing: Chip(
-              label: const Text("Sẵn sàng"),
-              backgroundColor: Colors.green.shade50,
-              labelStyle: TextStyle(color: Colors.green.shade800, fontSize: 11),
+            const Divider(height: 1),
+            // Bảng danh sách phương tiện
+            Expanded(
+              child: paginatedVehicles.isEmpty
+                  ? Center(
+                      child: Column(
+                        mainAxisAlignment: MainAxisAlignment.center,
+                        children: [
+                          Icon(Icons.no_transfer, size: 48, color: Colors.grey.shade400),
+                          const SizedBox(height: 12),
+                          Text(
+                            "Không tìm thấy phương tiện nào phù hợp với bộ lọc",
+                            style: TextStyle(fontSize: 14, color: Colors.grey.shade600, fontWeight: FontWeight.w500),
+                          ),
+                        ],
+                      ),
+                    )
+                  : LayoutBuilder(
+                      builder: (context, constraints) {
+                        return SingleChildScrollView(
+                          scrollDirection: Axis.vertical,
+                          child: SingleChildScrollView(
+                            scrollDirection: Axis.horizontal,
+                            child: ConstrainedBox(
+                              constraints: BoxConstraints(minWidth: constraints.maxWidth),
+                              child: DataTable(
+                                headingRowColor: MaterialStateProperty.all(Colors.grey.shade100),
+                                headingRowHeight: 44,
+                                dividerThickness: 0,
+                                dataRowMaxHeight: 64,
+                                dataRowMinHeight: 58,
+                                horizontalMargin: 16,
+                                columnSpacing: 24,
+                                columns: const [
+                                  DataColumn(label: Text("Biển số xe", style: TextStyle(fontWeight: FontWeight.bold, fontSize: 13))),
+                                  DataColumn(label: Text("Loại phương tiện", style: TextStyle(fontWeight: FontWeight.bold, fontSize: 13))),
+                                  DataColumn(label: Text("Hình thức sở hữu", style: TextStyle(fontWeight: FontWeight.bold, fontSize: 13))),
+                                  DataColumn(label: Text("Tài xế chỉ định", style: TextStyle(fontWeight: FontWeight.bold, fontSize: 13))),
+                                  DataColumn(label: Text("Đơn vị quản lý", style: TextStyle(fontWeight: FontWeight.bold, fontSize: 13))),
+                                  DataColumn(label: Text("Trạng thái", style: TextStyle(fontWeight: FontWeight.bold, fontSize: 13))),
+                                ],
+                                rows: List.generate(paginatedVehicles.length, (idx) {
+                                  final v = paginatedVehicles[idx];
+                                  final rowColor = idx % 2 == 0 ? Colors.white : Colors.grey.shade50;
+                                  final plate = (v['plate_number'] ?? 'N/A').toString();
+                                  final vtype = (v['vehicle_type'] ?? 'Xe tải').toString();
+                                  final ownType = (v['ownership_type'] ?? 'INTERNAL').toString();
+                                  final driverName = (v['driver_name'] ?? '').toString();
+                                  final ownerCompany = (v['owner_company'] ?? 'Sao Mai Logistics').toString();
+
+                                  DataCell makeCell(Widget child) {
+                                    return DataCell(
+                                      Container(
+                                        alignment: Alignment.centerLeft,
+                                        child: child,
+                                      ),
+                                    );
+                                  }
+
+                                  Color ownBg = Colors.blue.shade50;
+                                  Color ownBorder = Colors.blue.shade200;
+                                  Color ownText = Colors.blue.shade800;
+                                  if (ownType == 'RENTAL') {
+                                    ownBg = Colors.purple.shade50;
+                                    ownBorder = Colors.purple.shade200;
+                                    ownText = Colors.purple.shade800;
+                                  } else if (ownType == 'CUSTOMER_SELF') {
+                                    ownBg = Colors.orange.shade50;
+                                    ownBorder = Colors.orange.shade200;
+                                    ownText = Colors.orange.shade900;
+                                  }
+
+                                  return DataRow(
+                                    color: MaterialStateProperty.all(rowColor),
+                                    cells: [
+                                      // Cột 1: Biển số xe
+                                      makeCell(
+                                        Row(
+                                          mainAxisSize: MainAxisSize.min,
+                                          children: [
+                                            Container(
+                                              padding: const EdgeInsets.all(6),
+                                              decoration: BoxDecoration(
+                                                color: Colors.blue.shade50,
+                                                borderRadius: BorderRadius.circular(4),
+                                              ),
+                                              child: const Icon(Icons.local_shipping, size: 18, color: Colors.blue),
+                                            ),
+                                            const SizedBox(width: 10),
+                                            Text(
+                                              plate,
+                                              style: TextStyle(
+                                                fontWeight: FontWeight.bold,
+                                                fontSize: 13.5,
+                                                color: Colors.blueGrey.shade900,
+                                              ),
+                                            ),
+                                          ],
+                                        ),
+                                      ),
+                                      // Cột 2: Loại phương tiện
+                                      makeCell(
+                                        Text(vtype, style: const TextStyle(fontSize: 12.5)),
+                                      ),
+                                      // Cột 3: Hình thức sở hữu
+                                      makeCell(
+                                        Container(
+                                          padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+                                          decoration: BoxDecoration(
+                                            color: ownBg,
+                                            borderRadius: BorderRadius.circular(4),
+                                            border: Border.all(color: ownBorder),
+                                          ),
+                                          child: Text(
+                                            _translateOwnershipType(ownType),
+                                            style: TextStyle(
+                                              color: ownText,
+                                              fontSize: 11,
+                                              fontWeight: FontWeight.bold,
+                                            ),
+                                          ),
+                                        ),
+                                      ),
+                                      // Cột 4: Tài xế chỉ định
+                                      makeCell(
+                                        driverName.isNotEmpty
+                                            ? Row(
+                                                mainAxisSize: MainAxisSize.min,
+                                                children: [
+                                                  const Icon(Icons.person, size: 16, color: Colors.teal),
+                                                  const SizedBox(width: 6),
+                                                  Text(
+                                                    driverName,
+                                                    style: const TextStyle(
+                                                      fontSize: 12.5,
+                                                      fontWeight: FontWeight.w600,
+                                                      color: Colors.teal,
+                                                    ),
+                                                  ),
+                                                ],
+                                              )
+                                            : Text(
+                                                "Chưa phân bổ",
+                                                style: TextStyle(
+                                                  fontSize: 12,
+                                                  fontStyle: FontStyle.italic,
+                                                  color: Colors.grey.shade500,
+                                                ),
+                                              ),
+                                      ),
+                                      // Cột 5: Đơn vị quản lý
+                                      makeCell(
+                                        Text(
+                                          ownerCompany,
+                                          style: const TextStyle(fontSize: 12, color: Colors.black87),
+                                        ),
+                                      ),
+                                      // Cột 6: Trạng thái
+                                      makeCell(
+                                        Container(
+                                          padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+                                          decoration: BoxDecoration(
+                                            color: Colors.green.shade50,
+                                            borderRadius: BorderRadius.circular(4),
+                                            border: Border.all(color: Colors.green.shade200),
+                                          ),
+                                          child: Text(
+                                            "Sẵn sàng hoạt động",
+                                            style: TextStyle(
+                                              color: Colors.green.shade800,
+                                              fontSize: 11,
+                                              fontWeight: FontWeight.bold,
+                                            ),
+                                          ),
+                                        ),
+                                      ),
+                                    ],
+                                  );
+                                }),
+                              ),
+                            ),
+                          ),
+                        );
+                      },
+                    ),
             ),
-          ),
+            // THANH ĐIỀU HƯỚNG PHÂN TRANG (PAGINATION BAR)
+            if (filteredVehicles.isNotEmpty)
+              Container(
+                height: 40,
+                padding: const EdgeInsets.symmetric(horizontal: 16),
+                decoration: BoxDecoration(
+                  color: Colors.white,
+                  border: Border(top: BorderSide(color: Colors.grey.shade400, width: 1)),
+                ),
+                child: Row(
+                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                  children: [
+                    // Thông tin số bản ghi hiển thị
+                    Text(
+                      "Hiển thị ${startIndex + 1} - $endIndex trên tổng số $totalItems phương tiện",
+                      style: TextStyle(fontSize: 12, color: Colors.grey.shade700, fontWeight: FontWeight.w500),
+                    ),
+                    // Cụm điều khiển: Chọn PageSize + Các nút chuyển trang
+                    Row(
+                      children: [
+                        const Text("Số dòng/trang: ", style: TextStyle(fontSize: 12, color: Colors.black87)),
+                        const SizedBox(width: 4),
+                        DropdownButton<int>(
+                          value: _vehiclePageSize,
+                          underline: const SizedBox(),
+                          isDense: true,
+                          style: const TextStyle(fontSize: 12, color: Colors.blueGrey, fontWeight: FontWeight.bold),
+                          items: const [
+                            DropdownMenuItem(value: 5, child: Text("5")),
+                            DropdownMenuItem(value: 10, child: Text("10")),
+                            DropdownMenuItem(value: 20, child: Text("20")),
+                            DropdownMenuItem(value: 50, child: Text("50")),
+                          ],
+                          onChanged: (val) {
+                            if (val != null) {
+                              setState(() {
+                                _vehiclePageSize = val;
+                                _vehicleCurrentPage = 1;
+                              });
+                            }
+                          },
+                        ),
+                        const SizedBox(width: 14),
+                        // Nút về trang đầu
+                        IconButton(
+                          icon: const Icon(Icons.first_page, size: 18),
+                          padding: EdgeInsets.zero,
+                          constraints: const BoxConstraints(minWidth: 28, minHeight: 28),
+                          tooltip: "Trang đầu",
+                          onPressed: validPage > 1
+                              ? () {
+                                  setState(() {
+                                    _vehicleCurrentPage = 1;
+                                  });
+                                }
+                              : null,
+                        ),
+                        // Nút trang trước
+                        IconButton(
+                          icon: const Icon(Icons.chevron_left, size: 18),
+                          padding: EdgeInsets.zero,
+                          constraints: const BoxConstraints(minWidth: 28, minHeight: 28),
+                          tooltip: "Trang trước",
+                          onPressed: validPage > 1
+                              ? () {
+                                  setState(() {
+                                    _vehicleCurrentPage = validPage - 1;
+                                  });
+                                }
+                              : null,
+                        ),
+                        const SizedBox(width: 4),
+                        // Nhãn hiển thị trang hiện tại
+                        Container(
+                          padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 3),
+                          decoration: BoxDecoration(
+                            color: Colors.blue.shade50,
+                            borderRadius: BorderRadius.circular(4),
+                          ),
+                          child: Text(
+                            "$validPage / $totalPages",
+                            style: TextStyle(
+                              fontSize: 12,
+                              fontWeight: FontWeight.bold,
+                              color: Colors.blue.shade800,
+                            ),
+                          ),
+                        ),
+                        const SizedBox(width: 4),
+                        // Nút trang kế tiếp
+                        IconButton(
+                          icon: const Icon(Icons.chevron_right, size: 18),
+                          padding: EdgeInsets.zero,
+                          constraints: const BoxConstraints(minWidth: 28, minHeight: 28),
+                          tooltip: "Trang sau",
+                          onPressed: validPage < totalPages
+                              ? () {
+                                  setState(() {
+                                    _vehicleCurrentPage = validPage + 1;
+                                  });
+                                }
+                              : null,
+                        ),
+                        // Nút đến trang cuối
+                        IconButton(
+                          icon: const Icon(Icons.last_page, size: 18),
+                          padding: EdgeInsets.zero,
+                          constraints: const BoxConstraints(minWidth: 28, minHeight: 28),
+                          tooltip: "Trang cuối",
+                          onPressed: validPage < totalPages
+                              ? () {
+                                  setState(() {
+                                    _vehicleCurrentPage = totalPages;
+                                  });
+                                }
+                              : null,
+                        ),
+                      ],
+                    ),
+                  ],
+                ),
+              ),
+          ],
         );
       },
     );
