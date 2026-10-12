@@ -211,7 +211,7 @@ class _VehicleInspectionReviewScreenState extends State<VehicleInspectionReviewS
         );
       }
       return Image.network(
-        'http://localhost:8000/$url',
+        url.startsWith('http') ? url : 'https://saomai-api.type.vn/${url.startsWith('/') ? url.substring(1) : url}',
         fit: BoxFit.cover,
         errorBuilder: (ctx, err, stack) => _buildPlaceholderIcon(),
       );

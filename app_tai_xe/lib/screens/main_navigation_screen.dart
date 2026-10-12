@@ -23,23 +23,12 @@ class _MainNavigationScreenState extends State<MainNavigationScreen> {
   @override
   void initState() {
     super.initState();
-    // Mặc định khi vào app luôn luôn mở màn hình Tổng quan & Báo cáo Tuân thủ (_currentRoot = 2, _activeManagementTab = 0)
+    // Mặc định khi đăng nhập thành công thì tất cả người dùng đều vào màn hình Tổng quan & Báo cáo
     _currentRoot = 2;
     _activeManagementTab = 0;
 
     final state = context.read<AppState>();
-    final roles = state.userRoles.map((r) => r.toLowerCase()).toList();
-    final username = (state.currentUsername ?? '').trim().toLowerCase();
-
-    // Chỉ chuyển sang màn hình Nghiệp vụ Tài xế khi tài khoản là tài xế thuần túy (không phải admin, manager, dispatcher)
-    if (roles.contains('driver') && !roles.contains('admin') && !roles.contains('manager') && !roles.contains('dispatcher') && username != 'admin') {
-      _currentRoot = 1;
-      state.setRole(UserRole.driver);
-    } else {
-      _currentRoot = 2;
-      _activeManagementTab = 0;
-      state.setRole(UserRole.manager);
-    }
+    state.setRole(UserRole.manager);
   }
 
   final List<String> _managementTitles = const [

@@ -4,7 +4,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 
 class AuthService {
   // Đường dẫn Backend API thực tế
-  static const String baseUrl = 'http://localhost:8000/api/v1/auth';
+  static const String baseUrl = 'https://saomai-api.type.vn/api/v1/auth';
 
   /// Gửi yêu cầu đăng nhập thực tế tới FastAPI và nhận JWT Bearer Token
   static Future<Map<String, dynamic>> login({
