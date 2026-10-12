@@ -174,7 +174,13 @@ class _DispatchSupervisorScreenState extends State<DispatchSupervisorScreen> {
               ),
               const SizedBox(width: 12),
               Expanded(
-                child: _buildMetricCard("Tỷ lệ tuân thủ 5 ảnh", _summary['compliance_rate'] ?? "96.4%", Icons.verified_user, Colors.purple),
+                child: _buildMetricCard(
+                  "Tỷ lệ tuân thủ 5 ảnh",
+                  _summary['compliance_rate'] ?? "96.4%",
+                  Icons.verified_user,
+                  Colors.purple,
+                  onTap: () => _showVehicleInspectionsDialog(null, null),
+                ),
               ),
             ],
           ),
@@ -627,18 +633,38 @@ class _DispatchSupervisorScreenState extends State<DispatchSupervisorScreen> {
                                       ),
                                       // Cột 7: Thao tác (Sửa thông tin phương tiện)
                                       makeCell(
-                                        OutlinedButton.icon(
-                                          style: OutlinedButton.styleFrom(
-                                            foregroundColor: Colors.blue.shade800,
-                                            side: BorderSide(color: Colors.blue.shade300),
-                                            padding: const EdgeInsets.symmetric(horizontal: 10),
-                                            minimumSize: const Size(0, 32),
-                                            tapTargetSize: MaterialTapTargetSize.shrinkWrap,
-                                            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(4)),
-                                          ),
-                                          icon: const Icon(Icons.edit, size: 14),
-                                          label: const Text("Sửa", style: TextStyle(fontSize: 12, fontWeight: FontWeight.bold)),
-                                          onPressed: () => _showEditVehicleDialog(v),
+                                        Row(
+                                          mainAxisSize: MainAxisSize.min,
+                                          children: [
+                                            ElevatedButton.icon(
+                                              style: ElevatedButton.styleFrom(
+                                                backgroundColor: Colors.teal.shade700,
+                                                foregroundColor: Colors.white,
+                                                elevation: 0,
+                                                padding: const EdgeInsets.symmetric(horizontal: 10),
+                                                minimumSize: const Size(0, 32),
+                                                tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                                                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(4)),
+                                              ),
+                                              icon: const Icon(Icons.photo_library_outlined, size: 14),
+                                              label: const Text("5 Ảnh", style: TextStyle(fontSize: 11.5, fontWeight: FontWeight.bold)),
+                                              onPressed: () => _showVehicleInspectionsDialog(plate, v),
+                                            ),
+                                            const SizedBox(width: 6),
+                                            OutlinedButton.icon(
+                                              style: OutlinedButton.styleFrom(
+                                                foregroundColor: Colors.blue.shade800,
+                                                side: BorderSide(color: Colors.blue.shade300),
+                                                padding: const EdgeInsets.symmetric(horizontal: 10),
+                                                minimumSize: const Size(0, 32),
+                                                tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                                                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(4)),
+                                              ),
+                                              icon: const Icon(Icons.edit, size: 14),
+                                              label: const Text("Sửa", style: TextStyle(fontSize: 12, fontWeight: FontWeight.bold)),
+                                              onPressed: () => _showEditVehicleDialog(v),
+                                            ),
+                                          ],
                                         ),
                                       ),
                                     ],
@@ -776,6 +802,20 @@ class _DispatchSupervisorScreenState extends State<DispatchSupervisorScreen> {
           ],
         );
       },
+    );
+  }
+
+  // DIALOG: XEM VÀ DUYỆT 5 ẢNH KIỂM TRA XE ĐẦU NGÀY / GIAO NHẬN CA DÀNH CHO ĐIỀU PHỐI VIÊN
+  void _showVehicleInspectionsDialog(String? targetPlate, dynamic vehicleData) {
+    showDialog(
+      context: context,
+      builder: (ctx) => _VehicleInspectionsModal(
+        initialPlate: targetPlate,
+        vehicleData: vehicleData,
+        onStatusUpdated: () {
+          _loadAllManagementData();
+        },
+      ),
     );
   }
 
@@ -1670,27 +1710,33 @@ class _DispatchSupervisorScreenState extends State<DispatchSupervisorScreen> {
     }
   }
 
-  Widget _buildMetricCard(String title, String value, IconData icon, Color color) {
+  Widget _buildMetricCard(String title, String value, IconData icon, Color color, {VoidCallback? onTap}) {
     return Card(
       elevation: 0,
       shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(4), side: BorderSide(color: Colors.grey.shade400, width: 1)),
-      child: Padding(
-        padding: const EdgeInsets.all(14),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Row(
-              children: [
-                Icon(icon, color: color, size: 20),
-                const SizedBox(width: 8),
-                Expanded(
-                  child: Text(title, style: const TextStyle(fontSize: 12, color: Colors.black54)),
-                ),
-              ],
-            ),
-            const SizedBox(height: 10),
-            Text(value, style: TextStyle(fontSize: 20, fontWeight: FontWeight.bold, color: color)),
-          ],
+      child: InkWell(
+        borderRadius: BorderRadius.circular(4),
+        onTap: onTap,
+        child: Padding(
+          padding: const EdgeInsets.all(14),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Row(
+                children: [
+                  Icon(icon, color: color, size: 20),
+                  const SizedBox(width: 8),
+                  Expanded(
+                    child: Text(title, style: const TextStyle(fontSize: 12, color: Colors.black54)),
+                  ),
+                  if (onTap != null)
+                    Icon(Icons.chevron_right, size: 16, color: Colors.grey.shade500),
+                ],
+              ),
+              const SizedBox(height: 10),
+              Text(value, style: TextStyle(fontSize: 20, fontWeight: FontWeight.bold, color: color)),
+            ],
+          ),
         ),
       ),
     );
@@ -4287,6 +4333,627 @@ class _DispatchSupervisorScreenState extends State<DispatchSupervisorScreen> {
         child: AspectRatio(
           aspectRatio: 1.0,
           child: imageWidget,
+        ),
+      ),
+    );
+  }
+}
+
+// ============================================================================
+// MODAL KIỂM TRA TÌNH TRẠNG XE QUA 5 ẢNH CAMERA CỦA TÀI XẾ (ĐIỀU PHỐI VIÊN DUYỆT)
+// ============================================================================
+class _VehicleInspectionsModal extends StatefulWidget {
+  final String? initialPlate;
+  final dynamic vehicleData;
+  final VoidCallback onStatusUpdated;
+
+  const _VehicleInspectionsModal({
+    this.initialPlate,
+    this.vehicleData,
+    required this.onStatusUpdated,
+  });
+
+  @override
+  State<_VehicleInspectionsModal> createState() => _VehicleInspectionsModalState();
+}
+
+class _VehicleInspectionsModalState extends State<_VehicleInspectionsModal> {
+  bool _isLoading = true;
+  List<dynamic> _inspections = [];
+  Map<String, dynamic>? _selectedRecord;
+  String _filterPlate = '';
+  final TextEditingController _noteCtrl = TextEditingController();
+  bool _isSubmitting = false;
+
+  @override
+  void initState() {
+    super.initState();
+    _filterPlate = widget.initialPlate ?? '';
+    _loadInspections();
+  }
+
+  @override
+  void dispose() {
+    _noteCtrl.dispose();
+    super.dispose();
+  }
+
+  Future<void> _loadInspections() async {
+    setState(() => _isLoading = true);
+    final data = await AdminService.fetchInspections(
+      plateNumber: _filterPlate.isNotEmpty ? _filterPlate : null,
+    );
+    if (mounted) {
+      setState(() {
+        _inspections = data;
+        if (_inspections.isNotEmpty) {
+          _selectedRecord = _inspections.first as Map<String, dynamic>;
+          _noteCtrl.text = _selectedRecord?['flag_reason'] ?? '';
+        } else {
+          _selectedRecord = null;
+          _noteCtrl.clear();
+        }
+        _isLoading = false;
+      });
+    }
+  }
+
+  Future<void> _updateReviewStatus(String status) async {
+    if (_selectedRecord == null) return;
+    final int inspId = _selectedRecord!['id'];
+    setState(() => _isSubmitting = true);
+
+    final res = await AdminService.reviewInspection(
+      inspId,
+      flagStatus: status,
+      flagReason: _noteCtrl.text.trim(),
+    );
+
+    if (mounted) {
+      setState(() => _isSubmitting = false);
+      if (res['success'] == true) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            backgroundColor: status == 'approved' ? Colors.green.shade700 : (status == 'rejected' ? Colors.red.shade700 : Colors.amber.shade800),
+            content: Text(
+              status == 'approved'
+                  ? "Đã phê duyệt kiểm tra xe! Xe được phép nhận chuyến."
+                  : (status == 'rejected'
+                      ? "Đã khóa chuyến / Yêu cầu tài xế chụp kiểm tra lại."
+                      : "Đã chuyển trạng thái theo dõi kỹ thuật."),
+            ),
+          ),
+        );
+        widget.onStatusUpdated();
+        _loadInspections();
+      } else {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(backgroundColor: Colors.red, content: Text(res['message'] ?? 'Lỗi cập nhật')),
+        );
+      }
+    }
+  }
+
+  Widget _buildPhotoThumbnail(String title, String? url, IconData icon) {
+    final bool hasPhoto = url != null && url.isNotEmpty;
+
+    return Container(
+      decoration: BoxDecoration(
+        color: Colors.grey.shade100,
+        borderRadius: BorderRadius.circular(4),
+        border: Border.all(color: Colors.grey.shade300),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          Container(
+            padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 6),
+            color: Colors.grey.shade200,
+            child: Row(
+              children: [
+                Icon(icon, size: 14, color: Colors.blueGrey.shade800),
+                const SizedBox(width: 6),
+                Expanded(
+                  child: Text(
+                    title,
+                    style: const TextStyle(fontSize: 12, fontWeight: FontWeight.bold, color: Colors.black87),
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                  ),
+                ),
+              ],
+            ),
+          ),
+          Expanded(
+            child: hasPhoto
+                ? InkWell(
+                    onTap: () {
+                      _showFullPhotoDialog(title, url);
+                    },
+                    child: Stack(
+                      fit: StackFit.expand,
+                      children: [
+                        _buildSafeImage(url),
+                        Positioned(
+                          right: 6,
+                          bottom: 6,
+                          child: Container(
+                            padding: const EdgeInsets.all(4),
+                            decoration: BoxDecoration(
+                              color: Colors.black54,
+                              borderRadius: BorderRadius.circular(4),
+                            ),
+                            child: const Icon(Icons.zoom_in, size: 16, color: Colors.white),
+                          ),
+                        ),
+                      ],
+                    ),
+                  )
+                : Center(
+                    child: Column(
+                      mainAxisAlignment: MainAxisAlignment.center,
+                      children: [
+                        Icon(Icons.broken_image_outlined, size: 32, color: Colors.grey.shade400),
+                        const SizedBox(height: 4),
+                        Text("Chưa có ảnh", style: TextStyle(fontSize: 11, color: Colors.grey.shade600)),
+                      ],
+                    ),
+                  ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildSafeImage(String url) {
+    if (url.startsWith('http://') || url.startsWith('https://')) {
+      return Image.network(
+        url,
+        fit: BoxFit.cover,
+        errorBuilder: (ctx, err, stack) => _buildPlaceholderIcon(),
+      );
+    } else {
+      final file = File(url);
+      if (file.existsSync()) {
+        return Image.file(
+          file,
+          fit: BoxFit.cover,
+          errorBuilder: (ctx, err, stack) => _buildPlaceholderIcon(),
+        );
+      }
+      return Image.network(
+        'http://localhost:8000/$url',
+        fit: BoxFit.cover,
+        errorBuilder: (ctx, err, stack) => _buildPlaceholderIcon(),
+      );
+    }
+  }
+
+  Widget _buildPlaceholderIcon() {
+    return Container(
+      color: Colors.blueGrey.shade50,
+      child: Center(
+        child: Icon(Icons.image, size: 40, color: Colors.blueGrey.shade300),
+      ),
+    );
+  }
+
+  void _showFullPhotoDialog(String title, String url) {
+    showDialog(
+      context: context,
+      builder: (ctx) => Dialog(
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(4)),
+        child: Container(
+          width: 800,
+          padding: const EdgeInsets.all(16),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              Row(
+                mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                children: [
+                  Text(title, style: const TextStyle(fontSize: 16, fontWeight: FontWeight.bold)),
+                  IconButton(icon: const Icon(Icons.close), onPressed: () => Navigator.pop(ctx)),
+                ],
+              ),
+              const SizedBox(height: 12),
+              ConstrainedBox(
+                constraints: const BoxConstraints(maxHeight: 520),
+                child: ClipRRect(
+                  borderRadius: BorderRadius.circular(4),
+                  child: _buildSafeImage(url),
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final screenWidth = MediaQuery.of(context).size.width;
+    final isDesktop = screenWidth > 900;
+
+    return Dialog(
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(4)),
+      insetPadding: const EdgeInsets.symmetric(horizontal: 20, vertical: 24),
+      child: Container(
+        width: 1100,
+        height: 750,
+        padding: const EdgeInsets.all(20),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            // Header Dialog
+            Row(
+              children: [
+                Container(
+                  padding: const EdgeInsets.all(8),
+                  decoration: BoxDecoration(
+                    color: Colors.teal.shade50,
+                    borderRadius: BorderRadius.circular(4),
+                    border: Border.all(color: Colors.teal.shade200),
+                  ),
+                  child: const Icon(Icons.verified_user, color: Colors.teal, size: 24),
+                ),
+                const SizedBox(width: 12),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        _filterPlate.isNotEmpty
+                            ? "Kiểm Tra Xe Giao Nhận Ca (5 Ảnh) - Biển số: $_filterPlate"
+                            : "Giám Sát Kiểm Tra Ngoại Quan Xe Đầu Ngày (5 Ảnh)",
+                        style: const TextStyle(fontSize: 17, fontWeight: FontWeight.bold, color: Colors.blueGrey),
+                      ),
+                      const SizedBox(height: 2),
+                      const Text(
+                        "Tài xế có nghĩa vụ chụp 5 hình camera điện thoại mỗi lần nhận/giao ca. Điều phối trực có trách nhiệm kiểm tra kỹ lưỡng trước khi cấp phép nhận chuyến.",
+                        style: TextStyle(fontSize: 12, color: Colors.black54),
+                      ),
+                    ],
+                  ),
+                ),
+                IconButton(
+                  icon: const Icon(Icons.close),
+                  onPressed: () => Navigator.pop(context),
+                ),
+              ],
+            ),
+            const Divider(height: 24),
+
+            // Nội dung chính: 2 cột (Danh sách lượt kiểm tra bên trái, Chi tiết 5 ảnh bên phải)
+            Expanded(
+              child: _isLoading
+                  ? const Center(child: CircularProgressIndicator())
+                  : Row(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        // Cột 1: Danh sách bản ghi
+                        SizedBox(
+                          width: 320,
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Container(
+                                padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+                                decoration: BoxDecoration(
+                                  color: Colors.grey.shade100,
+                                  borderRadius: BorderRadius.circular(4),
+                                  border: Border.all(color: Colors.grey.shade300),
+                                ),
+                                child: Row(
+                                  children: [
+                                    const Icon(Icons.history, size: 16, color: Colors.blueGrey),
+                                    const SizedBox(width: 6),
+                                    Text(
+                                      "Danh sách kiểm tra (${_inspections.length})",
+                                      style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 13),
+                                    ),
+                                    const Spacer(),
+                                    if (_filterPlate.isNotEmpty)
+                                      InkWell(
+                                        onTap: () {
+                                          setState(() => _filterPlate = '');
+                                          _loadInspections();
+                                        },
+                                        child: const Text("Xem tất cả xe", style: TextStyle(fontSize: 11, color: Colors.blue, decoration: TextDecoration.underline)),
+                                      ),
+                                  ],
+                                ),
+                              ),
+                              const SizedBox(height: 8),
+                              Expanded(
+                                child: _inspections.isEmpty
+                                    ? Center(
+                                        child: Column(
+                                          mainAxisAlignment: MainAxisAlignment.center,
+                                          children: [
+                                            Icon(Icons.find_in_page_outlined, size: 40, color: Colors.grey.shade400),
+                                            const SizedBox(height: 8),
+                                            Text(
+                                              "Không có dữ liệu ảnh giao ca",
+                                              style: TextStyle(fontSize: 13, color: Colors.grey.shade600),
+                                            ),
+                                          ],
+                                        ),
+                                      )
+                                    : ListView.separated(
+                                        itemCount: _inspections.length,
+                                        separatorBuilder: (ctx, i) => const SizedBox(height: 6),
+                                        itemBuilder: (ctx, idx) {
+                                          final item = _inspections[idx];
+                                          final isSelected = _selectedRecord?['id'] == item['id'];
+                                          final flagStatus = (item['flag_status'] ?? 'none').toString().toLowerCase();
+
+                                          Color statusColor = Colors.grey;
+                                          String statusLabel = "Chưa duyệt";
+                                          if (flagStatus == 'approved') {
+                                            statusColor = Colors.green;
+                                            statusLabel = "Đã duyệt";
+                                          } else if (flagStatus == 'rejected') {
+                                            statusColor = Colors.red;
+                                            statusLabel = "Từ chối / Chờ chụp lại";
+                                          } else if (flagStatus == 'monitored') {
+                                            statusColor = Colors.amber.shade900;
+                                            statusLabel = "Đang theo dõi";
+                                          }
+
+                                          final plate = item['plate_number'] ?? 'N/A';
+                                          final driver = item['driver_name'] ?? 'Tài xế';
+                                          final date = item['check_date'] ?? '';
+
+                                          return InkWell(
+                                            borderRadius: BorderRadius.circular(4),
+                                            onTap: () {
+                                              setState(() {
+                                                _selectedRecord = item;
+                                                _noteCtrl.text = item['flag_reason'] ?? '';
+                                              });
+                                            },
+                                            child: Container(
+                                              padding: const EdgeInsets.all(10),
+                                              decoration: BoxDecoration(
+                                                color: isSelected ? Colors.teal.shade50 : Colors.white,
+                                                borderRadius: BorderRadius.circular(4),
+                                                border: Border.all(
+                                                  color: isSelected ? Colors.teal : Colors.grey.shade300,
+                                                  width: isSelected ? 1.5 : 1,
+                                                ),
+                                              ),
+                                              child: Column(
+                                                crossAxisAlignment: CrossAxisAlignment.start,
+                                                children: [
+                                                  Row(
+                                                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                                                    children: [
+                                                      Text(
+                                                        plate,
+                                                        style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 13.5),
+                                                      ),
+                                                      Container(
+                                                        padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                                                        decoration: BoxDecoration(
+                                                          color: statusColor.withOpacity(0.1),
+                                                          borderRadius: BorderRadius.circular(3),
+                                                          border: Border.all(color: statusColor.withOpacity(0.4)),
+                                                        ),
+                                                        child: Text(
+                                                          statusLabel,
+                                                          style: TextStyle(color: statusColor, fontSize: 10.5, fontWeight: FontWeight.bold),
+                                                        ),
+                                                      ),
+                                                    ],
+                                                  ),
+                                                  const SizedBox(height: 4),
+                                                  Row(
+                                                    children: [
+                                                      const Icon(Icons.person, size: 13, color: Colors.teal),
+                                                      const SizedBox(width: 4),
+                                                      Expanded(
+                                                        child: Text(
+                                                          driver,
+                                                          style: const TextStyle(fontSize: 12, color: Colors.black87),
+                                                          overflow: TextOverflow.ellipsis,
+                                                        ),
+                                                      ),
+                                                    ],
+                                                  ),
+                                                  const SizedBox(height: 2),
+                                                  Row(
+                                                    children: [
+                                                      Icon(Icons.calendar_today, size: 12, color: Colors.grey.shade600),
+                                                      const SizedBox(width: 4),
+                                                      Text(date, style: TextStyle(fontSize: 11, color: Colors.grey.shade600)),
+                                                      const Spacer(),
+                                                      if (item['flag_deviation_km'] == true)
+                                                        Container(
+                                                          padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 1),
+                                                          decoration: BoxDecoration(
+                                                            color: Colors.red.shade100,
+                                                            borderRadius: BorderRadius.circular(2),
+                                                          ),
+                                                          child: const Text("Lệch km", style: TextStyle(color: Colors.red, fontSize: 10, fontWeight: FontWeight.bold)),
+                                                        ),
+                                                    ],
+                                                  ),
+                                                ],
+                                              ),
+                                            ),
+                                          );
+                                        },
+                                      ),
+                              ),
+                            ],
+                          ),
+                        ),
+                        const SizedBox(width: 16),
+                        const VerticalDivider(width: 1),
+                        const SizedBox(width: 16),
+
+                        // Cột 2: Chi tiết 5 ảnh và thanh điều khiển duyệt
+                        Expanded(
+                          child: _selectedRecord == null
+                              ? Center(
+                                  child: Text(
+                                    "Chọn một lượt kiểm tra xe từ danh sách bên trái để soi chi tiết 5 ảnh",
+                                    style: TextStyle(fontSize: 13, color: Colors.grey.shade600),
+                                  ),
+                                )
+                              : Column(
+                                  crossAxisAlignment: CrossAxisAlignment.stretch,
+                                  children: [
+                                    // Thông tin tóm tắt xe & tài xế
+                                    Container(
+                                      padding: const EdgeInsets.all(12),
+                                      decoration: BoxDecoration(
+                                        color: Colors.blueGrey.shade50,
+                                        borderRadius: BorderRadius.circular(4),
+                                        border: Border.all(color: Colors.blueGrey.shade200),
+                                      ),
+                                      child: Row(
+                                        children: [
+                                          Expanded(
+                                            child: Column(
+                                              crossAxisAlignment: CrossAxisAlignment.start,
+                                              children: [
+                                                Row(
+                                                  children: [
+                                                    Text(
+                                                      "Xe: ${_selectedRecord!['plate_number']}",
+                                                      style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 14, color: Colors.blueGrey),
+                                                    ),
+                                                    const SizedBox(width: 8),
+                                                    Text(
+                                                      "(${_selectedRecord!['vehicle_type'] ?? 'Xe đầu kéo'})",
+                                                      style: const TextStyle(fontSize: 12, color: Colors.black54),
+                                                    ),
+                                                  ],
+                                                ),
+                                                const SizedBox(height: 3),
+                                                Text(
+                                                  "Tài xế giao ca: ${_selectedRecord!['driver_name']} • SĐT: ${_selectedRecord!['driver_phone'] ?? 'N/A'}",
+                                                  style: const TextStyle(fontSize: 12, color: Colors.black87),
+                                                ),
+                                              ],
+                                            ),
+                                          ),
+                                          Column(
+                                            crossAxisAlignment: CrossAxisAlignment.end,
+                                            children: [
+                                              Text(
+                                                "Km Táp-lô: ${_selectedRecord!['km_confirmed'] ?? _selectedRecord!['km_ocr'] ?? 'N/A'} km",
+                                                style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 13, color: Colors.indigo),
+                                              ),
+                                              const SizedBox(height: 3),
+                                              Text(
+                                                "Thời gian nộp: ${_selectedRecord!['completed_at'] ?? _selectedRecord!['created_at'] ?? 'Hôm nay'}",
+                                                style: const TextStyle(fontSize: 11, color: Colors.black54),
+                                              ),
+                                            ],
+                                          ),
+                                        ],
+                                      ),
+                                    ),
+                                    const SizedBox(height: 12),
+
+                                    // Lưới 5 ảnh
+                                    Expanded(
+                                      child: GridView.count(
+                                        crossAxisCount: isDesktop ? 3 : 2,
+                                        crossAxisSpacing: 10,
+                                        mainAxisSpacing: 10,
+                                        childAspectRatio: 1.25,
+                                        children: [
+                                          _buildPhotoThumbnail("1. Gầm trước xe", _selectedRecord!['img_front_underbody'], Icons.front_hand_outlined),
+                                          _buildPhotoThumbnail("2. Bầu vi sai & Gầm sau", _selectedRecord!['img_rear_underbody'], Icons.settings_suggest_outlined),
+                                          _buildPhotoThumbnail("3. Hông trái xe", _selectedRecord!['img_left_side'], Icons.compare_arrows_outlined),
+                                          _buildPhotoThumbnail("4. Hông phải xe", _selectedRecord!['img_right_side'], Icons.swap_horiz_outlined),
+                                          _buildPhotoThumbnail("5. Táp-lô & Đồng hồ ODO", _selectedRecord!['img_dashboard'], Icons.speed_outlined),
+                                        ],
+                                      ),
+                                    ),
+                                    const SizedBox(height: 12),
+
+                                    // Bảng phê duyệt & Ghi chú của Điều phối viên
+                                    Container(
+                                      padding: const EdgeInsets.all(12),
+                                      decoration: BoxDecoration(
+                                        color: Colors.grey.shade50,
+                                        borderRadius: BorderRadius.circular(4),
+                                        border: Border.all(color: Colors.grey.shade300),
+                                      ),
+                                      child: Row(
+                                        children: [
+                                          Expanded(
+                                            child: TextField(
+                                              controller: _noteCtrl,
+                                              decoration: const InputDecoration(
+                                                labelText: "Ghi chú kiểm tra của Điều phối (nếu xe xước vỡ hoặc lệch km)",
+                                                border: OutlineInputBorder(),
+                                                isDense: true,
+                                                contentPadding: EdgeInsets.symmetric(horizontal: 10, vertical: 10),
+                                              ),
+                                            ),
+                                          ),
+                                          const SizedBox(width: 12),
+                                          if (_isSubmitting)
+                                            const SizedBox(width: 32, height: 32, child: CircularProgressIndicator())
+                                          else
+                                            Row(
+                                              mainAxisSize: MainAxisSize.min,
+                                              children: [
+                                                ElevatedButton.icon(
+                                                  style: ElevatedButton.styleFrom(
+                                                    backgroundColor: Colors.green.shade700,
+                                                    foregroundColor: Colors.white,
+                                                    padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+                                                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(4)),
+                                                  ),
+                                                  icon: const Icon(Icons.check_circle_outline, size: 16),
+                                                  label: const Text("Duyệt Nhận Chuyến", style: TextStyle(fontWeight: FontWeight.bold)),
+                                                  onPressed: () => _updateReviewStatus('approved'),
+                                                ),
+                                                const SizedBox(width: 8),
+                                                OutlinedButton.icon(
+                                                  style: OutlinedButton.styleFrom(
+                                                    foregroundColor: Colors.amber.shade900,
+                                                    side: BorderSide(color: Colors.amber.shade700),
+                                                    padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 12),
+                                                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(4)),
+                                                  ),
+                                                  icon: const Icon(Icons.visibility_outlined, size: 16),
+                                                  label: const Text("Theo Dõi"),
+                                                  onPressed: () => _updateReviewStatus('monitored'),
+                                                ),
+                                                const SizedBox(width: 8),
+                                                OutlinedButton.icon(
+                                                  style: OutlinedButton.styleFrom(
+                                                    foregroundColor: Colors.red.shade700,
+                                                    side: BorderSide(color: Colors.red.shade400),
+                                                    padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 12),
+                                                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(4)),
+                                                  ),
+                                                  icon: const Icon(Icons.cancel_outlined, size: 16),
+                                                  label: const Text("Yêu Cầu Chụp Lại"),
+                                                  onPressed: () => _updateReviewStatus('rejected'),
+                                                ),
+                                              ],
+                                            ),
+                                        ],
+                                      ),
+                                    ),
+                                  ],
+                                ),
+                        ),
+                      ],
+                    ),
+            ),
+          ],
         ),
       ),
     );

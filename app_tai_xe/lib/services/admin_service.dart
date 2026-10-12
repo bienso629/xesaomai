@@ -418,4 +418,49 @@ class AdminService {
     } catch (_) {}
     return [];
   }
+
+  /// Lấy danh sách kiểm tra xe 5 ảnh của tài xế
+  static Future<List<dynamic>> fetchInspections({String? date, String? plateNumber}) async {
+    try {
+      String url = '$baseUrl/inspections?';
+      if (date != null && date.isNotEmpty) {
+        url += 'date=$date&';
+      }
+      if (plateNumber != null && plateNumber.isNotEmpty) {
+        url += 'plate_number=${Uri.encodeComponent(plateNumber)}&';
+      }
+      final res = await http.get(
+        Uri.parse(url),
+        headers: await _headers(),
+      ).timeout(const Duration(seconds: 8));
+
+      if (res.statusCode == 200) {
+        return jsonDecode(res.body) as List<dynamic>;
+      }
+    } catch (_) {}
+    return [];
+  }
+
+  /// Điều phối viên duyệt / xử lý cờ kiểm tra xe 5 ảnh
+  static Future<Map<String, dynamic>> reviewInspection(int inspectionId, {required String flagStatus, String? flagReason}) async {
+    try {
+      final res = await http.put(
+        Uri.parse('$baseUrl/inspections/$inspectionId/review'),
+        headers: await _headers(),
+        body: jsonEncode({
+          'flag_status': flagStatus,
+          'flag_reason': flagReason,
+        }),
+      ).timeout(const Duration(seconds: 8));
+
+      if (res.statusCode == 200) {
+        return {'success': true, 'data': jsonDecode(res.body)};
+      } else {
+        final err = jsonDecode(res.body);
+        return {'success': false, 'message': err['detail'] ?? 'Lỗi cập nhật trạng thái duyệt xe'};
+      }
+    } catch (e) {
+      return {'success': false, 'message': 'Không thể kết nối API: $e'};
+    }
+  }
 }
