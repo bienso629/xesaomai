@@ -414,6 +414,7 @@ class _DispatchSupervisorScreenState extends State<DispatchSupervisorScreen> {
                                   DataColumn(label: Text("Tài xế chỉ định", style: TextStyle(fontWeight: FontWeight.bold, fontSize: 13))),
                                   DataColumn(label: Text("Đơn vị quản lý", style: TextStyle(fontWeight: FontWeight.bold, fontSize: 13))),
                                   DataColumn(label: Text("Trạng thái", style: TextStyle(fontWeight: FontWeight.bold, fontSize: 13))),
+                                  DataColumn(label: Text("Thao tác", style: TextStyle(fontWeight: FontWeight.bold, fontSize: 13))),
                                 ],
                                 rows: List.generate(paginatedVehicles.length, (idx) {
                                   final v = paginatedVehicles[idx];
@@ -622,6 +623,22 @@ class _DispatchSupervisorScreenState extends State<DispatchSupervisorScreen> {
                                               fontWeight: FontWeight.bold,
                                             ),
                                           ),
+                                        ),
+                                      ),
+                                      // Cột 7: Thao tác (Sửa thông tin phương tiện)
+                                      makeCell(
+                                        OutlinedButton.icon(
+                                          style: OutlinedButton.styleFrom(
+                                            foregroundColor: Colors.blue.shade800,
+                                            side: BorderSide(color: Colors.blue.shade300),
+                                            padding: const EdgeInsets.symmetric(horizontal: 10),
+                                            minimumSize: const Size(0, 32),
+                                            tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                                            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(4)),
+                                          ),
+                                          icon: const Icon(Icons.edit, size: 14),
+                                          label: const Text("Sửa", style: TextStyle(fontSize: 12, fontWeight: FontWeight.bold)),
+                                          onPressed: () => _showEditVehicleDialog(v),
                                         ),
                                       ),
                                     ],
@@ -3054,6 +3071,183 @@ class _DispatchSupervisorScreenState extends State<DispatchSupervisorScreen> {
                 );
               },
               child: const Text("Tạo tài khoản"),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  // DIALOG: CHỈNH SỬA THÔNG TIN PHƯƠNG TIỆN
+  void _showEditVehicleDialog(dynamic vehicleData) {
+    final v = vehicleData is Map ? vehicleData : <String, dynamic>{};
+    final plate = (v['plate_number'] ?? '').toString();
+    final vtypeCtrl = TextEditingController(text: (v['vehicle_type'] ?? '').toString());
+    final ownerCompanyCtrl = TextEditingController(text: (v['owner_company'] ?? 'Sao Mai Logistics').toString());
+    String ownershipType = (v['ownership_type'] ?? 'INTERNAL').toString();
+    if (!['INTERNAL', 'RENTAL', 'CUSTOMER_SELF'].contains(ownershipType)) {
+      ownershipType = 'INTERNAL';
+    }
+    int? selectedDriverId = v['default_driver_id'] as int?;
+
+    // Lọc danh sách các tài khoản tài xế có thể gán
+    final driverUsers = _users.where((u) {
+      if (u is! Map) return false;
+      final roleCodes = (u['role_codes'] as List<dynamic>?)?.map((e) => e.toString()).toList() ?? [];
+      return roleCodes.contains('driver') || u['driver_type'] != null;
+    }).toList();
+
+    showDialog(
+      context: context,
+      builder: (dialogCtx) => StatefulBuilder(
+        builder: (context, setDialogState) => AlertDialog(
+          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(4)),
+          title: Row(
+            children: [
+              Container(
+                padding: const EdgeInsets.all(6),
+                decoration: BoxDecoration(
+                  color: Colors.blue.shade50,
+                  borderRadius: BorderRadius.circular(4),
+                ),
+                child: const Icon(Icons.local_shipping, size: 20, color: Colors.blue),
+              ),
+              const SizedBox(width: 10),
+              Text("Chỉnh sửa phương tiện: $plate", style: const TextStyle(fontSize: 16, fontWeight: FontWeight.bold)),
+            ],
+          ),
+          content: SingleChildScrollView(
+            child: SizedBox(
+              width: 500,
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  // Biển số xe (chỉ đọc)
+                  TextFormField(
+                    initialValue: plate,
+                    readOnly: true,
+                    decoration: const InputDecoration(
+                      labelText: "Biển kiểm soát (Cố định)",
+                      prefixIcon: Icon(Icons.pin),
+                      filled: true,
+                      fillColor: Color(0xFFF1F5F9),
+                    ),
+                  ),
+                  const SizedBox(height: 12),
+                  // Loại phương tiện
+                  TextField(
+                    controller: vtypeCtrl,
+                    decoration: const InputDecoration(
+                      labelText: "Loại phương tiện *",
+                      hintText: "Ví dụ: Đầu kéo, Xe container, Xe tải...",
+                      prefixIcon: Icon(Icons.category_outlined),
+                    ),
+                  ),
+                  const SizedBox(height: 12),
+                  // Hình thức sở hữu
+                  DropdownButtonFormField<String>(
+                    value: ownershipType,
+                    decoration: const InputDecoration(
+                      labelText: "Hình thức sở hữu *",
+                      prefixIcon: Icon(Icons.business_outlined),
+                    ),
+                    items: const [
+                      DropdownMenuItem(value: "INTERNAL", child: Text("Xe nội bộ")),
+                      DropdownMenuItem(value: "RENTAL", child: Text("Xe thuê ngoài")),
+                      DropdownMenuItem(value: "CUSTOMER_SELF", child: Text("Khách tự vận chuyển")),
+                    ],
+                    onChanged: (val) {
+                      if (val != null) {
+                        setDialogState(() => ownershipType = val);
+                      }
+                    },
+                  ),
+                  const SizedBox(height: 12),
+                  // Tài xế chỉ định
+                  DropdownButtonFormField<int?>(
+                    value: selectedDriverId,
+                    decoration: const InputDecoration(
+                      labelText: "Tài xế chỉ định phụ trách",
+                      prefixIcon: Icon(Icons.person_outline),
+                    ),
+                    items: [
+                      const DropdownMenuItem<int?>(
+                        value: null,
+                        child: Text("Chưa phân bổ tài xế", style: TextStyle(fontStyle: FontStyle.italic, color: Colors.grey)),
+                      ),
+                      ...driverUsers.map((u) {
+                        final id = u['id'] as int;
+                        final name = (u['full_name'] ?? u['username'] ?? '').toString();
+                        final phone = (u['phone'] ?? '').toString();
+                        final label = phone.isNotEmpty ? "$name ($phone)" : name;
+                        return DropdownMenuItem<int?>(
+                          value: id,
+                          child: Text(label),
+                        );
+                      }),
+                    ],
+                    onChanged: (val) {
+                      setDialogState(() => selectedDriverId = val);
+                    },
+                  ),
+                  const SizedBox(height: 12),
+                  // Đơn vị quản lý
+                  TextField(
+                    controller: ownerCompanyCtrl,
+                    decoration: const InputDecoration(
+                      labelText: "Đơn vị quản lý / Công ty sở hữu",
+                      hintText: "Ví dụ: Sao Mai Logistics",
+                      prefixIcon: Icon(Icons.apartment_outlined),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.of(dialogCtx).pop(),
+              child: const Text("Hủy"),
+            ),
+            ElevatedButton(
+              style: ElevatedButton.styleFrom(
+                backgroundColor: Colors.blue.shade800,
+                foregroundColor: Colors.white,
+                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(4)),
+                minimumSize: const Size(100, 44),
+              ),
+              onPressed: () async {
+                final vtype = vtypeCtrl.text.trim();
+                if (vtype.isEmpty) {
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    const SnackBar(content: Text("Vui lòng nhập loại phương tiện")),
+                  );
+                  return;
+                }
+
+                Navigator.of(dialogCtx).pop();
+                setState(() => _isLoading = true);
+
+                final payload = <String, dynamic>{
+                  "vehicle_type": vtype,
+                  "ownership_type": ownershipType,
+                  "default_driver_id": selectedDriverId ?? -1,
+                  "owner_company": ownerCompanyCtrl.text.trim().isNotEmpty ? ownerCompanyCtrl.text.trim() : "Sao Mai Logistics",
+                };
+
+                final res = await AdminService.updateVehicle(plate, payload);
+                await _loadAllManagementData();
+
+                if (!mounted) return;
+                ScaffoldMessenger.of(context).showSnackBar(
+                  SnackBar(
+                    backgroundColor: res['success'] == true ? Colors.green : Colors.red,
+                    content: Text(res['success'] == true ? "Đã cập nhật thông tin phương tiện $plate thành công!" : "Lỗi: ${res['message']}"),
+                  ),
+                );
+              },
+              child: const Text("Lưu thay đổi", style: TextStyle(fontWeight: FontWeight.bold)),
             ),
           ],
         ),

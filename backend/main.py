@@ -127,6 +127,15 @@ class VehicleCreate(BaseModel):
     vehicle_type: str
     ownership_type: Optional[str] = "INTERNAL"
     default_driver_id: Optional[int] = None
+    owner_company: Optional[str] = "Sao Mai Logistics"
+    status: Optional[str] = "ready"
+
+class VehicleUpdate(BaseModel):
+    vehicle_type: Optional[str] = None
+    ownership_type: Optional[str] = None
+    default_driver_id: Optional[int] = None
+    owner_company: Optional[str] = None
+    status: Optional[str] = None
 
 class GasStationCreate(BaseModel):
     name: str
@@ -767,14 +776,67 @@ def create_vehicle(v: VehicleCreate, current_user: dict = Depends(get_current_us
     cur = conn.cursor()
     try:
         cur.execute(
-            "INSERT INTO vehicles (plate_number, vehicle_type, ownership_type, default_driver_id) VALUES (%s, %s, %s, %s) RETURNING *",
-            (v.plate_number, v.vehicle_type, v.ownership_type, v.default_driver_id)
+            "INSERT INTO vehicles (plate_number, vehicle_type, ownership_type, default_driver_id, owner_company, status) VALUES (%s, %s, %s, %s, %s, %s) RETURNING *",
+            (v.plate_number, v.vehicle_type, v.ownership_type, v.default_driver_id, v.owner_company or "Sao Mai Logistics", v.status or "ready")
         )
         conn.commit()
         created = cur.fetchone()
         cur.close()
         conn.close()
         return created
+    except Exception as e:
+        conn.rollback()
+        conn.close()
+        raise HTTPException(status_code=400, detail=str(e))
+
+@app.put("/api/v1/vehicles/{plate_number}")
+def update_vehicle(plate_number: str, v: VehicleUpdate, current_user: dict = Depends(get_current_user)):
+    conn = get_db()
+    cur = conn.cursor()
+    try:
+        cur.execute("SELECT * FROM vehicles WHERE plate_number = %s", (plate_number,))
+        exist = cur.fetchone()
+        if not exist:
+            cur.close()
+            conn.close()
+            raise HTTPException(status_code=404, detail="Không tìm thấy phương tiện")
+
+        updates = []
+        params = []
+        if v.vehicle_type is not None:
+            updates.append("vehicle_type = %s")
+            params.append(v.vehicle_type)
+        if v.ownership_type is not None:
+            updates.append("ownership_type = %s")
+            params.append(v.ownership_type)
+        if v.default_driver_id is not None:
+            if v.default_driver_id == 0 or v.default_driver_id == -1:
+                updates.append("default_driver_id = NULL")
+            else:
+                updates.append("default_driver_id = %s")
+                params.append(v.default_driver_id)
+        if v.owner_company is not None:
+            updates.append("owner_company = %s")
+            params.append(v.owner_company)
+        if v.status is not None:
+            updates.append("status = %s")
+            params.append(v.status)
+
+        if updates:
+            updates.append("updated_at = CURRENT_TIMESTAMP")
+            sql = f"UPDATE vehicles SET {', '.join(updates)} WHERE plate_number = %s RETURNING *"
+            params.append(plate_number)
+            cur.execute(sql, tuple(params))
+            conn.commit()
+            updated = cur.fetchone()
+        else:
+            updated = exist
+
+        cur.close()
+        conn.close()
+        return updated
+    except HTTPException:
+        raise
     except Exception as e:
         conn.rollback()
         conn.close()

@@ -70,6 +70,26 @@ class AdminService {
     return [];
   }
 
+  /// Cập nhật thông tin phương tiện (Loại xe, Hình thức sở hữu, Tài xế chỉ định, Đơn vị quản lý, Trạng thái)
+  static Future<Map<String, dynamic>> updateVehicle(String plateNumber, Map<String, dynamic> payload) async {
+    try {
+      final res = await http.put(
+        Uri.parse('$baseUrl/vehicles/${Uri.encodeComponent(plateNumber)}'),
+        headers: await _headers(),
+        body: jsonEncode(payload),
+      ).timeout(const Duration(seconds: 8));
+
+      if (res.statusCode == 200) {
+        return {'success': true, 'data': jsonDecode(res.body)};
+      } else {
+        final body = jsonDecode(res.body);
+        return {'success': false, 'message': body['detail'] ?? 'Cập nhật thất bại'};
+      }
+    } catch (e) {
+      return {'success': false, 'message': e.toString()};
+    }
+  }
+
   /// Lấy danh sách sản phẩm (Tro bay, Xi măng rời...)
   static Future<List<dynamic>> fetchProducts() async {
     try {
