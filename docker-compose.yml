@@ -47,7 +47,7 @@ services:
       REDIS_URL: redis://redis:6379/0
       PORT: 8000
     ports:
-      - "8000:8000"
+      - "1133:8000"
     volumes:
       - ./backend:/app
       - uploads_data:/app/uploads

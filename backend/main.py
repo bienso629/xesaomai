@@ -39,11 +39,21 @@ def create_access_token(data: dict, expires_delta: Optional[timedelta] = None):
     encoded_jwt = jwt.encode(to_encode, SECRET_KEY, algorithm=ALGORITHM)
     return encoded_jwt
 
+from fastapi.middleware.cors import CORSMiddleware
+
 # ----------------- FASTAPI INIT -----------------
 app = FastAPI(
     title="Hệ thống Quản lý Vận tải & App Tài xế (Taxi Logistics API)",
     description="API nghiệp vụ: Xác thực JWT cho mọi phiên đăng nhập, Kiểm tra xe 5 ảnh, Cây dầu đối soát nhiên liệu, Mốc giờ chuyến, Sản phẩm & RBAC động",
     version="2.1.0"
+)
+
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
 )
 
 UPLOAD_DIR = os.getenv("UPLOAD_DIR", "/app/uploads")
