@@ -298,17 +298,18 @@ class _VehicleInspectionReviewScreenState extends State<VehicleInspectionReviewS
             Row(
               children: [
                 SizedBox(
-                  width: 260,
-                  height: 40,
+                  width: 280,
+                  height: 44,
                   child: TextField(
                     controller: _searchCtrl,
+                    style: const TextStyle(fontSize: 13.5),
                     decoration: InputDecoration(
                       hintText: "Tìm theo biển số xe...",
-                      hintStyle: const TextStyle(fontSize: 12.5),
-                      prefixIcon: const Icon(Icons.search, size: 18),
+                      hintStyle: TextStyle(fontSize: 13, color: Colors.grey.shade500),
+                      prefixIcon: const Icon(Icons.search, size: 20),
                       suffixIcon: _filterPlate.isNotEmpty
                           ? IconButton(
-                              icon: const Icon(Icons.clear, size: 16),
+                              icon: const Icon(Icons.clear, size: 18),
                               onPressed: () {
                                 _searchCtrl.clear();
                                 setState(() => _filterPlate = '');
@@ -316,7 +317,7 @@ class _VehicleInspectionReviewScreenState extends State<VehicleInspectionReviewS
                               },
                             )
                           : null,
-                      contentPadding: const EdgeInsets.symmetric(horizontal: 10, vertical: 0),
+                      contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 11),
                       border: OutlineInputBorder(borderRadius: BorderRadius.circular(4)),
                     ),
                     onSubmitted: (val) {
@@ -327,16 +328,17 @@ class _VehicleInspectionReviewScreenState extends State<VehicleInspectionReviewS
                 ),
                 const SizedBox(width: 10),
                 SizedBox(
-                  height: 40,
+                  height: 44,
                   child: ElevatedButton.icon(
                     style: ElevatedButton.styleFrom(
-                      backgroundColor: Colors.blueGrey.shade800,
+                      backgroundColor: Colors.blue.shade800,
                       foregroundColor: Colors.white,
                       shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(4)),
-                      padding: const EdgeInsets.symmetric(horizontal: 14),
+                      padding: const EdgeInsets.symmetric(horizontal: 16),
+                      minimumSize: const Size(64, 44),
                     ),
-                    icon: const Icon(Icons.filter_list, size: 16),
-                    label: const Text("Tìm Kiếm", style: TextStyle(fontSize: 12.5, fontWeight: FontWeight.bold)),
+                    icon: const Icon(Icons.filter_list, size: 18),
+                    label: const Text("Tìm Kiếm", style: TextStyle(fontSize: 14, fontWeight: FontWeight.bold)),
                     onPressed: () {
                       setState(() => _filterPlate = _searchCtrl.text.trim());
                       _loadInspections();
@@ -344,23 +346,32 @@ class _VehicleInspectionReviewScreenState extends State<VehicleInspectionReviewS
                   ),
                 ),
                 const SizedBox(width: 16),
-                const Text("Lọc trạng thái:", style: TextStyle(fontSize: 12.5, fontWeight: FontWeight.w600)),
+                const Text("Lọc trạng thái:", style: TextStyle(fontSize: 13, fontWeight: FontWeight.bold, color: Colors.black87)),
                 const SizedBox(width: 8),
                 Wrap(
                   spacing: 6,
                   children: [
-                    _buildFilterChoiceChip("Tất cả", 'ALL'),
-                    _buildFilterChoiceChip("Chưa duyệt", 'pending'),
-                    _buildFilterChoiceChip("Đã duyệt", 'approved'),
-                    _buildFilterChoiceChip("Đang theo dõi", 'monitored'),
-                    _buildFilterChoiceChip("Từ chối / Chụp lại", 'rejected'),
+                    _buildFilterChoiceChip("Tất cả", 'ALL', Colors.blueGrey),
+                    _buildFilterChoiceChip("Chưa duyệt", 'pending', Colors.blueGrey),
+                    _buildFilterChoiceChip("Đã duyệt", 'approved', Colors.green),
+                    _buildFilterChoiceChip("Đang theo dõi", 'monitored', Colors.amber),
+                    _buildFilterChoiceChip("Từ chối / Chụp lại", 'rejected', Colors.red),
                   ],
                 ),
                 const Spacer(),
-                IconButton(
-                  tooltip: "Tải lại danh sách",
-                  icon: const Icon(Icons.refresh),
-                  onPressed: _loadInspections,
+                SizedBox(
+                  height: 44,
+                  child: OutlinedButton.icon(
+                    style: OutlinedButton.styleFrom(
+                      foregroundColor: Colors.blueGrey.shade800,
+                      side: BorderSide(color: Colors.grey.shade400),
+                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(4)),
+                      padding: const EdgeInsets.symmetric(horizontal: 12),
+                    ),
+                    icon: const Icon(Icons.refresh, size: 18),
+                    label: const Text("Tải lại", style: TextStyle(fontSize: 13, fontWeight: FontWeight.bold)),
+                    onPressed: _loadInspections,
+                  ),
                 ),
               ],
             ),
@@ -658,66 +669,73 @@ class _VehicleInspectionReviewScreenState extends State<VehicleInspectionReviewS
                                           children: [
                                             Expanded(
                                               child: SizedBox(
-                                                height: 40,
+                                                height: 44,
                                                 child: TextField(
                                                   controller: _noteCtrl,
-                                                  decoration: const InputDecoration(
-                                                    hintText: "Ghi chú kiểm tra (ví dụ: cản nứt, lệch km hành trình, ảnh mờ...)",
-                                                    border: OutlineInputBorder(),
+                                                  style: const TextStyle(fontSize: 13.5),
+                                                  decoration: InputDecoration(
+                                                    hintText: "Ghi chú kiểm tra của Điều phối (ví dụ: cản nứt, lệch km hành trình, ảnh mờ...)",
+                                                    hintStyle: TextStyle(fontSize: 13, color: Colors.grey.shade500),
+                                                    border: const OutlineInputBorder(),
                                                     isDense: true,
-                                                    contentPadding: EdgeInsets.symmetric(horizontal: 10, vertical: 10),
+                                                    contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 11),
                                                   ),
                                                 ),
                                               ),
                                             ),
                                             const SizedBox(width: 12),
                                             if (_isSubmitting)
-                                              const SizedBox(width: 32, height: 32, child: CircularProgressIndicator())
+                                              const SizedBox(width: 44, height: 44, child: Center(child: CircularProgressIndicator(strokeWidth: 2.5)))
                                             else
                                               Row(
                                                 mainAxisSize: MainAxisSize.min,
                                                 children: [
                                                   SizedBox(
-                                                    height: 40,
+                                                    height: 44,
                                                     child: ElevatedButton.icon(
                                                       style: ElevatedButton.styleFrom(
                                                         backgroundColor: Colors.green.shade700,
                                                         foregroundColor: Colors.white,
-                                                        padding: const EdgeInsets.symmetric(horizontal: 14),
+                                                        padding: const EdgeInsets.symmetric(horizontal: 16),
+                                                        minimumSize: const Size(64, 44),
                                                         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(4)),
                                                       ),
-                                                      icon: const Icon(Icons.check_circle_outline, size: 16),
-                                                      label: const Text("Duyệt Nhận Chuyến", style: TextStyle(fontWeight: FontWeight.bold, fontSize: 13)),
+                                                      icon: const Icon(Icons.check_circle_outline, size: 18),
+                                                      label: const Text("Duyệt Nhận Chuyến", style: TextStyle(fontWeight: FontWeight.bold, fontSize: 13.5)),
                                                       onPressed: () => _updateReviewStatus('approved'),
                                                     ),
                                                   ),
                                                   const SizedBox(width: 8),
                                                   SizedBox(
-                                                    height: 40,
+                                                    height: 44,
                                                     child: OutlinedButton.icon(
                                                       style: OutlinedButton.styleFrom(
                                                         foregroundColor: Colors.amber.shade900,
-                                                        side: BorderSide(color: Colors.amber.shade700),
-                                                        padding: const EdgeInsets.symmetric(horizontal: 12),
+                                                        side: BorderSide(color: Colors.amber.shade700, width: 1.2),
+                                                        backgroundColor: Colors.amber.shade50.withValues(alpha: 0.3),
+                                                        padding: const EdgeInsets.symmetric(horizontal: 14),
+                                                        minimumSize: const Size(64, 44),
                                                         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(4)),
                                                       ),
-                                                      icon: const Icon(Icons.visibility_outlined, size: 16),
-                                                      label: const Text("Theo Dõi", style: TextStyle(fontWeight: FontWeight.bold, fontSize: 13)),
+                                                      icon: const Icon(Icons.visibility_outlined, size: 18),
+                                                      label: const Text("Theo Dõi", style: TextStyle(fontWeight: FontWeight.bold, fontSize: 13.5)),
                                                       onPressed: () => _updateReviewStatus('monitored'),
                                                     ),
                                                   ),
                                                   const SizedBox(width: 8),
                                                   SizedBox(
-                                                    height: 40,
+                                                    height: 44,
                                                     child: OutlinedButton.icon(
                                                       style: OutlinedButton.styleFrom(
                                                         foregroundColor: Colors.red.shade700,
-                                                        side: BorderSide(color: Colors.red.shade400),
-                                                        padding: const EdgeInsets.symmetric(horizontal: 12),
+                                                        side: BorderSide(color: Colors.red.shade400, width: 1.2),
+                                                        backgroundColor: Colors.red.shade50.withValues(alpha: 0.3),
+                                                        padding: const EdgeInsets.symmetric(horizontal: 14),
+                                                        minimumSize: const Size(64, 44),
                                                         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(4)),
                                                       ),
-                                                      icon: const Icon(Icons.cancel_outlined, size: 16),
-                                                      label: const Text("Yêu Cầu Chụp Lại", style: TextStyle(fontWeight: FontWeight.bold, fontSize: 13)),
+                                                      icon: const Icon(Icons.cancel_outlined, size: 18),
+                                                      label: const Text("Yêu Cầu Chụp Lại", style: TextStyle(fontWeight: FontWeight.bold, fontSize: 13.5)),
                                                       onPressed: () => _updateReviewStatus('rejected'),
                                                     ),
                                                   ),
@@ -739,15 +757,43 @@ class _VehicleInspectionReviewScreenState extends State<VehicleInspectionReviewS
     );
   }
 
-  Widget _buildFilterChoiceChip(String label, String value) {
+  Widget _buildFilterChoiceChip(String label, String value, MaterialColor color) {
     final isSelected = _filterStatus == value;
+    final Color selectedBg = color.shade800;
+    final Color unselectedBg = color.shade50;
+    final Color unselectedBorder = color.shade200;
+    final Color unselectedText = color.shade900;
+
     return ChoiceChip(
-      label: Text(label, style: TextStyle(fontSize: 11.5, color: isSelected ? Colors.white : Colors.black87, fontWeight: isSelected ? FontWeight.bold : FontWeight.normal)),
+      avatar: isSelected
+          ? const Icon(Icons.check, size: 14, color: Colors.white)
+          : Container(
+              width: 8,
+              height: 8,
+              decoration: BoxDecoration(
+                color: color.shade700,
+                shape: BoxShape.circle,
+              ),
+            ),
+      label: Text(
+        label,
+        style: TextStyle(
+          fontSize: 12,
+          color: isSelected ? Colors.white : unselectedText,
+          fontWeight: isSelected ? FontWeight.bold : FontWeight.w600,
+        ),
+      ),
       selected: isSelected,
-      selectedColor: Colors.blueGrey.shade800,
-      backgroundColor: Colors.grey.shade100,
-      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(4), side: BorderSide(color: Colors.grey.shade300)),
-      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 0),
+      selectedColor: selectedBg,
+      backgroundColor: unselectedBg,
+      shape: RoundedRectangleBorder(
+        borderRadius: BorderRadius.circular(4),
+        side: BorderSide(
+          color: isSelected ? selectedBg : unselectedBorder,
+          width: 1,
+        ),
+      ),
+      padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 0),
       onSelected: (selected) {
         if (selected) {
           setState(() {
