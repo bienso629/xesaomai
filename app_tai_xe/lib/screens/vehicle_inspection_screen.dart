@@ -251,49 +251,6 @@ class _VehicleInspectionReviewScreenState extends State<VehicleInspectionReviewS
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            // Thẻ tiêu đề & chỉ dẫn nghiệp vụ
-            Card(
-              elevation: 0,
-              shape: RoundedRectangleBorder(
-                borderRadius: BorderRadius.circular(4),
-                side: BorderSide(color: Colors.blueGrey.shade300, width: 1),
-              ),
-              color: Colors.blueGrey.shade50.withValues(alpha: 0.5),
-              child: Padding(
-                padding: const EdgeInsets.all(14),
-                child: Row(
-                  children: [
-                    Container(
-                      padding: const EdgeInsets.all(8),
-                      decoration: BoxDecoration(
-                        color: Colors.blueGrey.shade100,
-                        borderRadius: BorderRadius.circular(4),
-                      ),
-                      child: const Icon(Icons.verified_user_outlined, color: Colors.blueGrey, size: 24),
-                    ),
-                    const SizedBox(width: 12),
-                    Expanded(
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: const [
-                          Text(
-                            "Quy Trình Kiểm Tra Chất Lượng Xe Qua 5 Ảnh (Giao Nhận Ca)",
-                            style: TextStyle(fontSize: 15, fontWeight: FontWeight.bold, color: Colors.blueGrey),
-                          ),
-                          SizedBox(height: 3),
-                          Text(
-                            "Tài xế có nghĩa vụ dùng camera điện thoại chụp đúng 5 góc quy chuẩn (Gầm trước, Gầm sau, Hông trái, Hông phải, Táp-lô ODO). Điều phối viên đang trực có trách nhiệm soi xét tình trạng xe trước khi cấp phép nhận chuyến.",
-                            style: TextStyle(fontSize: 12.5, color: Colors.black87, height: 1.3),
-                          ),
-                        ],
-                      ),
-                    ),
-                  ],
-                ),
-              ),
-            ),
-            const SizedBox(height: 14),
-
             // Thanh công cụ tìm kiếm và lọc trạng thái duyệt
             Row(
               children: [
