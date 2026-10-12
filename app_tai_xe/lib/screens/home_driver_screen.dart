@@ -90,37 +90,69 @@ class HomeDriverScreen extends StatelessWidget {
             const Divider(height: 24),
             Row(
               children: [
-                const Icon(Icons.local_shipping, color: Colors.blueGrey),
+                const Icon(Icons.local_shipping_outlined, color: Colors.blueGrey, size: 20),
                 const SizedBox(width: 8),
-                const Text("Chọn xe trực:", style: TextStyle(fontWeight: FontWeight.w600)),
+                const Text(
+                  "Chọn xe trực:",
+                  style: TextStyle(fontWeight: FontWeight.bold, fontSize: 13, color: Colors.black87),
+                ),
                 const SizedBox(width: 12),
-                DropdownButton<String>(
-                  value: state.selectedPlate,
-                  items: state.availableVehicles.map((plate) {
-                    return DropdownMenuItem(
-                      value: plate,
-                      child: Text(plate, style: const TextStyle(fontWeight: FontWeight.bold)),
-                    );
-                  }).toList(),
-                  onChanged: (newPlate) {
-                    if (newPlate != null) {
-                      VehicleType vType = VehicleType.howo;
-                      if (newPlate.contains("772")) vType = VehicleType.shacman;
-                      if (newPlate.contains("441")) vType = VehicleType.daewoo;
-                      state.setVehicle(newPlate, vType);
-                    }
-                  },
+                SizedBox(
+                  width: 180,
+                  height: 40,
+                  child: DropdownButtonFormField<String>(
+                    value: state.selectedPlate,
+                    isDense: true,
+                    style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 13, color: Colors.black87),
+                    icon: const Icon(Icons.arrow_drop_down, color: Colors.blueGrey),
+                    decoration: InputDecoration(
+                      contentPadding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+                      border: OutlineInputBorder(
+                        borderRadius: BorderRadius.circular(4),
+                        borderSide: BorderSide(color: Colors.grey.shade400, width: 1),
+                      ),
+                      enabledBorder: OutlineInputBorder(
+                        borderRadius: BorderRadius.circular(4),
+                        borderSide: BorderSide(color: Colors.grey.shade400, width: 1),
+                      ),
+                      focusedBorder: OutlineInputBorder(
+                        borderRadius: BorderRadius.circular(4),
+                        borderSide: BorderSide(color: Colors.blue.shade700, width: 1.5),
+                      ),
+                      filled: true,
+                      fillColor: Colors.white,
+                    ),
+                    items: state.availableVehicles.map((plate) {
+                      return DropdownMenuItem(
+                        value: plate,
+                        child: Text(plate, style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 13)),
+                      );
+                    }).toList(),
+                    onChanged: (newPlate) {
+                      if (newPlate != null) {
+                        VehicleType vType = VehicleType.howo;
+                        if (newPlate.contains("772")) vType = VehicleType.shacman;
+                        if (newPlate.contains("441")) vType = VehicleType.daewoo;
+                        state.setVehicle(newPlate, vType);
+                      }
+                    },
+                  ),
                 ),
                 const Spacer(),
-                Chip(
-                  label: Text(
-                    state.selectedVehicleType.name.toUpperCase(),
-                    style: const TextStyle(fontSize: 11, fontWeight: FontWeight.bold, color: Colors.blueGrey),
+                Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+                  decoration: BoxDecoration(
+                    color: Colors.blueGrey.shade50,
+                    borderRadius: BorderRadius.circular(4),
+                    border: Border.all(color: Colors.blueGrey.shade200, width: 1),
                   ),
-                  backgroundColor: Colors.grey.shade400,
-                )
+                  child: Text(
+                    state.selectedVehicleType.name.toUpperCase(),
+                    style: TextStyle(fontSize: 11, fontWeight: FontWeight.bold, color: Colors.blueGrey.shade800),
+                  ),
+                ),
               ],
-            )
+            ),
           ],
         ),
       ),
