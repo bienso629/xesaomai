@@ -142,8 +142,12 @@ class _DispatchSupervisorScreenState extends State<DispatchSupervisorScreen> {
                     children: [
                       Icon(Icons.hub_outlined, color: Colors.blue),
                       SizedBox(width: 8),
-                      Text("Tích hợp Zalo OA & GPS Vietmap / Bình Anh",
-                          style: TextStyle(fontWeight: FontWeight.bold, fontSize: 14)),
+                      Expanded(
+                        child: Text(
+                          "Tích hợp Zalo OA & GPS Vietmap / Bình Anh",
+                          style: TextStyle(fontWeight: FontWeight.bold, fontSize: 14),
+                        ),
+                      ),
                     ],
                   ),
                   Divider(),
@@ -1777,31 +1781,35 @@ class _DispatchSupervisorScreenState extends State<DispatchSupervisorScreen> {
             Row(
               mainAxisAlignment: MainAxisAlignment.spaceBetween,
               children: [
-                Row(
-                  children: [
-                    Container(
-                      padding: const EdgeInsets.all(6),
-                      decoration: BoxDecoration(
-                        color: Colors.blue.shade50,
-                        borderRadius: BorderRadius.circular(4),
+                Expanded(
+                  child: Row(
+                    children: [
+                      Container(
+                        padding: const EdgeInsets.all(6),
+                        decoration: BoxDecoration(
+                          color: Colors.blue.shade50,
+                          borderRadius: BorderRadius.circular(4),
+                        ),
+                        child: Icon(Icons.headset_mic, color: Colors.blue.shade800, size: 20),
                       ),
-                      child: Icon(Icons.headset_mic, color: Colors.blue.shade800, size: 20),
-                    ),
-                    const SizedBox(width: 10),
-                    Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        const Text(
-                          "Điều phối viên Đang trực ca",
-                          style: TextStyle(fontWeight: FontWeight.bold, fontSize: 14),
+                      const SizedBox(width: 10),
+                      Expanded(
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            const Text(
+                              "Điều phối viên Đang trực ca",
+                              style: TextStyle(fontWeight: FontWeight.bold, fontSize: 14),
+                            ),
+                            Text(
+                              "Hệ thống cho phép nhiều điều phối viên cùng nhận ca và đồng hành trực tuyến",
+                              style: TextStyle(fontSize: 11.5, color: Colors.grey.shade600),
+                            ),
+                          ],
                         ),
-                        Text(
-                          "Hệ thống cho phép nhiều điều phối viên cùng nhận ca và đồng hành trực tuyến",
-                          style: TextStyle(fontSize: 11.5, color: Colors.grey.shade600),
-                        ),
-                      ],
-                    ),
-                  ],
+                      ),
+                    ],
+                  ),
                 ),
                 // Nút thao tác ca trực
                 Row(
