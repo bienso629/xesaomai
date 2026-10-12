@@ -274,140 +274,176 @@ class _VehicleInspectionReviewScreenState extends State<VehicleInspectionReviewS
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            // Thanh công cụ tìm kiếm và lọc trạng thái duyệt (Bọc trong Wrap chống tràn khi cửa sổ thu nhỏ)
-            Wrap(
-              spacing: 10,
-              runSpacing: 10,
-              crossAxisAlignment: WrapCrossAlignment.center,
-              children: [
-                SizedBox(
-                  width: 240,
-                  height: 44,
-                  child: TextField(
-                    controller: _searchCtrl,
-                    style: const TextStyle(fontSize: 13.5),
-                    decoration: InputDecoration(
-                      hintText: "Tìm theo biển số xe...",
-                      hintStyle: TextStyle(fontSize: 13, color: Colors.grey.shade500),
-                      prefixIcon: const Icon(Icons.search, size: 20),
-                      prefixIconConstraints: const BoxConstraints(minWidth: 40, minHeight: 44, maxHeight: 44),
-                      suffixIcon: _filterPlate.isNotEmpty
-                          ? IconButton(
-                              icon: const Icon(Icons.clear, size: 18),
-                              onPressed: () {
-                                _searchCtrl.clear();
-                                setState(() => _filterPlate = '');
-                                _loadInspections();
-                              },
-                            )
-                          : null,
-                      suffixIconConstraints: const BoxConstraints(minWidth: 40, minHeight: 44, maxHeight: 44),
-                      isDense: true,
-                      contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 11),
-                      border: OutlineInputBorder(borderRadius: BorderRadius.circular(4)),
-                    ),
-                    onSubmitted: (val) {
-                      setState(() => _filterPlate = val.trim());
-                      _loadInspections();
-                    },
-                  ),
-                ),
-                SizedBox(
-                  height: 44,
-                  child: ElevatedButton.icon(
-                    style: ElevatedButton.styleFrom(
-                      backgroundColor: Colors.blue.shade800,
-                      foregroundColor: Colors.white,
-                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(4)),
-                      padding: const EdgeInsets.symmetric(horizontal: 14),
-                      minimumSize: const Size(64, 44),
-                    ),
-                    icon: const Icon(Icons.filter_list, size: 18),
-                    label: const Text("Tìm Kiếm", style: TextStyle(fontSize: 13.5, fontWeight: FontWeight.bold)),
-                    onPressed: () {
-                      setState(() => _filterPlate = _searchCtrl.text.trim());
-                      _loadInspections();
-                    },
-                  ),
-                ),
-                Row(
-                  mainAxisSize: MainAxisSize.min,
+            // Thanh công cụ tìm kiếm và lọc trạng thái duyệt
+            LayoutBuilder(
+              builder: (ctx, constraints) {
+                final bool isNarrow = constraints.maxWidth < 950;
+
+                final leftFilters = Wrap(
+                  spacing: 10,
+                  runSpacing: 10,
+                  crossAxisAlignment: WrapCrossAlignment.center,
                   children: [
-                    const Text("Lọc:", style: TextStyle(fontSize: 13, fontWeight: FontWeight.bold, color: Colors.black87)),
-                    const SizedBox(width: 8),
-                    Wrap(
-                      spacing: 6,
-                      runSpacing: 6,
+                    SizedBox(
+                      width: 240,
+                      height: 44,
+                      child: TextField(
+                        controller: _searchCtrl,
+                        style: const TextStyle(fontSize: 13.5),
+                        decoration: InputDecoration(
+                          hintText: "Tìm theo biển số xe...",
+                          hintStyle: TextStyle(fontSize: 13, color: Colors.grey.shade500),
+                          prefixIcon: const Icon(Icons.search, size: 20),
+                          prefixIconConstraints: const BoxConstraints(minWidth: 40, minHeight: 44, maxHeight: 44),
+                          suffixIcon: _filterPlate.isNotEmpty
+                              ? IconButton(
+                                  icon: const Icon(Icons.clear, size: 18),
+                                  onPressed: () {
+                                    _searchCtrl.clear();
+                                    setState(() => _filterPlate = '');
+                                    _loadInspections();
+                                  },
+                                )
+                              : null,
+                          suffixIconConstraints: const BoxConstraints(minWidth: 40, minHeight: 44, maxHeight: 44),
+                          isDense: true,
+                          contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 11),
+                          border: OutlineInputBorder(borderRadius: BorderRadius.circular(4)),
+                        ),
+                        onSubmitted: (val) {
+                          setState(() => _filterPlate = val.trim());
+                          _loadInspections();
+                        },
+                      ),
+                    ),
+                    SizedBox(
+                      height: 44,
+                      child: ElevatedButton.icon(
+                        style: ElevatedButton.styleFrom(
+                          backgroundColor: Colors.blue.shade800,
+                          foregroundColor: Colors.white,
+                          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(4)),
+                          padding: const EdgeInsets.symmetric(horizontal: 14),
+                          minimumSize: const Size(64, 44),
+                        ),
+                        icon: const Icon(Icons.filter_list, size: 18),
+                        label: const Text("Tìm Kiếm", style: TextStyle(fontSize: 13.5, fontWeight: FontWeight.bold)),
+                        onPressed: () {
+                          setState(() => _filterPlate = _searchCtrl.text.trim());
+                          _loadInspections();
+                        },
+                      ),
+                    ),
+                    Row(
+                      mainAxisSize: MainAxisSize.min,
                       children: [
-                        _buildFilterChoiceChip("Tất cả", 'ALL', Colors.blueGrey),
-                        _buildFilterChoiceChip("Chưa duyệt", 'pending', Colors.blueGrey),
-                        _buildFilterChoiceChip("Đã duyệt", 'approved', Colors.green),
-                        _buildFilterChoiceChip("Theo dõi", 'monitored', Colors.amber),
-                        _buildFilterChoiceChip("Chụp lại", 'rejected', Colors.red),
+                        const Text("Lọc:", style: TextStyle(fontSize: 13, fontWeight: FontWeight.bold, color: Colors.black87)),
+                        const SizedBox(width: 8),
+                        Wrap(
+                          spacing: 6,
+                          runSpacing: 6,
+                          children: [
+                            _buildFilterChoiceChip("Tất cả", 'ALL', Colors.blueGrey),
+                            _buildFilterChoiceChip("Chưa duyệt", 'pending', Colors.blueGrey),
+                            _buildFilterChoiceChip("Đã duyệt", 'approved', Colors.green),
+                            _buildFilterChoiceChip("Theo dõi", 'monitored', Colors.amber),
+                            _buildFilterChoiceChip("Chụp lại", 'rejected', Colors.red),
+                          ],
+                        ),
                       ],
                     ),
                   ],
-                ),
-                // Lọc theo ngày
-                SizedBox(
-                  height: 44,
-                  child: OutlinedButton.icon(
-                    style: OutlinedButton.styleFrom(
-                      foregroundColor: _filterDate != null ? Colors.blue.shade800 : Colors.blueGrey.shade800,
-                      backgroundColor: _filterDate != null ? Colors.blue.shade50 : Colors.white,
-                      side: BorderSide(color: _filterDate != null ? Colors.blue : Colors.grey.shade400),
-                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(4)),
-                      padding: const EdgeInsets.symmetric(horizontal: 12),
-                      minimumSize: const Size(64, 44),
-                    ),
-                    icon: Icon(Icons.calendar_today, size: 17, color: _filterDate != null ? Colors.blue.shade800 : Colors.blueGrey),
-                    label: Text(
-                      _filterDate != null
-                          ? "Ngày: ${_filterDate!.day.toString().padLeft(2, '0')}/${_filterDate!.month.toString().padLeft(2, '0')}/${_filterDate!.year}"
-                          : "Tất cả ngày",
-                      style: TextStyle(
-                        fontSize: 12.5,
-                        fontWeight: _filterDate != null ? FontWeight.bold : FontWeight.w500,
+                );
+
+                final rightButtons = Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    // Lọc theo ngày
+                    SizedBox(
+                      height: 44,
+                      child: OutlinedButton.icon(
+                        style: OutlinedButton.styleFrom(
+                          foregroundColor: _filterDate != null ? Colors.blue.shade800 : Colors.blueGrey.shade800,
+                          backgroundColor: _filterDate != null ? Colors.blue.shade50 : Colors.white,
+                          side: BorderSide(color: _filterDate != null ? Colors.blue : Colors.grey.shade400),
+                          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(4)),
+                          padding: const EdgeInsets.symmetric(horizontal: 12),
+                          minimumSize: const Size(64, 44),
+                        ),
+                        icon: Icon(Icons.calendar_today, size: 17, color: _filterDate != null ? Colors.blue.shade800 : Colors.blueGrey),
+                        label: Text(
+                          _filterDate != null
+                              ? "Ngày: ${_filterDate!.day.toString().padLeft(2, '0')}/${_filterDate!.month.toString().padLeft(2, '0')}/${_filterDate!.year}"
+                              : "Tất cả ngày",
+                          style: TextStyle(
+                            fontSize: 12.5,
+                            fontWeight: _filterDate != null ? FontWeight.bold : FontWeight.w500,
+                          ),
+                        ),
+                        onPressed: _pickFilterDate,
                       ),
                     ),
-                    onPressed: _pickFilterDate,
-                  ),
-                ),
-                if (_filterDate != null)
-                  SizedBox(
-                    height: 44,
-                    width: 44,
-                    child: IconButton(
-                      icon: const Icon(Icons.close, size: 18),
-                      tooltip: "Xóa lọc ngày",
-                      style: IconButton.styleFrom(
-                        shape: RoundedRectangleBorder(
-                          borderRadius: BorderRadius.circular(4),
-                          side: BorderSide(color: Colors.grey.shade400),
+                    if (_filterDate != null) ...[
+                      const SizedBox(width: 6),
+                      SizedBox(
+                        height: 44,
+                        width: 44,
+                        child: IconButton(
+                          icon: const Icon(Icons.close, size: 18),
+                          tooltip: "Xóa lọc ngày",
+                          style: IconButton.styleFrom(
+                            shape: RoundedRectangleBorder(
+                              borderRadius: BorderRadius.circular(4),
+                              side: BorderSide(color: Colors.grey.shade400),
+                            ),
+                          ),
+                          onPressed: () {
+                            setState(() => _filterDate = null);
+                            _loadInspections();
+                          },
                         ),
                       ),
-                      onPressed: () {
-                        setState(() => _filterDate = null);
-                        _loadInspections();
-                      },
+                    ],
+                    const SizedBox(width: 8),
+                    SizedBox(
+                      height: 44,
+                      child: OutlinedButton.icon(
+                        style: OutlinedButton.styleFrom(
+                          foregroundColor: Colors.blueGrey.shade800,
+                          side: BorderSide(color: Colors.grey.shade400),
+                          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(4)),
+                          padding: const EdgeInsets.symmetric(horizontal: 12),
+                          minimumSize: const Size(64, 44),
+                        ),
+                        icon: const Icon(Icons.refresh, size: 18),
+                        label: const Text("Tải lại", style: TextStyle(fontSize: 13, fontWeight: FontWeight.bold)),
+                        onPressed: _loadInspections,
+                      ),
                     ),
-                  ),
-                SizedBox(
-                  height: 44,
-                  child: OutlinedButton.icon(
-                    style: OutlinedButton.styleFrom(
-                      foregroundColor: Colors.blueGrey.shade800,
-                      side: BorderSide(color: Colors.grey.shade400),
-                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(4)),
-                      padding: const EdgeInsets.symmetric(horizontal: 12),
-                      minimumSize: const Size(64, 44),
-                    ),
-                    icon: const Icon(Icons.refresh, size: 18),
-                    label: const Text("Tải lại", style: TextStyle(fontSize: 13, fontWeight: FontWeight.bold)),
-                    onPressed: _loadInspections,
-                  ),
-                ),
-              ],
+                  ],
+                );
+
+                if (isNarrow) {
+                  return Wrap(
+                    spacing: 10,
+                    runSpacing: 10,
+                    crossAxisAlignment: WrapCrossAlignment.center,
+                    children: [
+                      leftFilters,
+                      rightButtons,
+                    ],
+                  );
+                }
+
+                return Row(
+                  crossAxisAlignment: CrossAxisAlignment.center,
+                  children: [
+                    Expanded(child: leftFilters),
+                    const SizedBox(width: 12),
+                    rightButtons,
+                  ],
+                );
+              },
             ),
             const SizedBox(height: 12),
 
