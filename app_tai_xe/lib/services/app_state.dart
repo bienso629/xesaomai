@@ -35,6 +35,8 @@ class AppState extends ChangeNotifier {
     currentUsername = username;
     currentFullName = fullName;
     userRoles = roles;
+    currentDriverName = fullName;
+    currentDriverId = "TX-${userId.toString().padLeft(4, '0')}";
     if (roles.contains('admin') || roles.contains('manager') || roles.contains('dispatcher') || roles.contains('mechanic') || username.toLowerCase() == 'admin') {
       currentRole = UserRole.manager;
     } else {

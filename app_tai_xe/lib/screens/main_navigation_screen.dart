@@ -294,16 +294,14 @@ class _MainNavigationScreenState extends State<MainNavigationScreen> {
                   subtitle: "Theo dõi vị trí xe thời gian thực",
                   onTap: () => _onSelectRoot(0),
                 ),
-                if (state.userRoles.map((r) => r.toLowerCase()).contains('driver')) ...[
-                  _buildDrawerItem(
-                    isSelected: _currentRoot == 1,
-                    icon: Icons.local_shipping_outlined,
-                    activeIcon: Icons.local_shipping,
-                    title: "Nghiệp vụ Tài xế",
-                    subtitle: "Kiểm tra xe, bấm mốc giờ, phiếu cân",
-                    onTap: () => _onSelectRoot(1),
-                  ),
-                ],
+                _buildDrawerItem(
+                  isSelected: _currentRoot == 1,
+                  icon: Icons.local_shipping_outlined,
+                  activeIcon: Icons.local_shipping,
+                  title: "Nghiệp vụ Tài xế",
+                  subtitle: "Kiểm tra xe, bấm mốc giờ, phiếu cân",
+                  onTap: () => _onSelectRoot(1),
+                ),
                 const Padding(
                   padding: EdgeInsets.symmetric(horizontal: 16.0, vertical: 6.0),
                   child: Divider(color: Color(0xFF1E293B), height: 1),
