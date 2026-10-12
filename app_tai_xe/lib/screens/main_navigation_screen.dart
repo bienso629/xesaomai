@@ -55,7 +55,7 @@ class _MainNavigationScreenState extends State<MainNavigationScreen> {
 
   String _getAppTitle() {
     if (_currentRoot == 0) return "Bản Đồ Giám Sát GPS";
-    if (_currentRoot == 1) return "Nghiệp Vụ Tài Xế Giao Hàng";
+    if (_currentRoot == 1) return "Kiểm Tra Xe";
     return _managementTitles[_activeManagementTab];
   }
 
@@ -295,14 +295,16 @@ class _MainNavigationScreenState extends State<MainNavigationScreen> {
                   subtitle: "Theo dõi vị trí xe thời gian thực",
                   onTap: () => _onSelectRoot(0),
                 ),
-                _buildDrawerItem(
-                  isSelected: _currentRoot == 1,
-                  icon: Icons.local_shipping_outlined,
-                  activeIcon: Icons.local_shipping,
-                  title: "Nghiệp vụ Tài xế",
-                  subtitle: "Kiểm tra xe, bấm mốc giờ, phiếu cân",
-                  onTap: () => _onSelectRoot(1),
-                ),
+                if (state.currentUsername == 'admin' || state.userRoles.any((r) => ['admin', 'manager', 'dispatcher'].contains(r.toLowerCase()))) ...[
+                  _buildDrawerItem(
+                    isSelected: _currentRoot == 1,
+                    icon: Icons.checklist_rtl_outlined,
+                    activeIcon: Icons.checklist_rtl,
+                    title: "Kiểm tra xe",
+                    subtitle: "Kiểm tra xe, bấm mốc giờ, phiếu cân",
+                    onTap: () => _onSelectRoot(1),
+                  ),
+                ],
                 const Padding(
                   padding: EdgeInsets.symmetric(horizontal: 16.0, vertical: 6.0),
                   child: Divider(color: Color(0xFF1E293B), height: 1),
@@ -445,6 +447,45 @@ class _MainNavigationScreenState extends State<MainNavigationScreen> {
         isDesktopSidebarCollapsed: !_isDesktopSidebarVisible,
       );
     } else if (_currentRoot == 1) {
+      final state = context.watch<AppState>();
+      final roles = state.userRoles.map((r) => r.toLowerCase()).toList();
+      final username = (state.currentUsername ?? '').trim().toLowerCase();
+      final hasPermission = username == 'admin' ||
+          roles.contains('admin') ||
+          roles.contains('manager') ||
+          roles.contains('dispatcher');
+
+      if (!hasPermission) {
+        return Center(
+          child: Container(
+            constraints: const BoxConstraints(maxWidth: 480),
+            margin: const EdgeInsets.all(24),
+            padding: const EdgeInsets.all(24),
+            decoration: BoxDecoration(
+              color: Colors.white,
+              borderRadius: BorderRadius.circular(4),
+              border: Border.all(color: Colors.red.shade200, width: 1),
+            ),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Icon(Icons.gpp_bad_outlined, size: 48, color: Colors.red.shade700),
+                const SizedBox(height: 16),
+                const Text(
+                  "Từ Chối Quyền Truy Cập",
+                  style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold, color: Colors.red),
+                ),
+                const SizedBox(height: 8),
+                const Text(
+                  "Màn hình Kiểm tra xe chỉ dành riêng cho Điều phối viên và Quản lý hệ thống.",
+                  textAlign: TextAlign.center,
+                  style: TextStyle(fontSize: 13, color: Colors.black87, height: 1.4),
+                ),
+              ],
+            ),
+          ),
+        );
+      }
       return const HomeDriverScreen();
     } else {
       return DispatchSupervisorScreen(
