@@ -1906,9 +1906,12 @@ class _DispatchSupervisorScreenState extends State<DispatchSupervisorScreen> {
                   children: [
                     Icon(Icons.info_outline, size: 18, color: Colors.blueGrey.shade400),
                     const SizedBox(width: 8),
-                    Text(
-                      "Chưa có điều phối viên nào nhận ca trong thời điểm hiện tại.",
-                      style: TextStyle(fontSize: 12.5, color: Colors.blueGrey.shade600),
+                    Flexible(
+                      child: Text(
+                        "Chưa có điều phối viên nào nhận ca trong thời điểm hiện tại.",
+                        style: TextStyle(fontSize: 12.5, color: Colors.blueGrey.shade600),
+                        textAlign: TextAlign.center,
+                      ),
                     ),
                   ],
                 ),
