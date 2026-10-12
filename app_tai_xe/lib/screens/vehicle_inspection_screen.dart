@@ -684,9 +684,22 @@ class _VehicleInspectionReviewScreenState extends State<VehicleInspectionReviewS
                                                   decoration: InputDecoration(
                                                     hintText: "Ghi chú kiểm tra của Điều phối (ví dụ: cản nứt, lệch km hành trình, ảnh mờ...)",
                                                     hintStyle: TextStyle(fontSize: 13, color: Colors.grey.shade500),
-                                                    border: const OutlineInputBorder(),
+                                                    filled: true,
+                                                    fillColor: Colors.white,
                                                     isDense: true,
                                                     contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 11),
+                                                    border: OutlineInputBorder(
+                                                      borderRadius: BorderRadius.circular(4),
+                                                      borderSide: BorderSide(color: Colors.grey.shade400),
+                                                    ),
+                                                    enabledBorder: OutlineInputBorder(
+                                                      borderRadius: BorderRadius.circular(4),
+                                                      borderSide: BorderSide(color: Colors.grey.shade400),
+                                                    ),
+                                                    focusedBorder: OutlineInputBorder(
+                                                      borderRadius: BorderRadius.circular(4),
+                                                      borderSide: const BorderSide(color: Colors.blue, width: 1.5),
+                                                    ),
                                                   ),
                                                 ),
                                               ),
@@ -702,6 +715,8 @@ class _VehicleInspectionReviewScreenState extends State<VehicleInspectionReviewS
                                                     height: 44,
                                                     child: ElevatedButton.icon(
                                                       style: ElevatedButton.styleFrom(
+                                                        elevation: 0,
+                                                        shadowColor: Colors.transparent,
                                                         backgroundColor: Colors.green.shade700,
                                                         foregroundColor: Colors.white,
                                                         padding: const EdgeInsets.symmetric(horizontal: 16),
