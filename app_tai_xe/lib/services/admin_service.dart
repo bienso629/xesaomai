@@ -441,6 +441,54 @@ class AdminService {
     return [];
   }
 
+  /// Gửi dữ liệu kiểm tra xe 5 ảnh của tài xế lên hệ thống
+  static Future<Map<String, dynamic>> submitInspection({
+    required String checkDate,
+    required String plateNumber,
+    required String imgFront,
+    required String imgRear,
+    required String imgLeft,
+    required String imgRight,
+    required String imgDashboard,
+    required double gpsLat,
+    required double gpsLng,
+    required double gpsAccuracy,
+    required String deviceId,
+    required double kmOcr,
+    required double kmConfirmed,
+  }) async {
+    try {
+      final res = await http.post(
+        Uri.parse('$baseUrl/inspection/submit'),
+        headers: await _headers(),
+        body: jsonEncode({
+          'check_date': checkDate,
+          'plate_number': plateNumber,
+          'img_front_underbody': imgFront,
+          'img_rear_underbody': imgRear,
+          'img_left_side': imgLeft,
+          'img_right_side': imgRight,
+          'img_dashboard': imgDashboard,
+          'gps_lat': gpsLat,
+          'gps_lng': gpsLng,
+          'gps_accuracy': gpsAccuracy,
+          'device_id': deviceId,
+          'km_ocr': kmOcr,
+          'km_confirmed': kmConfirmed,
+        }),
+      ).timeout(const Duration(seconds: 10));
+
+      if (res.statusCode == 201 || res.statusCode == 200) {
+        return {'success': true, 'data': jsonDecode(res.body)};
+      } else {
+        final err = jsonDecode(res.body);
+        return {'success': false, 'message': err['detail'] ?? 'Lỗi gửi kiểm tra xe'};
+      }
+    } catch (e) {
+      return {'success': false, 'message': 'Không thể kết nối API: $e'};
+    }
+  }
+
   /// Điều phối viên duyệt / xử lý cờ kiểm tra xe 5 ảnh
   static Future<Map<String, dynamic>> reviewInspection(int inspectionId, {required String flagStatus, String? flagReason}) async {
     try {

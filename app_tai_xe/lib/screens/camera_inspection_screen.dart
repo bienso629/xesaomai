@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import '../models/inspection_model.dart';
 import '../services/app_state.dart';
+import '../services/admin_service.dart';
 import '../widgets/camera_overlay_painter.dart';
 import 'breakdown_dialog.dart';
 
@@ -216,7 +217,7 @@ class _CameraInspectionScreenState extends State<CameraInspectionScreen> {
               actions: [
                 ElevatedButton(
                   style: ElevatedButton.styleFrom(backgroundColor: Colors.blueAccent),
-                  onPressed: () {
+                  onPressed: () async {
                     final confirmed = double.tryParse(_kmController.text) ?? _mockOcrKm;
                     state.completeDailyInspection(
                       photos: _capturedPhotos,
@@ -224,6 +225,31 @@ class _CameraInspectionScreenState extends State<CameraInspectionScreen> {
                       confirmedKm: confirmed,
                       isKmFlagged: (confirmed - _previousDayGpsKm).abs() > 20.0,
                     );
+
+                    // Ghi lịch sử kiểm tra xe 5 ảnh lên Backend API
+                    final String todayStr = DateTime.now().toIso8601String().substring(0, 10);
+                    final String img1 = _capturedPhotos.isNotEmpty ? _capturedPhotos[0].imagePath : '';
+                    final String img2 = _capturedPhotos.length > 1 ? _capturedPhotos[1].imagePath : '';
+                    final String img3 = _capturedPhotos.length > 2 ? _capturedPhotos[2].imagePath : '';
+                    final String img4 = _capturedPhotos.length > 3 ? _capturedPhotos[3].imagePath : '';
+                    final String img5 = _capturedPhotos.length > 4 ? _capturedPhotos[4].imagePath : '';
+
+                    AdminService.submitInspection(
+                      checkDate: todayStr,
+                      plateNumber: state.selectedPlate,
+                      imgFront: img1,
+                      imgRear: img2,
+                      imgLeft: img3,
+                      imgRight: img4,
+                      imgDashboard: img5,
+                      gpsLat: _mockLat,
+                      gpsLng: _mockLng,
+                      gpsAccuracy: _mockAccuracy,
+                      deviceId: "DEV-VIVO-Y21-9982",
+                      kmOcr: _mockOcrKm,
+                      kmConfirmed: confirmed,
+                    );
+
                     Navigator.of(ctx).pop(); // Đóng dialog
                     Navigator.of(context).pop(); // Đóng camera screen
                     ScaffoldMessenger.of(context).showSnackBar(

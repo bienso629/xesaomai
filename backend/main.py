@@ -1024,8 +1024,8 @@ def get_inspections(date: Optional[str] = None, plate_number: Optional[str] = No
         query += " AND k.check_date = %s"
         params.append(date)
     if plate_number:
-        query += " AND k.plate_number = %s"
-        params.append(plate_number)
+        query += " AND k.plate_number ILIKE %s"
+        params.append(f"%{plate_number}%")
     query += " ORDER BY k.id DESC"
     cur.execute(query, tuple(params))
     rows = cur.fetchall()
