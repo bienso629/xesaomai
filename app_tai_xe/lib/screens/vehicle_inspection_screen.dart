@@ -307,6 +307,7 @@ class _VehicleInspectionReviewScreenState extends State<VehicleInspectionReviewS
                       hintText: "Tìm theo biển số xe...",
                       hintStyle: TextStyle(fontSize: 13, color: Colors.grey.shade500),
                       prefixIcon: const Icon(Icons.search, size: 20),
+                      prefixIconConstraints: const BoxConstraints(minWidth: 40, minHeight: 44, maxHeight: 44),
                       suffixIcon: _filterPlate.isNotEmpty
                           ? IconButton(
                               icon: const Icon(Icons.clear, size: 18),
@@ -317,6 +318,8 @@ class _VehicleInspectionReviewScreenState extends State<VehicleInspectionReviewS
                               },
                             )
                           : null,
+                      suffixIconConstraints: const BoxConstraints(minWidth: 40, minHeight: 44, maxHeight: 44),
+                      isDense: true,
                       contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 11),
                       border: OutlineInputBorder(borderRadius: BorderRadius.circular(4)),
                     ),
@@ -348,13 +351,17 @@ class _VehicleInspectionReviewScreenState extends State<VehicleInspectionReviewS
                 const SizedBox(width: 16),
                 const Text("Lọc trạng thái:", style: TextStyle(fontSize: 13, fontWeight: FontWeight.bold, color: Colors.black87)),
                 const SizedBox(width: 8),
-                Wrap(
-                  spacing: 6,
+                Row(
+                  mainAxisSize: MainAxisSize.min,
                   children: [
                     _buildFilterChoiceChip("Tất cả", 'ALL', Colors.blueGrey),
+                    const SizedBox(width: 6),
                     _buildFilterChoiceChip("Chưa duyệt", 'pending', Colors.blueGrey),
+                    const SizedBox(width: 6),
                     _buildFilterChoiceChip("Đã duyệt", 'approved', Colors.green),
+                    const SizedBox(width: 6),
                     _buildFilterChoiceChip("Đang theo dõi", 'monitored', Colors.amber),
+                    const SizedBox(width: 6),
                     _buildFilterChoiceChip("Từ chối / Chụp lại", 'rejected', Colors.red),
                   ],
                 ),
@@ -367,6 +374,7 @@ class _VehicleInspectionReviewScreenState extends State<VehicleInspectionReviewS
                       side: BorderSide(color: Colors.grey.shade400),
                       shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(4)),
                       padding: const EdgeInsets.symmetric(horizontal: 12),
+                      minimumSize: const Size(64, 44),
                     ),
                     icon: const Icon(Icons.refresh, size: 18),
                     label: const Text("Tải lại", style: TextStyle(fontSize: 13, fontWeight: FontWeight.bold)),
@@ -759,43 +767,15 @@ class _VehicleInspectionReviewScreenState extends State<VehicleInspectionReviewS
 
   Widget _buildFilterChoiceChip(String label, String value, MaterialColor color) {
     final isSelected = _filterStatus == value;
-    final Color selectedBg = color.shade800;
-    final Color unselectedBg = color.shade50;
-    final Color unselectedBorder = color.shade200;
-    final Color unselectedText = color.shade900;
+    final Color activeColor = color.shade700;
+    final Color bg = isSelected ? activeColor.withValues(alpha: 0.12) : Colors.white;
+    final Color border = isSelected ? activeColor : Colors.grey.shade300;
+    final Color textColor = isSelected ? (color == Colors.blueGrey ? Colors.blueGrey.shade900 : activeColor) : Colors.grey.shade700;
 
-    return ChoiceChip(
-      avatar: isSelected
-          ? const Icon(Icons.check, size: 14, color: Colors.white)
-          : Container(
-              width: 8,
-              height: 8,
-              decoration: BoxDecoration(
-                color: color.shade700,
-                shape: BoxShape.circle,
-              ),
-            ),
-      label: Text(
-        label,
-        style: TextStyle(
-          fontSize: 12,
-          color: isSelected ? Colors.white : unselectedText,
-          fontWeight: isSelected ? FontWeight.bold : FontWeight.w600,
-        ),
-      ),
-      selected: isSelected,
-      selectedColor: selectedBg,
-      backgroundColor: unselectedBg,
-      shape: RoundedRectangleBorder(
-        borderRadius: BorderRadius.circular(4),
-        side: BorderSide(
-          color: isSelected ? selectedBg : unselectedBorder,
-          width: 1,
-        ),
-      ),
-      padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 0),
-      onSelected: (selected) {
-        if (selected) {
+    return Material(
+      color: Colors.transparent,
+      child: InkWell(
+        onTap: () {
           setState(() {
             _filterStatus = value;
             final list = _getFilteredInspections();
@@ -807,8 +787,46 @@ class _VehicleInspectionReviewScreenState extends State<VehicleInspectionReviewS
               _noteCtrl.clear();
             }
           });
-        }
-      },
+        },
+        borderRadius: BorderRadius.circular(4),
+        child: AnimatedContainer(
+          duration: const Duration(milliseconds: 150),
+          height: 36,
+          padding: const EdgeInsets.symmetric(horizontal: 10),
+          decoration: BoxDecoration(
+            color: bg,
+            borderRadius: BorderRadius.circular(4),
+            border: Border.all(color: border, width: isSelected ? 1.5 : 1.0),
+          ),
+          child: Row(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.center,
+            children: [
+              Container(
+                width: 7,
+                height: 7,
+                decoration: BoxDecoration(
+                  color: isSelected ? activeColor : color.shade400,
+                  shape: BoxShape.circle,
+                ),
+              ),
+              const SizedBox(width: 6),
+              Text(
+                label,
+                style: TextStyle(
+                  fontSize: 12.5,
+                  fontWeight: isSelected ? FontWeight.bold : FontWeight.w500,
+                  color: textColor,
+                ),
+              ),
+              if (isSelected) ...[
+                const SizedBox(width: 5),
+                Icon(Icons.check, size: 14, color: activeColor),
+              ],
+            ],
+          ),
+        ),
+      ),
     );
   }
 }
