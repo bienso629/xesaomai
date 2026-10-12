@@ -4298,7 +4298,7 @@ class _DispatchSupervisorScreenState extends State<DispatchSupervisorScreen> {
     } else if (avatarUrl.startsWith('/uploads/') || avatarUrl.startsWith('uploads/')) {
       final cleanPath = avatarUrl.startsWith('/') ? avatarUrl : '/$avatarUrl';
       imageWidget = Image.network(
-        'http://localhost:8000$cleanPath',
+        'https://saomai-api.type.vn$cleanPath',
         width: avatarSize,
         height: avatarSize,
         fit: BoxFit.cover,
@@ -4318,7 +4318,7 @@ class _DispatchSupervisorScreenState extends State<DispatchSupervisorScreen> {
         );
       } else {
         imageWidget = Image.network(
-          'http://localhost:8000/$avatarUrl',
+          'https://saomai-api.type.vn/$avatarUrl',
           width: avatarSize,
           height: avatarSize,
           fit: BoxFit.cover,
@@ -5042,7 +5042,7 @@ class _VehicleInspectionsModalState extends State<_VehicleInspectionsModal> {
         );
       }
       return Image.network(
-        'http://localhost:8000/$url',
+        url.startsWith('http') ? url : 'https://saomai-api.type.vn/${url.startsWith('/') ? url.substring(1) : url}',
         fit: BoxFit.cover,
         errorBuilder: (ctx, err, stack) => _buildPlaceholderIcon(),
       );

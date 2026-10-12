@@ -3,7 +3,7 @@ import 'package:http/http.dart' as http;
 import 'auth_service.dart';
 
 class AdminService {
-  static const String baseUrl = 'http://localhost:8000/api/v1';
+  static const String baseUrl = 'https://saomai-api.type.vn/api/v1';
 
   static Future<Map<String, String>> _headers() async {
     final token = await AuthService.getToken();
@@ -323,7 +323,7 @@ class AdminService {
     try {
       final request = http.MultipartRequest(
         'POST',
-        Uri.parse('http://127.0.0.1:8000/api/v1/upload/image'),
+        Uri.parse('$baseUrl/upload/image'),
       );
       request.files.add(await http.MultipartFile.fromPath('file', filePath));
       final streamedResponse = await request.send().timeout(const Duration(seconds: 15));
