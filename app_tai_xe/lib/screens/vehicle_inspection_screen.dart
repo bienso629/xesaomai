@@ -637,6 +637,7 @@ class _VehicleInspectionReviewScreenState extends State<VehicleInspectionReviewS
                                                 height: 44,
                                                 child: TextField(
                                                   controller: _noteCtrl,
+                                                  textAlignVertical: TextAlignVertical.center,
                                                   style: const TextStyle(fontSize: 13.5),
                                                   decoration: InputDecoration(
                                                     hintText: "Ghi chú kiểm tra của Điều phối (ví dụ: cản nứt, lệch km hành trình, ảnh mờ...)",
@@ -644,7 +645,7 @@ class _VehicleInspectionReviewScreenState extends State<VehicleInspectionReviewS
                                                     filled: true,
                                                     fillColor: Colors.white,
                                                     isDense: true,
-                                                    contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 11),
+                                                    contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 12),
                                                     border: OutlineInputBorder(
                                                       borderRadius: BorderRadius.circular(4),
                                                       borderSide: BorderSide(color: Colors.grey.shade400),
