@@ -1,7 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import '../models/inspection_model.dart';
-import '../models/reminder_model.dart';
 import '../services/app_state.dart';
 import 'camera_inspection_screen.dart';
 import 'weigh_slip_dialog.dart';
@@ -32,10 +31,6 @@ class HomeDriverScreen extends StatelessWidget {
 
           // Quản lý chuyến & Mốc giờ (Đến / Bơm xong / Phiếu cân / Giao hàng)
           _buildTripMilestonesCard(context, state, isLocked),
-          const SizedBox(height: 16),
-
-          // Khu vực mô phỏng nhắc nhở nền (Background Check Simulator)
-          _buildSimulationActionsCard(context, state),
         ],
       ),
     );
@@ -484,78 +479,6 @@ class HomeDriverScreen extends StatelessWidget {
           },
         );
       },
-    );
-  }
-
-  Widget _buildSimulationActionsCard(BuildContext context, AppState state) {
-    return Card(
-      elevation: 0,
-      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(4), side: BorderSide(color: Colors.grey.shade400, width: 1)),
-      child: Padding(
-        padding: const EdgeInsets.all(14.0),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Row(
-              children: const [
-                Icon(Icons.notifications_active, color: Colors.teal),
-                SizedBox(width: 8),
-                Text("Mô phỏng Kịch bản Nhắc nhở nền (Tự động)",
-                    style: TextStyle(fontWeight: FontWeight.bold, fontSize: 14)),
-              ],
-            ),
-            const Divider(),
-            Wrap(
-              spacing: 8,
-              runSpacing: 8,
-              children: [
-                ActionChip(
-                  label: const Text("Chạy >500m chưa chụp", style: TextStyle(fontSize: 11)),
-                  onPressed: () {
-                    state.triggerReminder(
-                      ReminderType.movingWithoutInspection,
-                      "CẢNH BÁO: Xe di chuyển > 500m mà chưa chụp đủ 5 ảnh! Đã ghi 1 lần vi phạm và báo Điều phối.",
-                    );
-                    ScaffoldMessenger.of(context).showSnackBar(
-                      const SnackBar(
-                        backgroundColor: Colors.redAccent,
-                        content: Text("Nhắc nhở: Xe di chuyển chưa kiểm tra! Đã ghi vi phạm."),
-                      ),
-                    );
-                  },
-                ),
-                ActionChip(
-                  label: const Text("Dừng 15p chưa bấm ĐẾN", style: TextStyle(fontSize: 11)),
-                  onPressed: () {
-                    state.triggerReminder(
-                      ReminderType.arrivedZoneNotConfirmed,
-                      "Nhắc nhở: Xe đã dừng ở trạm 15 phút, vui lòng bấm nút ĐẾN điểm giao.",
-                    );
-                  },
-                ),
-                ActionChip(
-                  label: const Text("Đến >120p chưa bơm xong", style: TextStyle(fontSize: 11)),
-                  onPressed: () {
-                    state.triggerReminder(
-                      ReminderType.pumpingOverdue,
-                      "Nhắc nhở: Đã ĐẾN quá 120 phút chưa bấm BƠM XONG. Vui lòng cập nhật lý do.",
-                    );
-                  },
-                ),
-                ActionChip(
-                  label: const Text("Tổng kết hết ca 19h / 07h", style: TextStyle(fontSize: 11)),
-                  onPressed: () {
-                    state.triggerReminder(
-                      ReminderType.shiftEndReminder,
-                      "Gộp mọi khoản còn thiếu cuối ca thành thông báo gửi Điều phối giao ca.",
-                    );
-                  },
-                ),
-              ],
-            )
-          ],
-        ),
-      ),
     );
   }
 }

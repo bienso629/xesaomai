@@ -50,6 +50,7 @@ class _MainNavigationScreenState extends State<MainNavigationScreen> {
     "Cây Dầu & Đối Soát Nhiên Liệu",
     "Danh Mục Sản Phẩm & Vật Liệu",
     "Cấu Hình Vai Trò & Quyền",
+    "Cấu Hình Nhắc Nhở & Kịch Bản Nền",
   ];
 
   String _getAppTitle() {
@@ -347,6 +348,16 @@ class _MainNavigationScreenState extends State<MainNavigationScreen> {
                   subtitle: "Xi măng rời, xi măng bao, phụ gia",
                   onTap: () => _onSelectManagementTab(5),
                 ),
+                if (state.currentUsername == 'admin' || state.userRoles.any((r) => ['admin', 'manager', 'dispatcher'].contains(r.toLowerCase()))) ...[
+                  _buildDrawerItem(
+                    isSelected: _currentRoot == 2 && _activeManagementTab == 7,
+                    icon: Icons.notifications_active_outlined,
+                    activeIcon: Icons.notifications_active,
+                    title: "Cấu hình Nhắc nhở nền",
+                    subtitle: "Cấu hình GPS, thời gian chờ bồn, kịch bản",
+                    onTap: () => _onSelectManagementTab(7),
+                  ),
+                ],
                 if (state.currentUsername == 'admin' || state.userRoles.contains('admin')) ...[
                   _buildDrawerItem(
                     isSelected: _currentRoot == 2 && _activeManagementTab == 3,
