@@ -14,7 +14,7 @@ class _VehicleInspectionReviewScreenState extends State<VehicleInspectionReviewS
   List<dynamic> _inspections = [];
   Map<String, dynamic>? _selectedRecord;
   String _filterPlate = '';
-  DateTime? _filterDate;
+  DateTime? _filterDate = DateTime.now(); // Mặc định chỉ hiển thị danh sách của ngày hiện tại
   String _filterStatus = 'ALL'; // ALL, pending, approved, monitored, rejected
   final TextEditingController _searchCtrl = TextEditingController();
   final TextEditingController _noteCtrl = TextEditingController();
@@ -442,7 +442,9 @@ class _VehicleInspectionReviewScreenState extends State<VehicleInspectionReviewS
                                     const Icon(Icons.list_alt, size: 18, color: Colors.blueGrey),
                                     const SizedBox(width: 8),
                                     Text(
-                                      "Danh sách kiểm tra (${filteredList.length})",
+                                      _filterDate != null
+                                          ? "Danh sách hôm nay (${filteredList.length})"
+                                          : "Danh sách kiểm tra (${filteredList.length})",
                                       style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 13),
                                     ),
                                   ],
