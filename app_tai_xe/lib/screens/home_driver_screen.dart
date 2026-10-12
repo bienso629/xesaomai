@@ -140,13 +140,22 @@ class HomeDriverScreen extends StatelessWidget {
             Row(
               mainAxisAlignment: MainAxisAlignment.spaceBetween,
               children: [
-                Row(
-                  children: const [
-                    Icon(Icons.camera_alt, color: Colors.blueAccent),
-                    SizedBox(width: 8),
-                    Text("Kiểm tra xe đầu ngày (5 ảnh)", style: TextStyle(fontWeight: FontWeight.bold, fontSize: 15)),
-                  ],
+                Expanded(
+                  child: Row(
+                    children: const [
+                      Icon(Icons.camera_alt, color: Colors.blueAccent),
+                      SizedBox(width: 8),
+                      Expanded(
+                        child: Text(
+                          "Kiểm tra xe đầu ngày (5 ảnh)",
+                          style: TextStyle(fontWeight: FontWeight.bold, fontSize: 14),
+                          overflow: TextOverflow.ellipsis,
+                        ),
+                      ),
+                    ],
+                  ),
                 ),
+                const SizedBox(width: 8),
                 Container(
                   padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
                   decoration: BoxDecoration(
