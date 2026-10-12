@@ -14,6 +14,7 @@ class _VehicleInspectionReviewScreenState extends State<VehicleInspectionReviewS
   List<dynamic> _inspections = [];
   Map<String, dynamic>? _selectedRecord;
   String _filterPlate = '';
+  DateTime? _filterDate;
   String _filterStatus = 'ALL'; // ALL, pending, approved, monitored, rejected
   final TextEditingController _searchCtrl = TextEditingController();
   final TextEditingController _noteCtrl = TextEditingController();
@@ -34,8 +35,13 @@ class _VehicleInspectionReviewScreenState extends State<VehicleInspectionReviewS
 
   Future<void> _loadInspections() async {
     setState(() => _isLoading = true);
+    final String? dateStr = _filterDate != null
+        ? "${_filterDate!.year.toString().padLeft(4, '0')}-${_filterDate!.month.toString().padLeft(2, '0')}-${_filterDate!.day.toString().padLeft(2, '0')}"
+        : null;
+
     final data = await AdminService.fetchInspections(
       plateNumber: _filterPlate.isNotEmpty ? _filterPlate : null,
+      date: dateStr,
     );
     if (mounted) {
       setState(() {
@@ -51,6 +57,23 @@ class _VehicleInspectionReviewScreenState extends State<VehicleInspectionReviewS
         }
         _isLoading = false;
       });
+    }
+  }
+
+  Future<void> _pickFilterDate() async {
+    final now = DateTime.now();
+    final picked = await showDatePicker(
+      context: context,
+      initialDate: _filterDate ?? now,
+      firstDate: DateTime(2020),
+      lastDate: DateTime(2030),
+      helpText: "CHỌN NGÀY KIỂM TRA XE",
+      cancelText: "HỦY",
+      confirmText: "CHỌN",
+    );
+    if (picked != null) {
+      setState(() => _filterDate = picked);
+      _loadInspections();
     }
   }
 
@@ -323,6 +346,53 @@ class _VehicleInspectionReviewScreenState extends State<VehicleInspectionReviewS
                   ],
                 ),
                 const Spacer(),
+                // Lọc theo ngày
+                SizedBox(
+                  height: 44,
+                  child: OutlinedButton.icon(
+                    style: OutlinedButton.styleFrom(
+                      foregroundColor: _filterDate != null ? Colors.blue.shade800 : Colors.blueGrey.shade800,
+                      backgroundColor: _filterDate != null ? Colors.blue.shade50 : Colors.white,
+                      side: BorderSide(color: _filterDate != null ? Colors.blue : Colors.grey.shade400),
+                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(4)),
+                      padding: const EdgeInsets.symmetric(horizontal: 12),
+                      minimumSize: const Size(64, 44),
+                    ),
+                    icon: Icon(Icons.calendar_today, size: 18, color: _filterDate != null ? Colors.blue.shade800 : Colors.blueGrey),
+                    label: Text(
+                      _filterDate != null
+                          ? "Ngày: ${_filterDate!.day.toString().padLeft(2, '0')}/${_filterDate!.month.toString().padLeft(2, '0')}/${_filterDate!.year}"
+                          : "Tất cả ngày",
+                      style: TextStyle(
+                        fontSize: 13,
+                        fontWeight: _filterDate != null ? FontWeight.bold : FontWeight.w500,
+                      ),
+                    ),
+                    onPressed: _pickFilterDate,
+                  ),
+                ),
+                if (_filterDate != null) ...[
+                  const SizedBox(width: 6),
+                  SizedBox(
+                    height: 44,
+                    width: 44,
+                    child: IconButton(
+                      icon: const Icon(Icons.close, size: 18),
+                      tooltip: "Xóa lọc ngày",
+                      style: IconButton.styleFrom(
+                        shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(4),
+                          side: BorderSide(color: Colors.grey.shade400),
+                        ),
+                      ),
+                      onPressed: () {
+                        setState(() => _filterDate = null);
+                        _loadInspections();
+                      },
+                    ),
+                  ),
+                ],
+                const SizedBox(width: 8),
                 SizedBox(
                   height: 44,
                   child: OutlinedButton.icon(
