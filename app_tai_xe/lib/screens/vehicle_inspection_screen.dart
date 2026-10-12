@@ -645,7 +645,7 @@ class _VehicleInspectionReviewScreenState extends State<VehicleInspectionReviewS
                                                     filled: true,
                                                     fillColor: Colors.white,
                                                     isDense: true,
-                                                    contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 12),
+                                                    contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 16),
                                                     border: OutlineInputBorder(
                                                       borderRadius: BorderRadius.circular(4),
                                                       borderSide: BorderSide(color: Colors.grey.shade400),
