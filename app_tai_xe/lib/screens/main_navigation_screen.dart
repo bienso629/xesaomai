@@ -2,9 +2,9 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import '../services/app_state.dart';
 import '../services/auth_service.dart';
-import 'home_driver_screen.dart';
 import 'map_screen.dart';
 import 'dispatch_supervisor_screen.dart';
+import 'vehicle_inspection_screen.dart';
 import 'login_screen.dart';
 
 class MainNavigationScreen extends StatefulWidget {
@@ -301,7 +301,7 @@ class _MainNavigationScreenState extends State<MainNavigationScreen> {
                     icon: Icons.checklist_rtl_outlined,
                     activeIcon: Icons.checklist_rtl,
                     title: "Kiểm tra xe",
-                    subtitle: "Kiểm tra xe, bấm mốc giờ, phiếu cân",
+                    subtitle: "Soi xét 5 ảnh giao nhận ca, duyệt nhận chuyến",
                     onTap: () => _onSelectRoot(1),
                   ),
                 ],
@@ -486,7 +486,7 @@ class _MainNavigationScreenState extends State<MainNavigationScreen> {
           ),
         );
       }
-      return const HomeDriverScreen();
+      return const VehicleInspectionReviewScreen();
     } else {
       return DispatchSupervisorScreen(
         activeTab: _activeManagementTab,
