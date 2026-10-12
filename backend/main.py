@@ -176,6 +176,10 @@ class InspectionSubmit(BaseModel):
     km_ocr: float
     km_confirmed: float
 
+class InspectionReview(BaseModel):
+    flag_status: str # 'approved', 'rejected', 'monitored'
+    flag_reason: Optional[str] = None
+
 class ShiftCheckin(BaseModel):
     shift_name: Optional[str] = "Ca ngày"
     note: Optional[str] = None
@@ -1000,6 +1004,58 @@ def submit_inspection(insp: InspectionSubmit, current_user: dict = Depends(get_c
         conn.rollback()
         conn.close()
         raise HTTPException(status_code=400, detail=str(e))
+
+@app.get("/api/v1/inspections")
+def get_inspections(date: Optional[str] = None, plate_number: Optional[str] = None, current_user: dict = Depends(get_current_user)):
+    conn = get_db()
+    cur = conn.cursor()
+    query = """
+        SELECT k.*, u.full_name as driver_name, u.username as driver_username, u.phone as driver_phone,
+               v.vehicle_type, v.ownership_type, v.owner_company,
+               rv.full_name as resolver_name
+        FROM kiem_tra_dau_ngay k
+        LEFT JOIN users u ON k.driver_id = u.id
+        LEFT JOIN vehicles v ON k.plate_number = v.plate_number
+        LEFT JOIN users rv ON k.flag_resolved_by = rv.id
+        WHERE 1=1
+    """
+    params = []
+    if date:
+        query += " AND k.check_date = %s"
+        params.append(date)
+    if plate_number:
+        query += " AND k.plate_number = %s"
+        params.append(plate_number)
+    query += " ORDER BY k.id DESC"
+    cur.execute(query, tuple(params))
+    rows = cur.fetchall()
+    cur.close()
+    conn.close()
+    return rows
+
+@app.put("/api/v1/inspections/{inspection_id}/review")
+def review_inspection(inspection_id: int, review: InspectionReview, current_user: dict = Depends(get_current_user)):
+    conn = get_db()
+    cur = conn.cursor()
+    try:
+        cur.execute(
+            """UPDATE kiem_tra_dau_ngay
+               SET flag_status = %s, flag_reason = %s, flag_resolved_by = %s, flag_resolved_at = CURRENT_TIMESTAMP
+               WHERE id = %s RETURNING *""",
+            (review.flag_status, review.flag_reason, current_user["id"], inspection_id)
+        )
+        conn.commit()
+        updated = cur.fetchone()
+        cur.close()
+        conn.close()
+        if not updated:
+            raise HTTPException(status_code=404, detail="Khong tim thay ban ghi kiem tra xe")
+        return updated
+    except Exception as e:
+        conn.rollback()
+        conn.close()
+        raise HTTPException(status_code=400, detail=str(e))
+
 
 # 8. NGHIỆP VỤ CÂY DẦU (XÁC NHẬN CẤP NHIÊN LIỆU)
 @app.post("/api/v1/fuel/confirm", status_code=status.HTTP_201_CREATED)
