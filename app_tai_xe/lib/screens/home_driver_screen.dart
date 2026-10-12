@@ -9,12 +9,40 @@ import 'breakdown_dialog.dart';
 import 'dispatch_supervisor_screen.dart';
 
 class HomeDriverScreen extends StatelessWidget {
-  const HomeDriverScreen({super.key});
+  final bool showAppBar;
+  const HomeDriverScreen({super.key, this.showAppBar = false});
 
   @override
   Widget build(BuildContext context) {
     final state = context.watch<AppState>();
     final isLocked = !state.isInspectionCompleted || state.isVehicleLockedByBreakdown();
+
+    final content = SingleChildScrollView(
+      padding: const EdgeInsets.all(16.0),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          // Thông tin tài xế và chọn xe
+          _buildDriverVehicleCard(context, state),
+          const SizedBox(height: 16),
+
+          // Mục Kiểm tra xe đầu ngày (5 ảnh)
+          _buildDailyInspectionCard(context, state),
+          const SizedBox(height: 16),
+
+          // Quản lý chuyến & Mốc giờ (Đến / Bơm xong / Phiếu cân / Giao hàng)
+          _buildTripMilestonesCard(context, state, isLocked),
+          const SizedBox(height: 16),
+
+          // Khu vực mô phỏng nhắc nhở nền (Background Check Simulator)
+          _buildSimulationActionsCard(context, state),
+        ],
+      ),
+    );
+
+    if (!showAppBar) {
+      return content;
+    }
 
     return Scaffold(
       appBar: AppBar(
@@ -33,28 +61,7 @@ class HomeDriverScreen extends StatelessWidget {
           ),
         ],
       ),
-      body: SingleChildScrollView(
-        padding: const EdgeInsets.all(16.0),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            // Thông tin tài xế và chọn xe
-            _buildDriverVehicleCard(context, state),
-            const SizedBox(height: 16),
-
-            // Mục Kiểm tra xe đầu ngày (5 ảnh)
-            _buildDailyInspectionCard(context, state),
-            const SizedBox(height: 16),
-
-            // Quản lý chuyến & Mốc giờ (Đến / Bơm xong / Phiếu cân / Giao hàng)
-            _buildTripMilestonesCard(context, state, isLocked),
-            const SizedBox(height: 16),
-
-            // Khu vực mô phỏng nhắc nhở nền (Background Check Simulator)
-            _buildSimulationActionsCard(context, state),
-          ],
-        ),
-      ),
+      body: content,
     );
   }
 
