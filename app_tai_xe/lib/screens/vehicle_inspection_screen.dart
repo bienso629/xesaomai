@@ -404,22 +404,6 @@ class _VehicleInspectionReviewScreenState extends State<VehicleInspectionReviewS
                         ),
                       ),
                     ],
-                    const SizedBox(width: 8),
-                    SizedBox(
-                      height: 44,
-                      child: OutlinedButton.icon(
-                        style: OutlinedButton.styleFrom(
-                          foregroundColor: Colors.blueGrey.shade800,
-                          side: BorderSide(color: Colors.grey.shade400),
-                          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(4)),
-                          padding: const EdgeInsets.symmetric(horizontal: 12),
-                          minimumSize: const Size(64, 44),
-                        ),
-                        icon: const Icon(Icons.refresh, size: 18),
-                        label: const Text("Tải lại", style: TextStyle(fontSize: 13, fontWeight: FontWeight.bold)),
-                        onPressed: _loadInspections,
-                      ),
-                    ),
                   ],
                 );
 
@@ -466,7 +450,7 @@ class _VehicleInspectionReviewScreenState extends State<VehicleInspectionReviewS
                             crossAxisAlignment: CrossAxisAlignment.stretch,
                             children: [
                               Container(
-                                padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+                                padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
                                 decoration: BoxDecoration(
                                   color: Colors.grey.shade100,
                                   borderRadius: const BorderRadius.only(topLeft: Radius.circular(4), topRight: Radius.circular(4)),
@@ -476,11 +460,31 @@ class _VehicleInspectionReviewScreenState extends State<VehicleInspectionReviewS
                                   children: [
                                     const Icon(Icons.list_alt, size: 18, color: Colors.blueGrey),
                                     const SizedBox(width: 8),
-                                    Text(
-                                      _filterDate != null
-                                          ? "Danh sách hôm nay (${filteredList.length})"
-                                          : "Danh sách kiểm tra (${filteredList.length})",
-                                      style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 13),
+                                    Expanded(
+                                      child: Text(
+                                        _filterDate != null
+                                            ? "Danh sách hôm nay (${filteredList.length})"
+                                            : "Danh sách kiểm tra (${filteredList.length})",
+                                        style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 13),
+                                        overflow: TextOverflow.ellipsis,
+                                      ),
+                                    ),
+                                    SizedBox(
+                                      height: 32,
+                                      child: OutlinedButton.icon(
+                                        style: OutlinedButton.styleFrom(
+                                          foregroundColor: Colors.blueGrey.shade800,
+                                          backgroundColor: Colors.white,
+                                          side: BorderSide(color: Colors.grey.shade300),
+                                          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(4)),
+                                          padding: const EdgeInsets.symmetric(horizontal: 8),
+                                          minimumSize: Size.zero,
+                                          tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                                        ),
+                                        icon: const Icon(Icons.refresh, size: 15),
+                                        label: const Text("Tải lại", style: TextStyle(fontSize: 12, fontWeight: FontWeight.w600)),
+                                        onPressed: _loadInspections,
+                                      ),
                                     ),
                                   ],
                                 ),
