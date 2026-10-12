@@ -82,6 +82,8 @@ class TaxiDriverApp extends StatelessWidget {
           // Quy chuẩn rounded-sm và đồng bộ chiều cao 44px cho ElevatedButton
           elevatedButtonTheme: ElevatedButtonThemeData(
             style: ElevatedButton.styleFrom(
+              elevation: 0,
+              shadowColor: Colors.transparent,
               minimumSize: const Size(64, 44),
               shape: const RoundedRectangleBorder(
                 borderRadius: BorderRadius.all(Radius.circular(4)),
