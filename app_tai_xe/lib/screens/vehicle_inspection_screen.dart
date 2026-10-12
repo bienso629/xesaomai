@@ -274,11 +274,14 @@ class _VehicleInspectionReviewScreenState extends State<VehicleInspectionReviewS
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            // Thanh công cụ tìm kiếm và lọc trạng thái duyệt
-            Row(
+            // Thanh công cụ tìm kiếm và lọc trạng thái duyệt (Bọc trong Wrap chống tràn khi cửa sổ thu nhỏ)
+            Wrap(
+              spacing: 10,
+              runSpacing: 10,
+              crossAxisAlignment: WrapCrossAlignment.center,
               children: [
                 SizedBox(
-                  width: 280,
+                  width: 240,
                   height: 44,
                   child: TextField(
                     controller: _searchCtrl,
@@ -309,7 +312,6 @@ class _VehicleInspectionReviewScreenState extends State<VehicleInspectionReviewS
                     },
                   ),
                 ),
-                const SizedBox(width: 10),
                 SizedBox(
                   height: 44,
                   child: ElevatedButton.icon(
@@ -317,35 +319,35 @@ class _VehicleInspectionReviewScreenState extends State<VehicleInspectionReviewS
                       backgroundColor: Colors.blue.shade800,
                       foregroundColor: Colors.white,
                       shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(4)),
-                      padding: const EdgeInsets.symmetric(horizontal: 16),
+                      padding: const EdgeInsets.symmetric(horizontal: 14),
                       minimumSize: const Size(64, 44),
                     ),
                     icon: const Icon(Icons.filter_list, size: 18),
-                    label: const Text("Tìm Kiếm", style: TextStyle(fontSize: 14, fontWeight: FontWeight.bold)),
+                    label: const Text("Tìm Kiếm", style: TextStyle(fontSize: 13.5, fontWeight: FontWeight.bold)),
                     onPressed: () {
                       setState(() => _filterPlate = _searchCtrl.text.trim());
                       _loadInspections();
                     },
                   ),
                 ),
-                const SizedBox(width: 16),
-                const Text("Lọc trạng thái:", style: TextStyle(fontSize: 13, fontWeight: FontWeight.bold, color: Colors.black87)),
-                const SizedBox(width: 8),
                 Row(
                   mainAxisSize: MainAxisSize.min,
                   children: [
-                    _buildFilterChoiceChip("Tất cả", 'ALL', Colors.blueGrey),
-                    const SizedBox(width: 6),
-                    _buildFilterChoiceChip("Chưa duyệt", 'pending', Colors.blueGrey),
-                    const SizedBox(width: 6),
-                    _buildFilterChoiceChip("Đã duyệt", 'approved', Colors.green),
-                    const SizedBox(width: 6),
-                    _buildFilterChoiceChip("Đang theo dõi", 'monitored', Colors.amber),
-                    const SizedBox(width: 6),
-                    _buildFilterChoiceChip("Từ chối / Chụp lại", 'rejected', Colors.red),
+                    const Text("Lọc:", style: TextStyle(fontSize: 13, fontWeight: FontWeight.bold, color: Colors.black87)),
+                    const SizedBox(width: 8),
+                    Wrap(
+                      spacing: 6,
+                      runSpacing: 6,
+                      children: [
+                        _buildFilterChoiceChip("Tất cả", 'ALL', Colors.blueGrey),
+                        _buildFilterChoiceChip("Chưa duyệt", 'pending', Colors.blueGrey),
+                        _buildFilterChoiceChip("Đã duyệt", 'approved', Colors.green),
+                        _buildFilterChoiceChip("Theo dõi", 'monitored', Colors.amber),
+                        _buildFilterChoiceChip("Chụp lại", 'rejected', Colors.red),
+                      ],
+                    ),
                   ],
                 ),
-                const Spacer(),
                 // Lọc theo ngày
                 SizedBox(
                   height: 44,
@@ -358,21 +360,20 @@ class _VehicleInspectionReviewScreenState extends State<VehicleInspectionReviewS
                       padding: const EdgeInsets.symmetric(horizontal: 12),
                       minimumSize: const Size(64, 44),
                     ),
-                    icon: Icon(Icons.calendar_today, size: 18, color: _filterDate != null ? Colors.blue.shade800 : Colors.blueGrey),
+                    icon: Icon(Icons.calendar_today, size: 17, color: _filterDate != null ? Colors.blue.shade800 : Colors.blueGrey),
                     label: Text(
                       _filterDate != null
                           ? "Ngày: ${_filterDate!.day.toString().padLeft(2, '0')}/${_filterDate!.month.toString().padLeft(2, '0')}/${_filterDate!.year}"
                           : "Tất cả ngày",
                       style: TextStyle(
-                        fontSize: 13,
+                        fontSize: 12.5,
                         fontWeight: _filterDate != null ? FontWeight.bold : FontWeight.w500,
                       ),
                     ),
                     onPressed: _pickFilterDate,
                   ),
                 ),
-                if (_filterDate != null) ...[
-                  const SizedBox(width: 6),
+                if (_filterDate != null)
                   SizedBox(
                     height: 44,
                     width: 44,
@@ -391,8 +392,6 @@ class _VehicleInspectionReviewScreenState extends State<VehicleInspectionReviewS
                       },
                     ),
                   ),
-                ],
-                const SizedBox(width: 8),
                 SizedBox(
                   height: 44,
                   child: OutlinedButton.icon(
@@ -410,7 +409,7 @@ class _VehicleInspectionReviewScreenState extends State<VehicleInspectionReviewS
                 ),
               ],
             ),
-            const SizedBox(height: 14),
+            const SizedBox(height: 12),
 
             // Khung làm việc 2 cột: Danh sách bên trái, Chi tiết 5 ảnh bên phải
             Expanded(
@@ -702,99 +701,103 @@ class _VehicleInspectionReviewScreenState extends State<VehicleInspectionReviewS
                                           borderRadius: BorderRadius.circular(4),
                                           border: Border.all(color: Colors.grey.shade300),
                                         ),
-                                        child: Row(
-                                          children: [
-                                            Expanded(
-                                              child: SizedBox(
-                                                height: 44,
-                                                child: TextField(
-                                                  controller: _noteCtrl,
-                                                  textAlignVertical: TextAlignVertical.center,
-                                                  style: const TextStyle(fontSize: 13.5),
-                                                  decoration: InputDecoration(
-                                                    hintText: "Ghi chú kiểm tra của Điều phối (ví dụ: cản nứt, lệch km hành trình, ảnh mờ...)",
-                                                    hintStyle: TextStyle(fontSize: 13, color: Colors.grey.shade500),
-                                                    filled: true,
-                                                    fillColor: Colors.white,
-                                                    isDense: true,
-                                                    contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 16),
-                                                    border: OutlineInputBorder(
-                                                      borderRadius: BorderRadius.circular(4),
-                                                      borderSide: BorderSide(color: Colors.grey.shade400),
-                                                    ),
-                                                    enabledBorder: OutlineInputBorder(
-                                                      borderRadius: BorderRadius.circular(4),
-                                                      borderSide: BorderSide(color: Colors.grey.shade400),
-                                                    ),
-                                                    focusedBorder: OutlineInputBorder(
-                                                      borderRadius: BorderRadius.circular(4),
-                                                      borderSide: const BorderSide(color: Colors.blue, width: 1.5),
+                                        child: LayoutBuilder(
+                                          builder: (ctx, constraints) {
+                                            final isNarrow = constraints.maxWidth < 620;
+                                            return Column(
+                                              crossAxisAlignment: CrossAxisAlignment.stretch,
+                                              children: [
+                                                SizedBox(
+                                                  height: 44,
+                                                  child: TextField(
+                                                    controller: _noteCtrl,
+                                                    textAlignVertical: TextAlignVertical.center,
+                                                    style: const TextStyle(fontSize: 13.5),
+                                                    decoration: InputDecoration(
+                                                      hintText: "Ghi chú kiểm tra của Điều phối (ví dụ: cản nứt, lệch km hành trình, ảnh mờ...)",
+                                                      hintStyle: TextStyle(fontSize: 13, color: Colors.grey.shade500),
+                                                      filled: true,
+                                                      fillColor: Colors.white,
+                                                      isDense: true,
+                                                      contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 16),
+                                                      border: OutlineInputBorder(
+                                                        borderRadius: BorderRadius.circular(4),
+                                                        borderSide: BorderSide(color: Colors.grey.shade400),
+                                                      ),
+                                                      enabledBorder: OutlineInputBorder(
+                                                        borderRadius: BorderRadius.circular(4),
+                                                        borderSide: BorderSide(color: Colors.grey.shade400),
+                                                      ),
+                                                      focusedBorder: OutlineInputBorder(
+                                                        borderRadius: BorderRadius.circular(4),
+                                                        borderSide: const BorderSide(color: Colors.blue, width: 1.5),
+                                                      ),
                                                     ),
                                                   ),
                                                 ),
-                                              ),
-                                            ),
-                                            const SizedBox(width: 12),
-                                            if (_isSubmitting)
-                                              const SizedBox(width: 44, height: 44, child: Center(child: CircularProgressIndicator(strokeWidth: 2.5)))
-                                            else
-                                              Row(
-                                                mainAxisSize: MainAxisSize.min,
-                                                children: [
-                                                  SizedBox(
-                                                    height: 44,
-                                                    child: ElevatedButton.icon(
-                                                      style: ElevatedButton.styleFrom(
-                                                        elevation: 0,
-                                                        shadowColor: Colors.transparent,
-                                                        backgroundColor: Colors.green.shade700,
-                                                        foregroundColor: Colors.white,
-                                                        padding: const EdgeInsets.symmetric(horizontal: 16),
-                                                        minimumSize: const Size(64, 44),
-                                                        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(4)),
+                                                const SizedBox(height: 10),
+                                                if (_isSubmitting)
+                                                  const Center(child: SizedBox(width: 32, height: 32, child: CircularProgressIndicator(strokeWidth: 2.5)))
+                                                else
+                                                  Wrap(
+                                                    spacing: 8,
+                                                    runSpacing: 8,
+                                                    alignment: isNarrow ? WrapAlignment.start : WrapAlignment.end,
+                                                    children: [
+                                                      SizedBox(
+                                                        height: 44,
+                                                        child: ElevatedButton.icon(
+                                                          style: ElevatedButton.styleFrom(
+                                                            elevation: 0,
+                                                            shadowColor: Colors.transparent,
+                                                            backgroundColor: Colors.green.shade700,
+                                                            foregroundColor: Colors.white,
+                                                            padding: const EdgeInsets.symmetric(horizontal: 16),
+                                                            minimumSize: const Size(64, 44),
+                                                            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(4)),
+                                                          ),
+                                                          icon: const Icon(Icons.check_circle_outline, size: 18),
+                                                          label: const Text("Duyệt Nhận Chuyến", style: TextStyle(fontWeight: FontWeight.bold, fontSize: 13.5)),
+                                                          onPressed: () => _updateReviewStatus('approved'),
+                                                        ),
                                                       ),
-                                                      icon: const Icon(Icons.check_circle_outline, size: 18),
-                                                      label: const Text("Duyệt Nhận Chuyến", style: TextStyle(fontWeight: FontWeight.bold, fontSize: 13.5)),
-                                                      onPressed: () => _updateReviewStatus('approved'),
-                                                    ),
-                                                  ),
-                                                  const SizedBox(width: 8),
-                                                  SizedBox(
-                                                    height: 44,
-                                                    child: OutlinedButton.icon(
-                                                      style: OutlinedButton.styleFrom(
-                                                        foregroundColor: Colors.amber.shade900,
-                                                        side: BorderSide(color: Colors.amber.shade700, width: 1.2),
-                                                        backgroundColor: Colors.amber.shade50.withValues(alpha: 0.3),
-                                                        padding: const EdgeInsets.symmetric(horizontal: 14),
-                                                        minimumSize: const Size(64, 44),
-                                                        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(4)),
+                                                      SizedBox(
+                                                        height: 44,
+                                                        child: OutlinedButton.icon(
+                                                          style: OutlinedButton.styleFrom(
+                                                            foregroundColor: Colors.amber.shade900,
+                                                            side: BorderSide(color: Colors.amber.shade700, width: 1.2),
+                                                            backgroundColor: Colors.amber.shade50.withValues(alpha: 0.3),
+                                                            padding: const EdgeInsets.symmetric(horizontal: 14),
+                                                            minimumSize: const Size(64, 44),
+                                                            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(4)),
+                                                          ),
+                                                          icon: const Icon(Icons.visibility_outlined, size: 18),
+                                                          label: const Text("Theo Dõi", style: TextStyle(fontWeight: FontWeight.bold, fontSize: 13.5)),
+                                                          onPressed: () => _updateReviewStatus('monitored'),
+                                                        ),
                                                       ),
-                                                      icon: const Icon(Icons.visibility_outlined, size: 18),
-                                                      label: const Text("Theo Dõi", style: TextStyle(fontWeight: FontWeight.bold, fontSize: 13.5)),
-                                                      onPressed: () => _updateReviewStatus('monitored'),
-                                                    ),
-                                                  ),
-                                                  const SizedBox(width: 8),
-                                                  SizedBox(
-                                                    height: 44,
-                                                    child: OutlinedButton.icon(
-                                                      style: OutlinedButton.styleFrom(
-                                                        foregroundColor: Colors.red.shade700,
-                                                        side: BorderSide(color: Colors.red.shade400, width: 1.2),
-                                                        backgroundColor: Colors.red.shade50.withValues(alpha: 0.3),
-                                                        padding: const EdgeInsets.symmetric(horizontal: 14),
-                                                        minimumSize: const Size(64, 44),
-                                                        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(4)),
+                                                      SizedBox(
+                                                        height: 44,
+                                                        child: OutlinedButton.icon(
+                                                          style: OutlinedButton.styleFrom(
+                                                            foregroundColor: Colors.red.shade700,
+                                                            side: BorderSide(color: Colors.red.shade400, width: 1.2),
+                                                            backgroundColor: Colors.red.shade50.withValues(alpha: 0.3),
+                                                            padding: const EdgeInsets.symmetric(horizontal: 14),
+                                                            minimumSize: const Size(64, 44),
+                                                            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(4)),
+                                                          ),
+                                                          icon: const Icon(Icons.cancel_outlined, size: 18),
+                                                          label: const Text("Yêu Cầu Chụp Lại", style: TextStyle(fontWeight: FontWeight.bold, fontSize: 13.5)),
+                                                          onPressed: () => _updateReviewStatus('rejected'),
+                                                        ),
                                                       ),
-                                                      icon: const Icon(Icons.cancel_outlined, size: 18),
-                                                      label: const Text("Yêu Cầu Chụp Lại", style: TextStyle(fontWeight: FontWeight.bold, fontSize: 13.5)),
-                                                      onPressed: () => _updateReviewStatus('rejected'),
-                                                    ),
+                                                    ],
                                                   ),
-                                                ],
-                                              ),
-                                          ],
+                                              ],
+                                            );
+                                          },
                                         ),
                                       ),
                                     ],
