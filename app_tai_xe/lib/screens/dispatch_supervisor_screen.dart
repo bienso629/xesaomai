@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import '../services/app_state.dart';
 import '../services/admin_service.dart';
+import '../models/reminder_model.dart';
 
 class DispatchSupervisorScreen extends StatefulWidget {
   final int activeTab;
@@ -115,6 +116,8 @@ class _DispatchSupervisorScreenState extends State<DispatchSupervisorScreen> {
         return _buildProductsTab();
       case 6:
         return _buildRolesSubtab();
+      case 7:
+        return _buildRemindersConfigTab(state);
       default:
         return _buildOverviewTab(state);
     }
@@ -4337,7 +4340,524 @@ class _DispatchSupervisorScreenState extends State<DispatchSupervisorScreen> {
       ),
     );
   }
+
+
+  // TAB 8: Cấu hình Nhắc nhở & Kịch bản Nền (Chỉ Điều phối, Giám đốc, Quản lý)
+  Widget _buildRemindersConfigTab(AppState state) {
+    final roles = state.userRoles.map((r) => r.toLowerCase()).toList();
+    final username = (state.currentUsername ?? '').trim().toLowerCase();
+    final bool hasPermission = username == 'admin' ||
+        roles.contains('admin') ||
+        roles.contains('manager') ||
+        roles.contains('dispatcher');
+
+    if (!hasPermission) {
+      return Center(
+        child: Container(
+          constraints: const BoxConstraints(maxWidth: 480),
+          margin: const EdgeInsets.all(24),
+          padding: const EdgeInsets.all(24),
+          decoration: BoxDecoration(
+            color: Colors.white,
+            borderRadius: BorderRadius.circular(4),
+            border: Border.all(color: Colors.red.shade200, width: 1),
+          ),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Icon(Icons.gpp_bad_outlined, size: 48, color: Colors.red.shade700),
+              const SizedBox(height: 16),
+              const Text(
+                "Từ Chối Quyền Truy Cập",
+                style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold, color: Colors.red),
+              ),
+              const SizedBox(height: 8),
+              const Text(
+                "Màn hình Cấu hình & Kịch bản Nhắc nhở Chạy Nền chỉ dành riêng cho các tài khoản có vai trò Điều phối, Giám đốc hoặc Quản lý hệ thống.",
+                textAlign: TextAlign.center,
+                style: TextStyle(fontSize: 13, color: Colors.black87, height: 1.4),
+              ),
+            ],
+          ),
+        ),
+      );
+    }
+
+    return ListView(
+      padding: const EdgeInsets.all(16),
+      children: [
+        // Thẻ giới thiệu phân hệ
+        Card(
+          elevation: 0,
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(4),
+            side: BorderSide(color: Colors.blue.shade300, width: 1),
+          ),
+          color: Colors.blue.shade50.withOpacity(0.4),
+          child: Padding(
+            padding: const EdgeInsets.all(16),
+            child: Row(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Icon(Icons.admin_panel_settings_outlined, color: Colors.blue.shade800, size: 28),
+                const SizedBox(width: 12),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        "Trung Tâm Điều Hành Kịch Bản Nhắc Nhở & Cảnh Báo Nền (Background Daemon)",
+                        style: TextStyle(
+                          fontSize: 15,
+                          fontWeight: FontWeight.bold,
+                          color: Colors.blue.shade900,
+                        ),
+                      ),
+                      const SizedBox(height: 6),
+                      Text(
+                        "Phân hệ này cho phép Điều phối, Giám đốc và Quản trị viên theo dõi các quy tắc kiểm tra tự động chạy nền, định cấu hình ngưỡng vi phạm GPS/thời gian chờ bồn, và chạy kiểm thử mô phỏng các kịch bản thực tế gửi về thiết bị tài xế.",
+                        style: TextStyle(fontSize: 13, color: Colors.blueGrey.shade800, height: 1.4),
+                      ),
+                    ],
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ),
+        const SizedBox(height: 16),
+
+        // Khối 1: Bảng thông số & Ngưỡng kích hoạt tự động
+        Card(
+          elevation: 0,
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(4),
+            side: BorderSide(color: Colors.grey.shade300, width: 1),
+          ),
+          child: Padding(
+            padding: const EdgeInsets.all(16),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Row(
+                  children: [
+                    Icon(Icons.tune, size: 20, color: Colors.blueGrey.shade800),
+                    const SizedBox(width: 8),
+                    const Text(
+                      "Quy Tắc & Ngưỡng Kích Hoạt Cảnh Báo Tự Động",
+                      style: TextStyle(fontSize: 14, fontWeight: FontWeight.bold),
+                    ),
+                    const Spacer(),
+                    Container(
+                      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                      decoration: BoxDecoration(
+                        color: Colors.green.shade50,
+                        borderRadius: BorderRadius.circular(4),
+                        border: Border.all(color: Colors.green.shade300),
+                      ),
+                      child: Text(
+                        "Đang kích hoạt nền",
+                        style: TextStyle(fontSize: 11, fontWeight: FontWeight.bold, color: Colors.green.shade800),
+                      ),
+                    ),
+                  ],
+                ),
+                const Divider(height: 24),
+                _buildRuleItem(
+                  icon: Icons.navigation_outlined,
+                  title: "1. Vi phạm lăn bánh chưa kiểm tra xe 5 góc ảnh",
+                  desc: "Khi GPS xe di chuyển vượt quá 500m so với tọa độ bãi/điểm đỗ mà tài xế chưa hoàn thành đủ 5 ảnh kiểm tra nhận ca.",
+                  thresholdText: "> 500 mét di chuyển",
+                  statusTag: "Bắt buộc 100%",
+                  color: Colors.deepOrange,
+                ),
+                const SizedBox(height: 12),
+                _buildRuleItem(
+                  icon: Icons.timer_outlined,
+                  title: "2. Cảnh báo dừng tại vùng giao chưa xác nhận đến trạm",
+                  desc: "GPS phát hiện xe đứng yên trong bán kính trạm giao hàng quá 15 phút mà tài xế chưa ấn mốc 'ĐẾN ĐIỂM GIAO'.",
+                  thresholdText: "> 15 phút dừng trạm",
+                  statusTag: "Cảnh báo cấp 1",
+                  color: Colors.amber.shade900,
+                ),
+                const SizedBox(height: 12),
+                _buildRuleItem(
+                  icon: Icons.hourglass_bottom_outlined,
+                  title: "3. Cảnh báo thời gian xả bồn quá hạn mức",
+                  desc: "Thời gian từ lúc bấm ĐẾN vượt quá 120 phút nhưng chưa bấm 'BƠM XONG'. Bắt buộc tài xế giải trình lý do chờ.",
+                  thresholdText: "> 120 phút xả bồn",
+                  statusTag: "Yêu cầu giải trình",
+                  color: Colors.red.shade700,
+                ),
+                const SizedBox(height: 12),
+                _buildRuleItem(
+                  icon: Icons.fact_check_outlined,
+                  title: "4. Nhắc nộp phiếu cân & Chốt bàn giao hết ca trực",
+                  desc: "Tự động kích hoạt lúc 19:00 (hết ca ngày) và 07:00 (hết ca đêm), đối soát số phiếu giao hàng và số km với đồng hồ táp lô.",
+                  thresholdText: "Mốc 19:00 & 07:00",
+                  statusTag: "Định kỳ ca trực",
+                  color: Colors.teal.shade700,
+                ),
+              ],
+            ),
+          ),
+        ),
+        const SizedBox(height: 16),
+
+        // Khối 2: Công cụ kích hoạt mô phỏng kiểm thử dành cho Quản lý & Điều phối
+        Card(
+          elevation: 0,
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(4),
+            side: BorderSide(color: Colors.amber.shade400, width: 1),
+          ),
+          color: Colors.amber.shade50.withOpacity(0.3),
+          child: Padding(
+            padding: const EdgeInsets.all(16),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Row(
+                  children: [
+                    Icon(Icons.science_outlined, color: Colors.amber.shade900, size: 22),
+                    const SizedBox(width: 8),
+                    Text(
+                      "Công Cụ Kích Hoạt Thử Nghiệm Kịch Bản (Dành Riêng Cho Quản Lý)",
+                      style: TextStyle(
+                        fontSize: 14,
+                        fontWeight: FontWeight.bold,
+                        color: Colors.amber.shade900,
+                      ),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 6),
+                const Text(
+                  "Nhấn vào các nút bên dưới để phát thông điệp nhắc nhở tới tài xế đang được chọn nhằm kiểm tra phản hồi âm thanh, rung và giao diện thông báo trên thiết bị cầm tay.",
+                  style: TextStyle(fontSize: 12, color: Colors.black87),
+                ),
+                const Divider(height: 20),
+                Wrap(
+                  spacing: 10,
+                  runSpacing: 10,
+                  children: [
+                    SizedBox(
+                      height: 38,
+                      child: ElevatedButton.icon(
+                        style: ElevatedButton.styleFrom(
+                          backgroundColor: Colors.white,
+                          foregroundColor: Colors.red.shade800,
+                          side: BorderSide(color: Colors.red.shade300),
+                          elevation: 0,
+                          padding: const EdgeInsets.symmetric(horizontal: 14),
+                          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(4)),
+                        ),
+                        icon: const Icon(Icons.fmd_bad_outlined, size: 16),
+                        label: const Text("Chạy >500m chưa chụp", style: TextStyle(fontSize: 12, fontWeight: FontWeight.bold)),
+                        onPressed: () {
+                          state.triggerReminder(
+                            ReminderType.movingWithoutInspection,
+                            "Cảnh báo: Xe ${state.selectedPlate} đã di chuyển quá 500m nhưng chưa hoàn tất kiểm tra 5 góc ảnh đầu ca!",
+                          );
+                          ScaffoldMessenger.of(context).showSnackBar(
+                            const SnackBar(
+                              content: Text("Đã kích hoạt cảnh báo: Di chuyển quá 500m chưa kiểm tra."),
+                              backgroundColor: Colors.red,
+                              duration: Duration(seconds: 2),
+                            ),
+                          );
+                        },
+                      ),
+                    ),
+                    SizedBox(
+                      height: 38,
+                      child: ElevatedButton.icon(
+                        style: ElevatedButton.styleFrom(
+                          backgroundColor: Colors.white,
+                          foregroundColor: Colors.amber.shade900,
+                          side: BorderSide(color: Colors.amber.shade300),
+                          elevation: 0,
+                          padding: const EdgeInsets.symmetric(horizontal: 14),
+                          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(4)),
+                        ),
+                        icon: const Icon(Icons.timer_outlined, size: 16),
+                        label: const Text("Dừng 15p chưa bấm ĐẾN", style: TextStyle(fontSize: 12, fontWeight: FontWeight.bold)),
+                        onPressed: () {
+                          state.triggerReminder(
+                            ReminderType.arrivedZoneNotConfirmed,
+                            "Nhắc nhở: Xe ${state.selectedPlate} đã dừng tại trạm hơn 15 phút. Vui lòng bấm 'ĐẾN ĐIỂM GIAO'!",
+                          );
+                          ScaffoldMessenger.of(context).showSnackBar(
+                            const SnackBar(
+                              content: Text("Đã kích hoạt cảnh báo: Dừng 15 phút chưa bấm ĐẾN."),
+                              backgroundColor: Colors.amber,
+                              duration: Duration(seconds: 2),
+                            ),
+                          );
+                        },
+                      ),
+                    ),
+                    SizedBox(
+                      height: 38,
+                      child: ElevatedButton.icon(
+                        style: ElevatedButton.styleFrom(
+                          backgroundColor: Colors.white,
+                          foregroundColor: Colors.deepOrange.shade800,
+                          side: BorderSide(color: Colors.deepOrange.shade300),
+                          elevation: 0,
+                          padding: const EdgeInsets.symmetric(horizontal: 14),
+                          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(4)),
+                        ),
+                        icon: const Icon(Icons.hourglass_empty_outlined, size: 16),
+                        label: const Text("Đến >120p chưa bơm xong", style: TextStyle(fontSize: 12, fontWeight: FontWeight.bold)),
+                        onPressed: () {
+                          state.triggerReminder(
+                            ReminderType.pumpingOverdue,
+                            "Cảnh báo: Đã quá 120 phút kể từ lúc đến trạm. Vui lòng cập nhật trạng thái xả bồn hoặc báo lý do chờ bồn!",
+                          );
+                          ScaffoldMessenger.of(context).showSnackBar(
+                            const SnackBar(
+                              content: Text("Đã kích hoạt cảnh báo: Xả bồn quá 120 phút."),
+                              backgroundColor: Colors.deepOrange,
+                              duration: Duration(seconds: 2),
+                            ),
+                          );
+                        },
+                      ),
+                    ),
+                    SizedBox(
+                      height: 38,
+                      child: ElevatedButton.icon(
+                        style: ElevatedButton.styleFrom(
+                          backgroundColor: Colors.white,
+                          foregroundColor: Colors.teal.shade800,
+                          side: BorderSide(color: Colors.teal.shade300),
+                          elevation: 0,
+                          padding: const EdgeInsets.symmetric(horizontal: 14),
+                          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(4)),
+                        ),
+                        icon: const Icon(Icons.alarm_outlined, size: 16),
+                        label: const Text("Tổng kết hết ca 19h / 07h", style: TextStyle(fontSize: 12, fontWeight: FontWeight.bold)),
+                        onPressed: () {
+                          state.triggerReminder(
+                            ReminderType.shiftEndReminder,
+                            "Thông báo: Đã đến giờ bàn giao ca trực (19:00 / 07:00). Vui lòng hoàn tất nộp phiếu cân và kiểm tra táp lô cuối ca!",
+                          );
+                          ScaffoldMessenger.of(context).showSnackBar(
+                            const SnackBar(
+                              content: Text("Đã kích hoạt nhắc nhở: Tổng kết kết thúc ca trực."),
+                              backgroundColor: Colors.teal,
+                              duration: Duration(seconds: 2),
+                            ),
+                          );
+                        },
+                      ),
+                    ),
+                  ],
+                ),
+              ],
+            ),
+          ),
+        ),
+        const SizedBox(height: 16),
+
+        // Khối 3: Nhật ký cảnh báo phát sinh gần đây
+        Card(
+          elevation: 0,
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(4),
+            side: BorderSide(color: Colors.grey.shade300, width: 1),
+          ),
+          child: Padding(
+            padding: const EdgeInsets.all(16),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Row(
+                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                  children: [
+                    Row(
+                      children: [
+                        Icon(Icons.history, size: 20, color: Colors.blueGrey.shade800),
+                        const SizedBox(width: 8),
+                        Text(
+                          "Nhật Ký Cảnh Báo Đã Gửi (${state.activeReminders.length} bản ghi)",
+                          style: const TextStyle(fontSize: 14, fontWeight: FontWeight.bold),
+                        ),
+                      ],
+                    ),
+                    if (state.activeReminders.isNotEmpty)
+                      SizedBox(
+                        height: 32,
+                        child: OutlinedButton.icon(
+                          style: OutlinedButton.styleFrom(
+                            foregroundColor: Colors.grey.shade700,
+                            padding: const EdgeInsets.symmetric(horizontal: 8),
+                            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(4)),
+                          ),
+                          icon: const Icon(Icons.clear_all, size: 16),
+                          label: const Text("Xóa nhật ký", style: TextStyle(fontSize: 11)),
+                          onPressed: () {
+                            state.activeReminders.clear();
+                            (context as Element).markNeedsBuild();
+                          },
+                        ),
+                      ),
+                  ],
+                ),
+                const Divider(height: 20),
+                if (state.activeReminders.isEmpty)
+                  Padding(
+                    padding: const EdgeInsets.symmetric(vertical: 24),
+                    child: Center(
+                      child: Text(
+                        "Chưa có bản ghi cảnh báo nào được gửi đi trong phiên làm việc hiện tại.",
+                        style: TextStyle(fontSize: 13, color: Colors.grey.shade600),
+                      ),
+                    ),
+                  )
+                else
+                  ListView.separated(
+                    shrinkWrap: true,
+                    physics: const NeverScrollableScrollPhysics(),
+                    itemCount: state.activeReminders.length,
+                    separatorBuilder: (_, __) => const Divider(height: 1),
+                    itemBuilder: (ctx, index) {
+                      final item = state.activeReminders[index];
+                      return ListTile(
+                        dense: true,
+                        contentPadding: const EdgeInsets.symmetric(horizontal: 4, vertical: 4),
+                        leading: CircleAvatar(
+                          radius: 16,
+                          backgroundColor: Colors.blue.shade50,
+                          child: Icon(
+                            item.type == ReminderType.movingWithoutInspection
+                                ? Icons.warning_amber_rounded
+                                : item.type == ReminderType.arrivedZoneNotConfirmed
+                                    ? Icons.timer_outlined
+                                    : item.type == ReminderType.pumpingOverdue
+                                        ? Icons.hourglass_bottom
+                                        : Icons.alarm,
+                            size: 18,
+                            color: Colors.blue.shade800,
+                          ),
+                        ),
+                        title: Text(
+                          item.message,
+                          style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w600),
+                        ),
+                        subtitle: Padding(
+                          padding: const EdgeInsets.only(top: 4),
+                          child: Text(
+                            "Phương tiện: ${item.vehiclePlate} | Mã: ${item.id} | Thời gian: ${item.sentTime.hour.toString().padLeft(2, '0')}:${item.sentTime.minute.toString().padLeft(2, '0')}:${item.sentTime.second.toString().padLeft(2, '0')}",
+                            style: TextStyle(fontSize: 11, color: Colors.grey.shade600),
+                          ),
+                        ),
+                        trailing: Container(
+                          padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                          decoration: BoxDecoration(
+                            color: Colors.green.shade50,
+                            borderRadius: BorderRadius.circular(4),
+                            border: Border.all(color: Colors.green.shade300),
+                          ),
+                          child: Text(
+                            "Đã gửi",
+                            style: TextStyle(fontSize: 10, color: Colors.green.shade800, fontWeight: FontWeight.bold),
+                          ),
+                        ),
+                      );
+                    },
+                  ),
+              ],
+            ),
+          ),
+        ),
+      ],
+    );
+  }
+
+  Widget _buildRuleItem({
+    required IconData icon,
+    required String title,
+    required String desc,
+    required String thresholdText,
+    required String statusTag,
+    required Color color,
+  }) {
+    return Container(
+      padding: const EdgeInsets.all(12),
+      decoration: BoxDecoration(
+        color: Colors.grey.shade50,
+        borderRadius: BorderRadius.circular(4),
+        border: Border.all(color: Colors.grey.shade200, width: 1),
+      ),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Container(
+            padding: const EdgeInsets.all(8),
+            decoration: BoxDecoration(
+              color: color.withOpacity(0.1),
+              borderRadius: BorderRadius.circular(4),
+            ),
+            child: Icon(icon, size: 20, color: color),
+          ),
+          const SizedBox(width: 12),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Row(
+                  children: [
+                    Expanded(
+                      child: Text(
+                        title,
+                        style: const TextStyle(fontSize: 13, fontWeight: FontWeight.bold),
+                      ),
+                    ),
+                    Container(
+                      padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                      decoration: BoxDecoration(
+                        color: color.withOpacity(0.1),
+                        borderRadius: BorderRadius.circular(4),
+                        border: Border.all(color: color.withOpacity(0.4)),
+                      ),
+                      child: Text(
+                        statusTag,
+                        style: TextStyle(fontSize: 11, fontWeight: FontWeight.bold, color: color),
+                      ),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 4),
+                Text(
+                  desc,
+                  style: TextStyle(fontSize: 12, color: Colors.grey.shade700, height: 1.3),
+                ),
+                const SizedBox(height: 6),
+                Row(
+                  children: [
+                    Icon(Icons.tune, size: 14, color: Colors.grey.shade600),
+                    const SizedBox(width: 4),
+                    Text(
+                      "Ngưỡng cấu hình: ",
+                      style: TextStyle(fontSize: 11, color: Colors.grey.shade600),
+                    ),
+                    Text(
+                      thresholdText,
+                      style: TextStyle(fontSize: 11, fontWeight: FontWeight.bold, color: Colors.blueGrey.shade800),
+                    ),
+                  ],
+                ),
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
 }
+
 
 // ============================================================================
 // MODAL KIỂM TRA TÌNH TRẠNG XE QUA 5 ẢNH CAMERA CỦA TÀI XẾ (ĐIỀU PHỐI VIÊN DUYỆT)
@@ -4959,4 +5479,3 @@ class _VehicleInspectionsModalState extends State<_VehicleInspectionsModal> {
     );
   }
 }
-
