@@ -5,6 +5,7 @@ import '../services/auth_service.dart';
 import 'map_screen.dart';
 import 'dispatch_supervisor_screen.dart';
 import 'vehicle_inspection_screen.dart';
+import 'driver_inspection_history_screen.dart';
 import 'login_screen.dart';
 
 class MainNavigationScreen extends StatefulWidget {
@@ -45,6 +46,7 @@ class _MainNavigationScreenState extends State<MainNavigationScreen> {
   String _getAppTitle() {
     if (_currentRoot == 0) return "Bản Đồ Giám Sát GPS";
     if (_currentRoot == 1) return "Kiểm Tra Xe";
+    if (_currentRoot == 3) return "Lịch Sử Hình Chụp Kiểm Tra Xe";
     return _managementTitles[_activeManagementTab];
   }
 
@@ -52,7 +54,7 @@ class _MainNavigationScreenState extends State<MainNavigationScreen> {
     final state = context.read<AppState>();
     setState(() {
       _currentRoot = rootIndex;
-      if (rootIndex == 1) {
+      if (rootIndex == 1 || rootIndex == 3) {
         state.setRole(UserRole.driver);
       } else if (rootIndex == 2) {
         state.setRole(UserRole.manager);
@@ -298,6 +300,23 @@ class _MainNavigationScreenState extends State<MainNavigationScreen> {
                     child: Divider(color: Color(0xFF1E293B), height: 1),
                   ),
                 ],
+                if (state.userRoles.any((r) => r.toLowerCase() == 'driver') &&
+                    state.currentUsername != 'admin' &&
+                    !state.userRoles.any((r) => ['admin', 'manager', 'dispatcher'].contains(r.toLowerCase()))) ...[
+                  _buildSectionHeader("DÀNH CHO TÀI XẾ"),
+                  _buildDrawerItem(
+                    isSelected: _currentRoot == 3,
+                    icon: Icons.photo_library_outlined,
+                    activeIcon: Icons.photo_library,
+                    title: "Lịch sử hình chụp xe",
+                    subtitle: "Xem lại 5 ảnh kiểm tra xe các ca",
+                    onTap: () => _onSelectRoot(3),
+                  ),
+                  const Padding(
+                    padding: EdgeInsets.symmetric(horizontal: 16.0, vertical: 6.0),
+                    child: Divider(color: Color(0xFF1E293B), height: 1),
+                  ),
+                ],
                 _buildSectionHeader("HỆ THỐNG QUẢN TRỊ DỰ ÁN"),
                 _buildDrawerItem(
                   isSelected: _currentRoot == 2 && _activeManagementTab == 0,
@@ -476,6 +495,44 @@ class _MainNavigationScreenState extends State<MainNavigationScreen> {
         );
       }
       return const VehicleInspectionReviewScreen();
+    } else if (_currentRoot == 3) {
+      final state = context.watch<AppState>();
+      final isDriver = state.userRoles.any((r) => r.toLowerCase() == 'driver') &&
+          state.currentUsername != 'admin' &&
+          !state.userRoles.any((r) => ['admin', 'manager', 'dispatcher'].contains(r.toLowerCase()));
+
+      if (!isDriver) {
+        return Center(
+          child: Container(
+            constraints: const BoxConstraints(maxWidth: 480),
+            margin: const EdgeInsets.all(24),
+            padding: const EdgeInsets.all(24),
+            decoration: BoxDecoration(
+              color: Colors.white,
+              borderRadius: BorderRadius.circular(4),
+              border: Border.all(color: Colors.red.shade200, width: 1),
+            ),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Icon(Icons.gpp_bad_outlined, size: 48, color: Colors.red.shade700),
+                const SizedBox(height: 16),
+                const Text(
+                  "Từ Chối Quyền Truy Cập",
+                  style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold, color: Colors.red),
+                ),
+                const SizedBox(height: 8),
+                const Text(
+                  "Màn hình Lịch sử hình chụp kiểm tra xe chỉ dành riêng cho Tài xế.",
+                  textAlign: TextAlign.center,
+                  style: TextStyle(fontSize: 13, color: Colors.black87, height: 1.4),
+                ),
+              ],
+            ),
+          ),
+        );
+      }
+      return const DriverInspectionHistoryScreen();
     } else {
       return DispatchSupervisorScreen(
         activeTab: _activeManagementTab,
