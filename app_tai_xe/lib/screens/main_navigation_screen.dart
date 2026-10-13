@@ -275,16 +275,16 @@ class _MainNavigationScreenState extends State<MainNavigationScreen> {
             child: ListView(
               padding: const EdgeInsets.symmetric(vertical: 8),
               children: [
-                _buildSectionHeader("ĐIỀU HÀNH & TÀI XẾ"),
-                _buildDrawerItem(
-                  isSelected: _currentRoot == 0,
-                  icon: Icons.map_outlined,
-                  activeIcon: Icons.map,
-                  title: "Bản đồ Giám sát GPS",
-                  subtitle: "Theo dõi vị trí xe thời gian thực",
-                  onTap: () => _onSelectRoot(0),
-                ),
                 if (state.currentUsername == 'admin' || state.userRoles.any((r) => ['admin', 'manager', 'dispatcher'].contains(r.toLowerCase()))) ...[
+                  _buildSectionHeader("ĐIỀU HÀNH & TÀI XẾ"),
+                  _buildDrawerItem(
+                    isSelected: _currentRoot == 0,
+                    icon: Icons.map_outlined,
+                    activeIcon: Icons.map,
+                    title: "Bản đồ Giám sát GPS",
+                    subtitle: "Theo dõi vị trí xe thời gian thực",
+                    onTap: () => _onSelectRoot(0),
+                  ),
                   _buildDrawerItem(
                     isSelected: _currentRoot == 1,
                     icon: Icons.checklist_rtl_outlined,
@@ -293,11 +293,11 @@ class _MainNavigationScreenState extends State<MainNavigationScreen> {
                     subtitle: "Soi xét 5 ảnh giao nhận ca, duyệt nhận chuyến",
                     onTap: () => _onSelectRoot(1),
                   ),
+                  const Padding(
+                    padding: EdgeInsets.symmetric(horizontal: 16.0, vertical: 6.0),
+                    child: Divider(color: Color(0xFF1E293B), height: 1),
+                  ),
                 ],
-                const Padding(
-                  padding: EdgeInsets.symmetric(horizontal: 16.0, vertical: 6.0),
-                  child: Divider(color: Color(0xFF1E293B), height: 1),
-                ),
                 _buildSectionHeader("HỆ THỐNG QUẢN TRỊ DỰ ÁN"),
                 _buildDrawerItem(
                   isSelected: _currentRoot == 2 && _activeManagementTab == 0,
