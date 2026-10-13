@@ -24,13 +24,27 @@ class _MainNavigationScreenState extends State<MainNavigationScreen> {
   @override
   void initState() {
     super.initState();
-    // Mặc định khi đăng nhập thành công thì tất cả người dùng đều vào màn hình Tổng quan & Báo cáo
-    _currentRoot = 2;
-    _activeManagementTab = 0;
+    final state = context.read<AppState>();
+    final isDriver = state.userRoles.any((r) => r.toLowerCase() == 'driver') &&
+        state.currentUsername != 'admin' &&
+        !state.userRoles.any((r) => ['admin', 'manager', 'dispatcher'].contains(r.toLowerCase()));
+
+    if (isDriver) {
+      // Tài xế đăng nhập thành công thì vào thẳng màn hình Lịch sử hình chụp xe
+      _currentRoot = 3;
+    } else {
+      // Quản lý / Điều phối / Admin vào Tổng quan & Báo cáo
+      _currentRoot = 2;
+      _activeManagementTab = 0;
+    }
 
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (mounted) {
-        context.read<AppState>().setRole(UserRole.manager);
+        if (isDriver) {
+          state.setRole(UserRole.driver);
+        } else {
+          state.setRole(UserRole.manager);
+        }
       }
     });
   }
