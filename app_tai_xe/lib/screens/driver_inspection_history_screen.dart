@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import '../services/admin_service.dart';
 import '../services/app_state.dart';
+import 'camera_inspection_screen.dart';
 
 class DriverInspectionHistoryScreen extends StatefulWidget {
   const DriverInspectionHistoryScreen({super.key});
@@ -397,18 +398,23 @@ class _DriverInspectionHistoryScreenState extends State<DriverInspectionHistoryS
           Expanded(
             child: Padding(
               padding: const EdgeInsets.all(14),
-              child: GridView.count(
-                crossAxisCount: 3,
-                crossAxisSpacing: 10,
-                mainAxisSpacing: 10,
-                childAspectRatio: 1.25,
-                children: [
-                  _buildPhotoThumbnail("1. Gầm trước", record['img_front_underbody'], Icons.directions_car),
-                  _buildPhotoThumbnail("2. Gầm sau", record['img_rear_underbody'], Icons.directions_car_filled),
-                  _buildPhotoThumbnail("3. Hông trái", record['img_left_side'], Icons.compare_arrows),
-                  _buildPhotoThumbnail("4. Hông phải", record['img_right_side'], Icons.compare_arrows),
-                  _buildPhotoThumbnail("5. Táp-lô (ODO)", record['img_dashboard'], Icons.speed),
-                ],
+              child: LayoutBuilder(
+                builder: (ctx, constraints) {
+                  final isSmall = constraints.maxWidth < 600;
+                  return GridView.count(
+                    crossAxisCount: isSmall ? 2 : 3,
+                    crossAxisSpacing: 10,
+                    mainAxisSpacing: 10,
+                    childAspectRatio: isSmall ? 1.35 : 1.25,
+                    children: [
+                      _buildPhotoThumbnail("1. Gầm trước", record['img_front_underbody'], Icons.directions_car),
+                      _buildPhotoThumbnail("2. Gầm sau", record['img_rear_underbody'], Icons.directions_car_filled),
+                      _buildPhotoThumbnail("3. Hông trái", record['img_left_side'], Icons.compare_arrows),
+                      _buildPhotoThumbnail("4. Hông phải", record['img_right_side'], Icons.compare_arrows),
+                      _buildPhotoThumbnail("5. Táp-lô (ODO)", record['img_dashboard'], Icons.speed),
+                    ],
+                  );
+                },
               ),
             ),
           ),
@@ -422,73 +428,145 @@ class _DriverInspectionHistoryScreenState extends State<DriverInspectionHistoryS
     final mediaWidth = MediaQuery.of(context).size.width;
     final isDesktop = mediaWidth >= 1000;
 
-    return Container(
-      color: Colors.grey.shade50,
-      child: Column(
+    return Scaffold(
+      backgroundColor: Colors.grey.shade50,
+      body: Column(
         children: [
           // Thanh công cụ lọc ngày và làm mới
           Container(
-            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
+            padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
             decoration: BoxDecoration(
               color: Colors.white,
               border: Border(bottom: BorderSide(color: Colors.grey.shade300, width: 1)),
             ),
-            child: Row(
-              children: [
-                SizedBox(
-                  width: 220,
-                  height: 44,
-                  child: TextField(
-                    controller: _dateCtrl,
-                    readOnly: true,
-                    style: const TextStyle(fontSize: 13),
-                    decoration: InputDecoration(
-                      hintText: "Lọc theo ngày kiểm tra",
-                      hintStyle: TextStyle(fontSize: 12.5, color: Colors.grey.shade500),
-                      prefixIcon: const Icon(Icons.calendar_today, size: 18),
-                      prefixIconConstraints: const BoxConstraints(minWidth: 40, minHeight: 44, maxHeight: 44),
-                      suffixIcon: _filterDate != null
-                          ? IconButton(
-                              icon: const Icon(Icons.clear, size: 18),
-                              onPressed: _clearDateFilter,
-                            )
-                          : null,
-                      suffixIconConstraints: const BoxConstraints(minWidth: 40, minHeight: 44, maxHeight: 44),
-                      border: OutlineInputBorder(
-                        borderRadius: BorderRadius.circular(4),
-                        borderSide: BorderSide(color: Colors.grey.shade300),
+            child: LayoutBuilder(
+              builder: (ctx, constraints) {
+                final isNarrow = constraints.maxWidth < 650;
+                if (isNarrow) {
+                  return Column(
+                    crossAxisAlignment: CrossAxisAlignment.stretch,
+                    children: [
+                      Row(
+                        children: [
+                          Expanded(
+                            child: SizedBox(
+                              height: 44,
+                              child: TextField(
+                                controller: _dateCtrl,
+                                readOnly: true,
+                                style: const TextStyle(fontSize: 13),
+                                decoration: InputDecoration(
+                                  hintText: "Lọc theo ngày kiểm tra",
+                                  hintStyle: TextStyle(fontSize: 12.5, color: Colors.grey.shade500),
+                                  prefixIcon: const Icon(Icons.calendar_today, size: 18),
+                                  prefixIconConstraints: const BoxConstraints(minWidth: 40, minHeight: 44, maxHeight: 44),
+                                  suffixIcon: _filterDate != null
+                                      ? IconButton(
+                                          icon: const Icon(Icons.clear, size: 18),
+                                          onPressed: _clearDateFilter,
+                                        )
+                                      : null,
+                                  suffixIconConstraints: const BoxConstraints(minWidth: 40, minHeight: 44, maxHeight: 44),
+                                  border: OutlineInputBorder(
+                                    borderRadius: BorderRadius.circular(4),
+                                    borderSide: BorderSide(color: Colors.grey.shade300),
+                                  ),
+                                  enabledBorder: OutlineInputBorder(
+                                    borderRadius: BorderRadius.circular(4),
+                                    borderSide: BorderSide(color: Colors.grey.shade300),
+                                  ),
+                                  contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 11),
+                                  isDense: true,
+                                ),
+                                onTap: _pickDate,
+                              ),
+                            ),
+                          ),
+                          const SizedBox(width: 8),
+                          SizedBox(
+                            height: 44,
+                            child: ElevatedButton.icon(
+                              style: ElevatedButton.styleFrom(
+                                backgroundColor: Colors.blue.shade800,
+                                foregroundColor: Colors.white,
+                                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(4)),
+                                minimumSize: const Size(64, 44),
+                                padding: const EdgeInsets.symmetric(horizontal: 12),
+                              ),
+                              icon: const Icon(Icons.refresh, size: 18),
+                              label: const Text("Làm mới", style: TextStyle(fontSize: 13, fontWeight: FontWeight.bold)),
+                              onPressed: _loadHistory,
+                            ),
+                          ),
+                        ],
                       ),
-                      enabledBorder: OutlineInputBorder(
-                        borderRadius: BorderRadius.circular(4),
-                        borderSide: BorderSide(color: Colors.grey.shade300),
+                      const SizedBox(height: 6),
+                      Text(
+                        "Tổng cộng: ${_inspections.length} lượt kiểm tra",
+                        style: TextStyle(fontSize: 12, fontWeight: FontWeight.w600, color: Colors.blueGrey.shade700),
                       ),
-                      contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 11),
-                      isDense: true,
+                    ],
+                  );
+                }
+
+                return Row(
+                  children: [
+                    SizedBox(
+                      width: 220,
+                      height: 44,
+                      child: TextField(
+                        controller: _dateCtrl,
+                        readOnly: true,
+                        style: const TextStyle(fontSize: 13),
+                        decoration: InputDecoration(
+                          hintText: "Lọc theo ngày kiểm tra",
+                          hintStyle: TextStyle(fontSize: 12.5, color: Colors.grey.shade500),
+                          prefixIcon: const Icon(Icons.calendar_today, size: 18),
+                          prefixIconConstraints: const BoxConstraints(minWidth: 40, minHeight: 44, maxHeight: 44),
+                          suffixIcon: _filterDate != null
+                              ? IconButton(
+                                  icon: const Icon(Icons.clear, size: 18),
+                                  onPressed: _clearDateFilter,
+                                )
+                              : null,
+                          suffixIconConstraints: const BoxConstraints(minWidth: 40, minHeight: 44, maxHeight: 44),
+                          border: OutlineInputBorder(
+                            borderRadius: BorderRadius.circular(4),
+                            borderSide: BorderSide(color: Colors.grey.shade300),
+                          ),
+                          enabledBorder: OutlineInputBorder(
+                            borderRadius: BorderRadius.circular(4),
+                            borderSide: BorderSide(color: Colors.grey.shade300),
+                          ),
+                          contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 11),
+                          isDense: true,
+                        ),
+                        onTap: _pickDate,
+                      ),
                     ),
-                    onTap: _pickDate,
-                  ),
-                ),
-                const SizedBox(width: 10),
-                SizedBox(
-                  height: 44,
-                  child: ElevatedButton.icon(
-                    style: ElevatedButton.styleFrom(
-                      backgroundColor: Colors.blue.shade800,
-                      foregroundColor: Colors.white,
-                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(4)),
-                      minimumSize: const Size(64, 44),
+                    const SizedBox(width: 10),
+                    SizedBox(
+                      height: 44,
+                      child: ElevatedButton.icon(
+                        style: ElevatedButton.styleFrom(
+                          backgroundColor: Colors.blue.shade800,
+                          foregroundColor: Colors.white,
+                          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(4)),
+                          minimumSize: const Size(64, 44),
+                        ),
+                        icon: const Icon(Icons.refresh, size: 18),
+                        label: const Text("Làm mới", style: TextStyle(fontSize: 13, fontWeight: FontWeight.bold)),
+                        onPressed: _loadHistory,
+                      ),
                     ),
-                    icon: const Icon(Icons.refresh, size: 18),
-                    label: const Text("Làm mới", style: TextStyle(fontSize: 13, fontWeight: FontWeight.bold)),
-                    onPressed: _loadHistory,
-                  ),
-                ),
-                const Spacer(),
-                Text(
-                  "Tổng cộng: ${_inspections.length} lượt kiểm tra",
-                  style: TextStyle(fontSize: 13, fontWeight: FontWeight.bold, color: Colors.blueGrey.shade700),
-                ),
-              ],
+                    const Spacer(),
+                    Text(
+                      "Tổng cộng: ${_inspections.length} lượt kiểm tra",
+                      style: TextStyle(fontSize: 13, fontWeight: FontWeight.bold, color: Colors.blueGrey.shade700),
+                    ),
+                  ],
+                );
+              },
             ),
           ),
           // Nội dung hiển thị
@@ -599,6 +677,26 @@ class _DriverInspectionHistoryScreenState extends State<DriverInspectionHistoryS
                           ),
           ),
         ],
+      ),
+      floatingActionButton: FloatingActionButton.extended(
+        backgroundColor: Colors.blue.shade800,
+        foregroundColor: Colors.white,
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(4)),
+        elevation: 3,
+        icon: const Icon(Icons.camera_alt, size: 20),
+        label: const Text(
+          "Chụp kiểm tra xe",
+          style: TextStyle(fontWeight: FontWeight.bold, fontSize: 13),
+        ),
+        onPressed: () async {
+          final result = await Navigator.push(
+            context,
+            MaterialPageRoute(builder: (_) => const CameraInspectionScreen()),
+          );
+          if (result == true || mounted) {
+            _loadHistory();
+          }
+        },
       ),
     );
   }
