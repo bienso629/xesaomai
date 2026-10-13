@@ -28,8 +28,11 @@ class _MainNavigationScreenState extends State<MainNavigationScreen> {
     _currentRoot = 2;
     _activeManagementTab = 0;
 
-    final state = context.read<AppState>();
-    state.setRole(UserRole.manager);
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted) {
+        context.read<AppState>().setRole(UserRole.manager);
+      }
+    });
   }
 
   final List<String> _managementTitles = const [
