@@ -17,6 +17,9 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v4
 
+      - name: Setup NuGet
+        uses: NuGet/setup-nuget@v2
+
       - name: Setup Flutter
         uses: subosito/flutter-action@v2
         with:
@@ -27,19 +30,46 @@ jobs:
         working-directory: ./app_tai_xe
         run: flutter pub get
 
-      - name: Ensure Windows platform files exist
+      - name: Patch Windows CMake plugins (fix JNI & CppWinRT)
         working-directory: ./app_tai_xe
+        shell: pwsh
         run: |
           if (!(Test-Path "windows")) {
             flutter create --platforms=windows .
           }
+          # Remove jni from Windows FFI plugin list if present, or disable JAVA_HOME so jni skips building on Windows
+          $env:JAVA_HOME = ""
+          if (Test-Path "windows/flutter/generated_plugins.cmake") {
+            (Get-Content "windows/flutter/generated_plugins.cmake") -replace '^\s*jni\s*$', '' | Set-Content "windows/flutter/generated_plugins.cmake"
+          }
+          # Also patch jni CMakeLists in pub-cache to not build on Windows desktop
+          Get-ChildItem -Path "$env:LOCALAPPDATA\Pub\Cache\hosted\pub.dev" -Filter "CMakeLists.txt" -Recurse | Where-Object { $_.FullName -like "*jni*src*CMakeLists.txt" } | ForEach-Object {
+            Set-Content -Path $_.FullName -Value "cmake_minimum_required(VERSION 3.10)`nproject(jni_library VERSION 0.0.1 LANGUAGES C)`n"
+          }
 
       - name: Build Windows Release (.exe)
         working-directory: ./app_tai_xe
-        run: flutter build windows --release
+        shell: pwsh
+        run: |
+          flutter build windows --release -v *> build_windows.log
+          if ($LASTEXITCODE -ne 0) {
+            Write-Host "=== BUILD FAILED! LAST 120 LINES OF LOG ==="
+            Get-Content build_windows.log -Tail 120
+            exit $LASTEXITCODE
+          }
+          Get-Content build_windows.log -Tail 30
+
+      - name: Upload Build Log ( Always )
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: build-windows-log
+          path: app_tai_xe/build_windows.log
+          retention-days: 7
 
       - name: Package Windows Release into ZIP
         working-directory: ./app_tai_xe/build/windows/x64/runner/Release
+        shell: pwsh
         run: |
           Rename-Item -Path "app_tai_xe.exe" -NewName "SaoMai_TaiXe.exe" -ErrorAction SilentlyContinue
           Compress-Archive -Path * -DestinationPath "$env:GITHUB_WORKSPACE/SaoMai_TaiXe_Windows_x64.zip" -Force
