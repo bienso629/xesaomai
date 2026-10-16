@@ -28,7 +28,7 @@ class _BreakdownDialogState extends State<BreakdownDialog> {
         children: const [
           Icon(Icons.warning_amber_rounded, color: Colors.deepOrange),
           SizedBox(width: 8),
-          Text("Báo hỏng xe đột xuất", style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
+          Text("Báo hỏng xe đột xuất", style: TextStyle(fontWeight: FontWeight.bold)),
         ],
       ),
       content: SingleChildScrollView(
@@ -36,7 +36,7 @@ class _BreakdownDialogState extends State<BreakdownDialog> {
           mainAxisSize: MainAxisSize.min,
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            const Text("Chọn hạng mục gặp sự cố:", style: TextStyle(fontWeight: FontWeight.w600)),
+            const Text("Chọn hạng mục gặp sự cố:", style: TextStyle(fontSize: 15, fontWeight: FontWeight.w600)),
             const SizedBox(height: 6),
             DropdownButtonFormField<BreakdownCategory>(
               value: _selectedCat,
@@ -55,7 +55,7 @@ class _BreakdownDialogState extends State<BreakdownDialog> {
               },
             ),
             const SizedBox(height: 14),
-            const Text("Mô tả chi tiết sự cố:", style: TextStyle(fontWeight: FontWeight.w600)),
+            const Text("Mô tả chi tiết sự cố:", style: TextStyle(fontSize: 15, fontWeight: FontWeight.w600)),
             const SizedBox(height: 6),
             TextField(
               controller: _descController,
@@ -65,7 +65,7 @@ class _BreakdownDialogState extends State<BreakdownDialog> {
               ),
             ),
             const SizedBox(height: 14),
-            const Text("Ảnh chụp cận cảnh:", style: TextStyle(fontWeight: FontWeight.w600)),
+            const Text("Ảnh chụp cận cảnh:", style: TextStyle(fontSize: 15, fontWeight: FontWeight.w600)),
             const SizedBox(height: 6),
             InkWell(
               onTap: () {
@@ -100,7 +100,7 @@ class _BreakdownDialogState extends State<BreakdownDialog> {
                           children: const [
                             Icon(Icons.camera_alt, color: Colors.grey, size: 30),
                             SizedBox(height: 4),
-                            Text("Bấm để chụp ảnh hiện trường", style: TextStyle(color: Colors.grey, fontSize: 13)),
+                            Text("Bấm để chụp ảnh hiện trường", style: TextStyle(color: Colors.grey, fontSize: 14)),
                           ],
                         ),
                 ),
@@ -109,7 +109,7 @@ class _BreakdownDialogState extends State<BreakdownDialog> {
             const SizedBox(height: 8),
             const Text(
               "* Chuyến sẽ bị giữ trên hệ thống cho tới khi Điều phối bấm 'Cho chạy' hoặc 'Đưa vào xưởng'.",
-              style: TextStyle(color: Colors.redAccent, fontSize: 11, fontStyle: FontStyle.italic),
+              style: TextStyle(color: Colors.redAccent, fontSize: 12.5, fontStyle: FontStyle.italic),
             ),
           ],
         ),
@@ -117,7 +117,7 @@ class _BreakdownDialogState extends State<BreakdownDialog> {
       actions: [
         TextButton(
           onPressed: () => Navigator.of(context).pop(),
-          child: const Text("Hủy bỏ"),
+          child: const Text("Hủy bỏ", style: TextStyle(fontSize: 14, fontWeight: FontWeight.w600)),
         ),
         ElevatedButton(
           style: ElevatedButton.styleFrom(backgroundColor: Colors.deepOrange),
@@ -141,7 +141,7 @@ class _BreakdownDialogState extends State<BreakdownDialog> {
               ),
             );
           },
-          child: const Text("Gửi Báo hỏng", style: TextStyle(color: Colors.white)),
+          child: const Text("Gửi Báo hỏng", style: TextStyle(color: Colors.white, fontSize: 14, fontWeight: FontWeight.bold)),
         ),
       ],
     );

@@ -31,15 +31,14 @@ class _DriverInspectionHistoryScreenState extends State<DriverInspectionHistoryS
     super.dispose();
   }
 
-  Future<void> _loadHistory() async {
-    setState(() => _isLoading = true);
+  /// [silent] = true khi kéo để làm mới: giữ nguyên danh sách, chỉ hiện vòng xoay của RefreshIndicator.
+  Future<void> _loadHistory({bool silent = false}) async {
+    if (!silent) setState(() => _isLoading = true);
     final String? dateStr = _filterDate != null
         ? "${_filterDate!.year.toString().padLeft(4, '0')}-${_filterDate!.month.toString().padLeft(2, '0')}-${_filterDate!.day.toString().padLeft(2, '0')}"
         : null;
 
-    final data = await AdminService.fetchInspections(
-      date: dateStr,
-    );
+    final data = await AdminService.fetchInspections(date: dateStr);
 
     if (mounted) {
       final state = context.read<AppState>();
@@ -65,10 +64,7 @@ class _DriverInspectionHistoryScreenState extends State<DriverInspectionHistoryS
         if (_inspections.isNotEmpty) {
           // Giữ record đang chọn nếu còn trong list, ngược lại lấy record đầu tiên
           if (_selectedRecord != null) {
-            final exists = _inspections.firstWhere(
-              (it) => it['id'] == _selectedRecord?['id'],
-              orElse: () => null,
-            );
+            final exists = _inspections.firstWhere((it) => it['id'] == _selectedRecord?['id'], orElse: () => null);
             _selectedRecord = exists != null ? (exists as Map<String, dynamic>) : (_inspections.first as Map<String, dynamic>);
           } else {
             _selectedRecord = _inspections.first as Map<String, dynamic>;
@@ -81,63 +77,23 @@ class _DriverInspectionHistoryScreenState extends State<DriverInspectionHistoryS
     }
   }
 
-  Future<void> _pickDate() async {
-    final picked = await showDatePicker(
-      context: context,
-      initialDate: _filterDate ?? DateTime.now(),
-      firstDate: DateTime(2020),
-      lastDate: DateTime(2035),
-    );
-    if (picked != null) {
-      setState(() {
-        _filterDate = picked;
-        _dateCtrl.text = "${picked.day.toString().padLeft(2, '0')}/${picked.month.toString().padLeft(2, '0')}/${picked.year}";
-      });
-      _loadHistory();
-    }
-  }
-
-  void _clearDateFilter() {
-    setState(() {
-      _filterDate = null;
-      _dateCtrl.clear();
-    });
-    _loadHistory();
-  }
-
   Widget _buildSafeImage(String url) {
     if (url.startsWith('http://') || url.startsWith('https://')) {
-      return Image.network(
-        url,
-        fit: BoxFit.cover,
-        errorBuilder: (ctx, err, stack) => _buildPlaceholderIcon(),
-      );
+      return Image.network(url, fit: BoxFit.cover, errorBuilder: (ctx, err, stack) => _buildPlaceholderIcon());
     } else {
       final file = File(url);
       if (file.existsSync()) {
-        return Image.file(
-          file,
-          fit: BoxFit.cover,
-          errorBuilder: (ctx, err, stack) => _buildPlaceholderIcon(),
-        );
+        return Image.file(file, fit: BoxFit.cover, errorBuilder: (ctx, err, stack) => _buildPlaceholderIcon());
       }
-      final fullUrl = url.startsWith('http')
-          ? url
-          : 'https://saomai-api.type.vn/${url.startsWith('/') ? url.substring(1) : url}';
-      return Image.network(
-        fullUrl,
-        fit: BoxFit.cover,
-        errorBuilder: (ctx, err, stack) => _buildPlaceholderIcon(),
-      );
+      final fullUrl = url.startsWith('http') ? url : 'https://saomai-api.type.vn/${url.startsWith('/') ? url.substring(1) : url}';
+      return Image.network(fullUrl, fit: BoxFit.cover, errorBuilder: (ctx, err, stack) => _buildPlaceholderIcon());
     }
   }
 
   Widget _buildPlaceholderIcon() {
     return Container(
       color: Colors.blueGrey.shade50,
-      child: Center(
-        child: Icon(Icons.image, size: 36, color: Colors.blueGrey.shade300),
-      ),
+      child: Center(child: Icon(Icons.image, size: 36, color: Colors.blueGrey.shade300)),
     );
   }
 
@@ -157,19 +113,13 @@ class _DriverInspectionHistoryScreenState extends State<DriverInspectionHistoryS
                 mainAxisAlignment: MainAxisAlignment.spaceBetween,
                 children: [
                   Text(title, style: const TextStyle(fontSize: 16, fontWeight: FontWeight.bold)),
-                  IconButton(
-                    icon: const Icon(Icons.close),
-                    onPressed: () => Navigator.pop(ctx),
-                  ),
+                  IconButton(icon: const Icon(Icons.close), onPressed: () => Navigator.pop(ctx)),
                 ],
               ),
               const SizedBox(height: 12),
               ConstrainedBox(
                 constraints: const BoxConstraints(maxHeight: 560),
-                child: ClipRRect(
-                  borderRadius: BorderRadius.circular(4),
-                  child: _buildSafeImage(url),
-                ),
+                child: ClipRRect(borderRadius: BorderRadius.circular(4), child: _buildSafeImage(url)),
               ),
             ],
           ),
@@ -275,10 +225,7 @@ class _DriverInspectionHistoryScreenState extends State<DriverInspectionHistoryS
                           bottom: 6,
                           child: Container(
                             padding: const EdgeInsets.all(4),
-                            decoration: BoxDecoration(
-                              color: Colors.black54,
-                              borderRadius: BorderRadius.circular(4),
-                            ),
+                            decoration: BoxDecoration(color: Colors.black54, borderRadius: BorderRadius.circular(4)),
                             child: const Icon(Icons.zoom_in, size: 16, color: Colors.white),
                           ),
                         ),
@@ -291,10 +238,7 @@ class _DriverInspectionHistoryScreenState extends State<DriverInspectionHistoryS
                       children: [
                         Icon(Icons.no_photography_outlined, size: 28, color: Colors.grey.shade400),
                         const SizedBox(height: 4),
-                        Text(
-                          "Chưa có ảnh",
-                          style: TextStyle(fontSize: 11, color: Colors.grey.shade500),
-                        ),
+                        Text("Chưa có ảnh", style: TextStyle(fontSize: 11, color: Colors.grey.shade500)),
                       ],
                     ),
                   ),
@@ -304,7 +248,7 @@ class _DriverInspectionHistoryScreenState extends State<DriverInspectionHistoryS
     );
   }
 
-  Widget _buildRecordDetail(Map<String, dynamic> record) {
+  Widget _buildRecordDetail(Map<String, dynamic> record, {bool embedded = false}) {
     final plate = record['plate_number'] ?? 'Không rõ';
     final date = record['check_date'] ?? 'Không rõ';
     final completedAt = record['completed_at'] ?? '';
@@ -320,6 +264,7 @@ class _DriverInspectionHistoryScreenState extends State<DriverInspectionHistoryS
         side: BorderSide(color: Colors.grey.shade300),
       ),
       child: Column(
+        mainAxisSize: embedded ? MainAxisSize.min : MainAxisSize.max,
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
           Container(
@@ -330,28 +275,30 @@ class _DriverInspectionHistoryScreenState extends State<DriverInspectionHistoryS
               border: Border(bottom: BorderSide(color: Colors.grey.shade300)),
             ),
             child: Row(
-              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+              crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Row(
-                      children: [
-                        Text(
-                          "Xe: $plate",
-                          style: const TextStyle(fontSize: 16, fontWeight: FontWeight.bold, color: Colors.black87),
-                        ),
-                        const SizedBox(width: 10),
-                        _buildStatusBadge(status),
-                      ],
-                    ),
-                    const SizedBox(height: 4),
-                    Text(
-                      "Ngày kiểm tra: $date ${completedAt.isNotEmpty ? '• Lúc: ${completedAt.toString().substring(11, 16)}' : ''}",
-                      style: TextStyle(fontSize: 12.5, color: Colors.grey.shade700),
-                    ),
-                  ],
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Wrap(
+                        spacing: 10,
+                        runSpacing: 6,
+                        crossAxisAlignment: WrapCrossAlignment.center,
+                        children: [
+                          Text(
+                            "Xe: $plate",
+                            style: const TextStyle(fontSize: 16, fontWeight: FontWeight.bold, color: Colors.black87),
+                          ),
+                          _buildStatusBadge(status),
+                        ],
+                      ),
+                      const SizedBox(height: 4),
+                      Text("Ngày kiểm tra: $date ${completedAt.isNotEmpty ? '• Lúc: ${completedAt.toString().substring(11, 16)}' : ''}", style: TextStyle(fontSize: 12.5, color: Colors.grey.shade700)),
+                    ],
+                  ),
                 ),
+                const SizedBox(width: 8),
                 Container(
                   padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
                   decoration: BoxDecoration(
@@ -363,10 +310,7 @@ class _DriverInspectionHistoryScreenState extends State<DriverInspectionHistoryS
                     children: [
                       Icon(Icons.speed, size: 16, color: Colors.blue.shade700),
                       const SizedBox(width: 6),
-                      Text(
-                        "ODO: ${kmConfirmed ?? kmOcr ?? '--'} km",
-                        style: const TextStyle(fontSize: 13, fontWeight: FontWeight.bold),
-                      ),
+                      Text("ODO: ${kmConfirmed ?? kmOcr ?? '--'} km", style: const TextStyle(fontSize: 13, fontWeight: FontWeight.bold)),
                     ],
                   ),
                 ),
@@ -387,36 +331,38 @@ class _DriverInspectionHistoryScreenState extends State<DriverInspectionHistoryS
                   Icon(Icons.info_outline, size: 18, color: Colors.amber.shade900),
                   const SizedBox(width: 8),
                   Expanded(
-                    child: Text(
-                      "Ghi chú điều hành: $reason",
-                      style: TextStyle(fontSize: 12.5, color: Colors.brown.shade900),
-                    ),
+                    child: Text("Ghi chú điều hành: $reason", style: TextStyle(fontSize: 12.5, color: Colors.brown.shade900)),
                   ),
                 ],
               ),
             ),
-          Expanded(
-            child: Padding(
-              padding: const EdgeInsets.all(14),
-              child: LayoutBuilder(
-                builder: (ctx, constraints) {
-                  final isSmall = constraints.maxWidth < 600;
-                  return GridView.count(
-                    crossAxisCount: isSmall ? 2 : 3,
-                    crossAxisSpacing: 10,
-                    mainAxisSpacing: 10,
-                    childAspectRatio: isSmall ? 1.35 : 1.25,
-                    children: [
-                      _buildPhotoThumbnail("1. Gầm trước", record['img_front_underbody'], Icons.directions_car),
-                      _buildPhotoThumbnail("2. Gầm sau", record['img_rear_underbody'], Icons.directions_car_filled),
-                      _buildPhotoThumbnail("3. Hông trái", record['img_left_side'], Icons.compare_arrows),
-                      _buildPhotoThumbnail("4. Hông phải", record['img_right_side'], Icons.compare_arrows),
-                      _buildPhotoThumbnail("5. Táp-lô (ODO)", record['img_dashboard'], Icons.speed),
-                    ],
-                  );
-                },
-              ),
-            ),
+          Builder(
+            builder: (_) {
+              final grid = Padding(
+                padding: const EdgeInsets.all(14),
+                child: LayoutBuilder(
+                  builder: (ctx, constraints) {
+                    final isSmall = constraints.maxWidth < 600;
+                    return GridView.count(
+                      shrinkWrap: embedded,
+                      physics: embedded ? const NeverScrollableScrollPhysics() : null,
+                      crossAxisCount: isSmall ? 2 : 3,
+                      crossAxisSpacing: 10,
+                      mainAxisSpacing: 10,
+                      childAspectRatio: isSmall ? 1.35 : 1.25,
+                      children: [
+                        _buildPhotoThumbnail("1. Gầm trước", record['img_front_underbody'], Icons.directions_car),
+                        _buildPhotoThumbnail("2. Gầm sau", record['img_rear_underbody'], Icons.directions_car_filled),
+                        _buildPhotoThumbnail("3. Hông trái", record['img_left_side'], Icons.compare_arrows),
+                        _buildPhotoThumbnail("4. Hông phải", record['img_right_side'], Icons.compare_arrows),
+                        _buildPhotoThumbnail("5. Táp-lô (ODO)", record['img_dashboard'], Icons.speed),
+                      ],
+                    );
+                  },
+                ),
+              );
+              return embedded ? grid : Expanded(child: grid);
+            },
           ),
         ],
       ),
@@ -432,249 +378,113 @@ class _DriverInspectionHistoryScreenState extends State<DriverInspectionHistoryS
       backgroundColor: Colors.grey.shade50,
       body: Column(
         children: [
-          // Thanh công cụ lọc ngày và làm mới
-          Container(
-            padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
-            decoration: BoxDecoration(
-              color: Colors.white,
-              border: Border(bottom: BorderSide(color: Colors.grey.shade300, width: 1)),
-            ),
-            child: LayoutBuilder(
-              builder: (ctx, constraints) {
-                final isNarrow = constraints.maxWidth < 650;
-                if (isNarrow) {
-                  return Column(
-                    crossAxisAlignment: CrossAxisAlignment.stretch,
-                    children: [
-                      Row(
-                        children: [
-                          Expanded(
-                            child: SizedBox(
-                              height: 44,
-                              child: TextField(
-                                controller: _dateCtrl,
-                                readOnly: true,
-                                style: const TextStyle(fontSize: 13),
-                                decoration: InputDecoration(
-                                  hintText: "Lọc theo ngày kiểm tra",
-                                  hintStyle: TextStyle(fontSize: 12.5, color: Colors.grey.shade500),
-                                  prefixIcon: const Icon(Icons.calendar_today, size: 18),
-                                  prefixIconConstraints: const BoxConstraints(minWidth: 40, minHeight: 44, maxHeight: 44),
-                                  suffixIcon: _filterDate != null
-                                      ? IconButton(
-                                          icon: const Icon(Icons.clear, size: 18),
-                                          onPressed: _clearDateFilter,
-                                        )
-                                      : null,
-                                  suffixIconConstraints: const BoxConstraints(minWidth: 40, minHeight: 44, maxHeight: 44),
-                                  border: OutlineInputBorder(
-                                    borderRadius: BorderRadius.circular(4),
-                                    borderSide: BorderSide(color: Colors.grey.shade300),
-                                  ),
-                                  enabledBorder: OutlineInputBorder(
-                                    borderRadius: BorderRadius.circular(4),
-                                    borderSide: BorderSide(color: Colors.grey.shade300),
-                                  ),
-                                  contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 11),
-                                  isDense: true,
-                                ),
-                                onTap: _pickDate,
-                              ),
-                            ),
-                          ),
-                          const SizedBox(width: 8),
-                          SizedBox(
-                            height: 44,
-                            child: ElevatedButton.icon(
-                              style: ElevatedButton.styleFrom(
-                                backgroundColor: Colors.blue.shade800,
-                                foregroundColor: Colors.white,
-                                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(4)),
-                                minimumSize: const Size(64, 44),
-                                padding: const EdgeInsets.symmetric(horizontal: 12),
-                              ),
-                              icon: const Icon(Icons.refresh, size: 18),
-                              label: const Text("Làm mới", style: TextStyle(fontSize: 13, fontWeight: FontWeight.bold)),
-                              onPressed: _loadHistory,
-                            ),
-                          ),
-                        ],
-                      ),
-                      const SizedBox(height: 6),
-                      Text(
-                        "Tổng cộng: ${_inspections.length} lượt kiểm tra",
-                        style: TextStyle(fontSize: 12, fontWeight: FontWeight.w600, color: Colors.blueGrey.shade700),
-                      ),
-                    ],
-                  );
-                }
-
-                return Row(
-                  children: [
-                    SizedBox(
-                      width: 220,
-                      height: 44,
-                      child: TextField(
-                        controller: _dateCtrl,
-                        readOnly: true,
-                        style: const TextStyle(fontSize: 13),
-                        decoration: InputDecoration(
-                          hintText: "Lọc theo ngày kiểm tra",
-                          hintStyle: TextStyle(fontSize: 12.5, color: Colors.grey.shade500),
-                          prefixIcon: const Icon(Icons.calendar_today, size: 18),
-                          prefixIconConstraints: const BoxConstraints(minWidth: 40, minHeight: 44, maxHeight: 44),
-                          suffixIcon: _filterDate != null
-                              ? IconButton(
-                                  icon: const Icon(Icons.clear, size: 18),
-                                  onPressed: _clearDateFilter,
-                                )
-                              : null,
-                          suffixIconConstraints: const BoxConstraints(minWidth: 40, minHeight: 44, maxHeight: 44),
-                          border: OutlineInputBorder(
-                            borderRadius: BorderRadius.circular(4),
-                            borderSide: BorderSide(color: Colors.grey.shade300),
-                          ),
-                          enabledBorder: OutlineInputBorder(
-                            borderRadius: BorderRadius.circular(4),
-                            borderSide: BorderSide(color: Colors.grey.shade300),
-                          ),
-                          contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 11),
-                          isDense: true,
-                        ),
-                        onTap: _pickDate,
-                      ),
-                    ),
-                    const SizedBox(width: 10),
-                    SizedBox(
-                      height: 44,
-                      child: ElevatedButton.icon(
-                        style: ElevatedButton.styleFrom(
-                          backgroundColor: Colors.blue.shade800,
-                          foregroundColor: Colors.white,
-                          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(4)),
-                          minimumSize: const Size(64, 44),
-                        ),
-                        icon: const Icon(Icons.refresh, size: 18),
-                        label: const Text("Làm mới", style: TextStyle(fontSize: 13, fontWeight: FontWeight.bold)),
-                        onPressed: _loadHistory,
-                      ),
-                    ),
-                    const Spacer(),
-                    Text(
-                      "Tổng cộng: ${_inspections.length} lượt kiểm tra",
-                      style: TextStyle(fontSize: 13, fontWeight: FontWeight.bold, color: Colors.blueGrey.shade700),
-                    ),
-                  ],
-                );
-              },
-            ),
-          ),
           // Nội dung hiển thị
           Expanded(
             child: _isLoading
                 ? const Center(child: CircularProgressIndicator())
                 : _inspections.isEmpty
-                    ? Center(
-                        child: Column(
-                          mainAxisAlignment: MainAxisAlignment.center,
-                          children: [
-                            Icon(Icons.history_toggle_off, size: 54, color: Colors.grey.shade400),
-                            const SizedBox(height: 12),
-                            const Text(
-                              "Chưa có dữ liệu hình chụp kiểm tra xe nào.",
-                              style: TextStyle(fontSize: 15, fontWeight: FontWeight.bold, color: Colors.black87),
-                            ),
-                            const SizedBox(height: 6),
-                            Text(
-                              "Các bức ảnh chụp bàn giao ca của bạn sẽ được hiển thị lưu trữ tại đây.",
-                              style: TextStyle(fontSize: 13, color: Colors.grey.shade600),
-                            ),
-                          ],
-                        ),
-                      )
-                    : isDesktop
-                        ? Padding(
-                            padding: const EdgeInsets.all(12),
-                            child: Row(
-                              crossAxisAlignment: CrossAxisAlignment.stretch,
+                ? RefreshIndicator(
+                    onRefresh: () => _loadHistory(silent: true),
+                    child: LayoutBuilder(
+                      builder: (ctx, constraints) => SingleChildScrollView(
+                        physics: const AlwaysScrollableScrollPhysics(),
+                        child: ConstrainedBox(
+                          constraints: BoxConstraints(minHeight: constraints.maxHeight),
+                          child: Center(
+                            child: Column(
+                              mainAxisAlignment: MainAxisAlignment.center,
                               children: [
-                                // Danh sách các lượt chụp bên trái
-                                SizedBox(
-                                  width: 330,
-                                  child: Card(
-                                    elevation: 0,
-                                    shape: RoundedRectangleBorder(
-                                      borderRadius: BorderRadius.circular(4),
-                                      side: BorderSide(color: Colors.grey.shade300),
-                                    ),
-                                    child: ListView.separated(
-                                      itemCount: _inspections.length,
-                                      separatorBuilder: (ctx, index) => Divider(height: 1, color: Colors.grey.shade200),
-                                      itemBuilder: (ctx, index) {
-                                        final item = _inspections[index] as Map<String, dynamic>;
-                                        final isSelected = _selectedRecord?['id'] == item['id'];
-                                        final plate = item['plate_number'] ?? 'Không rõ';
-                                        final date = item['check_date'] ?? '';
-                                        final status = item['flag_status'];
-
-                                        return ListTile(
-                                          dense: true,
-                                          selected: isSelected,
-                                          selectedTileColor: Colors.blue.shade50,
-                                          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(4)),
-                                          onTap: () {
-                                            setState(() {
-                                              _selectedRecord = item;
-                                            });
-                                          },
-                                          title: Row(
-                                            mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                                            children: [
-                                              Text(
-                                                plate,
-                                                style: TextStyle(
-                                                  fontWeight: FontWeight.bold,
-                                                  fontSize: 14,
-                                                  color: isSelected ? Colors.blue.shade900 : Colors.black87,
-                                                ),
-                                              ),
-                                              _buildStatusBadge(status),
-                                            ],
-                                          ),
-                                          subtitle: Padding(
-                                            padding: const EdgeInsets.only(top: 4),
-                                            child: Text(
-                                              "Ngày: $date",
-                                              style: TextStyle(fontSize: 12, color: Colors.grey.shade600),
-                                            ),
-                                          ),
-                                        );
-                                      },
-                                    ),
-                                  ),
+                                Icon(Icons.history_toggle_off, size: 54, color: Colors.grey.shade400),
+                                const SizedBox(height: 12),
+                                const Text(
+                                  "Chưa có dữ liệu hình chụp kiểm tra xe nào.",
+                                  style: TextStyle(fontSize: 15, fontWeight: FontWeight.bold, color: Colors.black87),
                                 ),
-                                const SizedBox(width: 12),
-                                // Khung chi tiết 5 bức ảnh bên phải
-                                Expanded(
-                                  child: _selectedRecord != null
-                                      ? _buildRecordDetail(_selectedRecord!)
-                                      : const SizedBox(),
-                                ),
+                                const SizedBox(height: 6),
+                                Text("Các bức ảnh chụp bàn giao ca của bạn sẽ được hiển thị lưu trữ tại đây.", style: TextStyle(fontSize: 13, color: Colors.grey.shade600)),
                               ],
                             ),
-                          )
-                        : ListView.builder(
-                            padding: const EdgeInsets.all(12),
-                            itemCount: _inspections.length,
-                            itemBuilder: (ctx, index) {
-                              final item = _inspections[index] as Map<String, dynamic>;
-                              return Container(
-                                height: 480,
-                                margin: const EdgeInsets.only(bottom: 14),
-                                child: _buildRecordDetail(item),
-                              );
-                            },
                           ),
+                        ),
+                      ),
+                    ),
+                  )
+                : isDesktop
+                ? Padding(
+                    padding: const EdgeInsets.all(12),
+                    child: Row(
+                      crossAxisAlignment: CrossAxisAlignment.stretch,
+                      children: [
+                        // Danh sách các lượt chụp bên trái
+                        SizedBox(
+                          width: 330,
+                          child: Card(
+                            elevation: 0,
+                            shape: RoundedRectangleBorder(
+                              borderRadius: BorderRadius.circular(4),
+                              side: BorderSide(color: Colors.grey.shade300),
+                            ),
+                            child: RefreshIndicator(
+                              onRefresh: () => _loadHistory(silent: true),
+                              child: ListView.separated(
+                                physics: const AlwaysScrollableScrollPhysics(),
+                                itemCount: _inspections.length,
+                                separatorBuilder: (ctx, index) => Divider(height: 1, color: Colors.grey.shade200),
+                                itemBuilder: (ctx, index) {
+                                  final item = _inspections[index] as Map<String, dynamic>;
+                                  final isSelected = _selectedRecord?['id'] == item['id'];
+                                  final plate = item['plate_number'] ?? 'Không rõ';
+                                  final date = item['check_date'] ?? '';
+                                  final status = item['flag_status'];
+
+                                  return ListTile(
+                                    dense: true,
+                                    selected: isSelected,
+                                    selectedTileColor: Colors.blue.shade50,
+                                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(4)),
+                                    onTap: () {
+                                      setState(() {
+                                        _selectedRecord = item;
+                                      });
+                                    },
+                                    title: Row(
+                                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                                      children: [
+                                        Text(
+                                          plate,
+                                          style: TextStyle(fontWeight: FontWeight.bold, fontSize: 14, color: isSelected ? Colors.blue.shade900 : Colors.black87),
+                                        ),
+                                        _buildStatusBadge(status),
+                                      ],
+                                    ),
+                                    subtitle: Padding(
+                                      padding: const EdgeInsets.only(top: 4),
+                                      child: Text("Ngày: $date", style: TextStyle(fontSize: 12, color: Colors.grey.shade600)),
+                                    ),
+                                  );
+                                },
+                              ),
+                            ),
+                          ),
+                        ),
+                        const SizedBox(width: 12),
+                        // Khung chi tiết 5 bức ảnh bên phải
+                        Expanded(child: _selectedRecord != null ? _buildRecordDetail(_selectedRecord!) : const SizedBox()),
+                      ],
+                    ),
+                  )
+                : RefreshIndicator(
+                    onRefresh: () => _loadHistory(silent: true),
+                    child: ListView.builder(
+                      physics: const AlwaysScrollableScrollPhysics(),
+                      padding: const EdgeInsets.all(12),
+                      itemCount: _inspections.length,
+                      itemBuilder: (ctx, index) {
+                        final item = _inspections[index] as Map<String, dynamic>;
+                        return Container(margin: const EdgeInsets.only(bottom: 14), child: _buildRecordDetail(item, embedded: true));
+                      },
+                    ),
+                  ),
           ),
         ],
       ),
@@ -684,15 +494,9 @@ class _DriverInspectionHistoryScreenState extends State<DriverInspectionHistoryS
         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(4)),
         elevation: 3,
         icon: const Icon(Icons.camera_alt, size: 20),
-        label: const Text(
-          "Chụp kiểm tra xe",
-          style: TextStyle(fontWeight: FontWeight.bold, fontSize: 13),
-        ),
+        label: const Text("Chụp kiểm tra xe", style: TextStyle(fontWeight: FontWeight.bold, fontSize: 13)),
         onPressed: () async {
-          final result = await Navigator.push(
-            context,
-            MaterialPageRoute(builder: (_) => const CameraInspectionScreen()),
-          );
+          final result = await Navigator.push(context, MaterialPageRoute(builder: (_) => const CameraInspectionScreen()));
           if (result == true || mounted) {
             _loadHistory();
           }

@@ -1,0 +1,67 @@
+name: Build Windows EXE & Android APK
+
+on:
+  push:
+    branches: [ "main" ]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  build-windows:
+    name: Build Windows Desktop (.exe)
+    runs-on: windows-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup Flutter
+        uses: subosito/flutter-action@v2
+        with:
+          channel: 'stable'
+          cache: true
+
+      - name: Install dependencies
+        working-directory: ./app_tai_xe
+        run: flutter pub get
+
+      - name: Ensure Windows platform files exist
+        working-directory: ./app_tai_xe
+        run: |
+          if (!(Test-Path "windows")) {
+            flutter create --platforms=windows .
+          }
+
+      - name: Build Windows Release (.exe)
+        working-directory: ./app_tai_xe
+        run: flutter build windows --release
+
+      - name: Package Windows Release into ZIP
+        working-directory: ./app_tai_xe/build/windows/x64/runner/Release
+        run: |
+          Rename-Item -Path "app_tai_xe.exe" -NewName "SaoMai_TaiXe.exe" -ErrorAction SilentlyContinue
+          Compress-Archive -Path * -DestinationPath "$env:GITHUB_WORKSPACE/SaoMai_TaiXe_Windows_x64.zip" -Force
+
+      - name: Upload Windows EXE Artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: SaoMai_TaiXe_Windows_x64
+          path: SaoMai_TaiXe_Windows_x64.zip
+          retention-days: 30
+
+      - name: Create/Update GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: v1.0.0-latest
+          name: "Bản cài đặt Sao Mai Vintrans (Windows .exe)"
+          body: |
+            Bản build tự động cho Windows 64-bit.
+            - Tải file `SaoMai_TaiXe_Windows_x64.zip` về máy.
+            - Giải nén toàn bộ thư mục và chạy file `SaoMai_TaiXe.exe` (giữ nguyên các file `.dll` và thư mục `data` đi kèm).
+          files: |
+            SaoMai_TaiXe_Windows_x64.zip
+          prerelease: false
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

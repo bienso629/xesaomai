@@ -1,5 +1,7 @@
 import 'dart:math';
+import 'package:camera/camera.dart';
 import 'package:flutter/material.dart';
+import 'package:permission_handler/permission_handler.dart';
 import 'package:provider/provider.dart';
 import '../models/inspection_model.dart';
 import '../services/app_state.dart';
@@ -14,9 +16,17 @@ class CameraInspectionScreen extends StatefulWidget {
   State<CameraInspectionScreen> createState() => _CameraInspectionScreenState();
 }
 
-class _CameraInspectionScreenState extends State<CameraInspectionScreen> {
+class _CameraInspectionScreenState extends State<CameraInspectionScreen> with WidgetsBindingObserver {
+  CameraController? _cameraController;
+  bool _isCameraReady = false;
+  bool _isCapturing = false;
+  // 'checking' | 'granted' | 'denied' | 'permanentlyDenied' | 'noCamera' | 'error'
+  String _permissionState = 'checking';
   int _currentStepIndex = 0;
   bool _flashOn = true; // Mặc định bật cho 2 bước đầu (gầm trước, gầm sau)
+  // Cờ ghi nhớ người dùng đã tự bật/tắt flash: khi đã tự chọn thì giữ nguyên
+  // lựa chọn ở các bước tiếp theo, không áp lại mặc định của từng bước nữa.
+  bool _userFlashOverride = false;
   final List<PhotoMetadata> _capturedPhotos = [];
 
   // Giả lập GPS máy
@@ -66,15 +76,104 @@ class _CameraInspectionScreenState extends State<CameraInspectionScreen> {
     super.initState();
     _flashOn = _stepsConfig[_currentStepIndex]['flashDefault'];
     _kmController.text = _mockOcrKm.toStringAsFixed(0);
+    WidgetsBinding.instance.addObserver(this);
+    _requestPermissionAndInitCamera();
   }
 
   @override
   void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
+    _cameraController?.dispose();
     _kmController.dispose();
     super.dispose();
   }
 
-  void _onStepCaptured() {
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState lifecycle) {
+    // Giải phóng camera khi app vào nền, mở lại khi quay về (kể cả sau khi cấp quyền trong Cài đặt)
+    if (lifecycle == AppLifecycleState.inactive || lifecycle == AppLifecycleState.paused) {
+      final c = _cameraController;
+      _cameraController = null;
+      if (mounted) setState(() => _isCameraReady = false);
+      c?.dispose();
+    } else if (lifecycle == AppLifecycleState.resumed && _cameraController == null) {
+      _requestPermissionAndInitCamera();
+    }
+  }
+
+  Future<void> _requestPermissionAndInitCamera() async {
+    if (mounted) setState(() => _permissionState = 'checking');
+    final status = await Permission.camera.request();
+    if (!mounted) return;
+    if (status.isPermanentlyDenied || status.isRestricted) {
+      setState(() => _permissionState = 'permanentlyDenied');
+      return;
+    }
+    if (!status.isGranted && !status.isLimited) {
+      setState(() => _permissionState = 'denied');
+      return;
+    }
+    try {
+      final cameras = await availableCameras();
+      if (cameras.isEmpty) {
+        if (mounted) setState(() => _permissionState = 'noCamera');
+        return;
+      }
+      final back = cameras.firstWhere(
+        (c) => c.lensDirection == CameraLensDirection.back,
+        orElse: () => cameras.first,
+      );
+      final controller = CameraController(back, ResolutionPreset.high, enableAudio: false);
+      await controller.initialize();
+      await _applyFlash(controller);
+      if (!mounted) {
+        controller.dispose();
+        return;
+      }
+      setState(() {
+        _cameraController = controller;
+        _isCameraReady = true;
+        _permissionState = 'granted';
+      });
+    } on CameraException catch (e) {
+      if (!mounted) return;
+      setState(() => _permissionState = e.code == 'CameraAccessDenied' ? 'denied' : 'error');
+    }
+  }
+
+  Future<void> _applyFlash([CameraController? c]) async {
+    final controller = c ?? _cameraController;
+    if (controller == null || !controller.value.isInitialized) return;
+    try {
+      await controller.setFlashMode(_flashOn ? FlashMode.always : FlashMode.off);
+    } catch (_) {}
+  }
+
+  Future<void> _takePicture() async {
+    final controller = _cameraController;
+    if (controller == null || !controller.value.isInitialized || _isCapturing) return;
+    setState(() => _isCapturing = true);
+    try {
+      // Ép áp dụng lại chế độ đèn flash NGAY TRƯỚC khi bấm máy. Một số thiết bị
+      // Android (Vivo, Oppo, Xiaomi...) tự đặt lại flash mode sau mỗi lần chụp
+      // khiến lệnh tắt flash bị bỏ qua, nên phải gọi lại trước mỗi lần chụp.
+      await _applyFlash(controller);
+      final file = await controller.takePicture();
+      // Áp dụng lại sau khi chụp để đèn preview khớp với chế độ đã chọn.
+      await _applyFlash(controller);
+      _onStepCaptured(file.path);
+    } on CameraException catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(backgroundColor: Colors.red.shade700, content: Text("Chụp ảnh thất bại: ${e.description ?? e.code}")),
+        );
+      }
+    } finally {
+      if (mounted) setState(() => _isCapturing = false);
+    }
+  }
+
+  void _onStepCaptured(String capturedPath) {
     final state = context.read<AppState>();
     final currentConfig = _stepsConfig[_currentStepIndex];
 
@@ -100,7 +199,7 @@ class _CameraInspectionScreenState extends State<CameraInspectionScreen> {
 
     final metadata = PhotoMetadata(
       stepName: currentConfig['title'],
-      imagePath: "storage/inspection/${state.selectedPlate}_step_${_currentStepIndex + 1}.jpg",
+      imagePath: capturedPath,
       timestamp: DateTime.now(),
       latitude: _mockLat,
       longitude: _mockLng,
@@ -118,8 +217,12 @@ class _CameraInspectionScreenState extends State<CameraInspectionScreen> {
     if (_currentStepIndex < 4) {
       setState(() {
         _currentStepIndex++;
-        _flashOn = _stepsConfig[_currentStepIndex]['flashDefault'];
+        // Chỉ áp flash mặc định của bước mới khi người dùng chưa tự chọn.
+        if (!_userFlashOverride) {
+          _flashOn = _stepsConfig[_currentStepIndex]['flashDefault'];
+        }
       });
+      _applyFlash();
     } else {
       _showOcrConfirmationDialog();
     }
@@ -142,7 +245,7 @@ class _CameraInspectionScreenState extends State<CameraInspectionScreen> {
                 children: const [
                   Icon(Icons.speed, color: Colors.blueAccent),
                   SizedBox(width: 8),
-                  Text("Xác nhận số km táp lô", style: TextStyle(fontWeight: FontWeight.bold, fontSize: 18)),
+                  Text("Xác nhận số km táp lô", style: TextStyle(fontWeight: FontWeight.bold)),
                 ],
               ),
               content: SingleChildScrollView(
@@ -150,7 +253,7 @@ class _CameraInspectionScreenState extends State<CameraInspectionScreen> {
                   mainAxisSize: MainAxisSize.min,
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    const Text("OCR tự động nhận diện từ ảnh táp lô:"),
+                    const Text("OCR tự động nhận diện từ ảnh táp lô:", style: TextStyle(fontSize: 15)),
                     const SizedBox(height: 6),
                     Container(
                       padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
@@ -171,7 +274,7 @@ class _CameraInspectionScreenState extends State<CameraInspectionScreen> {
                       ),
                     ),
                     const SizedBox(height: 12),
-                    const Text("Tài xế xác nhận / sửa đổi:", style: TextStyle(fontWeight: FontWeight.w600)),
+                    const Text("Tài xế xác nhận / sửa đổi:", style: TextStyle(fontSize: 15, fontWeight: FontWeight.w600)),
                     const SizedBox(height: 6),
                     TextField(
                       controller: _kmController,
@@ -194,10 +297,10 @@ class _CameraInspectionScreenState extends State<CameraInspectionScreen> {
                         crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
                           Text("Km GPS chốt ngày trước: ${_previousDayGpsKm.toStringAsFixed(0)} km",
-                              style: const TextStyle(fontSize: 12)),
+                              style: const TextStyle(fontSize: 13.5)),
                           Text("Độ lệch: ${diff.toStringAsFixed(1)} km",
                               style: TextStyle(
-                                  fontSize: 12,
+                                  fontSize: 13.5,
                                   fontWeight: FontWeight.bold,
                                   color: isFlagged ? Colors.red : Colors.green)),
                           if (isFlagged)
@@ -205,7 +308,7 @@ class _CameraInspectionScreenState extends State<CameraInspectionScreen> {
                               padding: EdgeInsets.only(top: 4.0),
                               child: Text(
                                 "Lệch > 20 km! Hệ thống sẽ gắn CỜ BẤT THƯỜNG chuyển Điều phối/Kỹ thuật xem xét.",
-                                style: TextStyle(color: Colors.red, fontSize: 11, fontWeight: FontWeight.w600),
+                                style: TextStyle(color: Colors.red, fontSize: 12.5, fontWeight: FontWeight.w600),
                               ),
                             ),
                         ],
@@ -269,6 +372,75 @@ class _CameraInspectionScreenState extends State<CameraInspectionScreen> {
     );
   }
 
+  Widget _buildCameraPreview() {
+    final controller = _cameraController;
+    if (_isCameraReady && controller != null && controller.value.isInitialized) {
+      // Phủ kín khung hình, giữ đúng tỉ lệ ống kính
+      return ClipRect(
+        child: FittedBox(
+          fit: BoxFit.cover,
+          child: SizedBox(
+            width: controller.value.previewSize?.height ?? 1080,
+            height: controller.value.previewSize?.width ?? 1920,
+            child: CameraPreview(controller),
+          ),
+        ),
+      );
+    }
+
+    String message;
+    Widget? action;
+    switch (_permissionState) {
+      case 'denied':
+        message = "Ứng dụng chưa được cấp quyền Camera.\nVui lòng cho phép để chụp ảnh kiểm tra xe.";
+        action = _buildPermissionButton("Cấp quyền Camera", _requestPermissionAndInitCamera);
+        break;
+      case 'permanentlyDenied':
+        message = "Quyền Camera đã bị từ chối.\nVui lòng mở Cài đặt và bật quyền Camera cho ứng dụng.";
+        action = _buildPermissionButton("Mở Cài đặt", () => openAppSettings());
+        break;
+      case 'noCamera':
+        message = "Không tìm thấy camera trên thiết bị này.";
+        break;
+      case 'error':
+        message = "Không khởi động được camera.";
+        action = _buildPermissionButton("Thử lại", _requestPermissionAndInitCamera);
+        break;
+      default:
+        message = "Đang khởi động camera...";
+    }
+    return Container(
+      color: Colors.black,
+      alignment: Alignment.center,
+      padding: const EdgeInsets.symmetric(horizontal: 32),
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          if (_permissionState == 'checking')
+            const CircularProgressIndicator(color: Colors.white70)
+          else
+            const Icon(Icons.no_photography_outlined, size: 56, color: Colors.white54),
+          const SizedBox(height: 14),
+          Text(message, textAlign: TextAlign.center, style: const TextStyle(color: Colors.white70, fontSize: 13.5, height: 1.4)),
+          if (action != null) ...[const SizedBox(height: 16), action],
+        ],
+      ),
+    );
+  }
+
+  Widget _buildPermissionButton(String label, VoidCallback onPressed) {
+    return ElevatedButton(
+      style: ElevatedButton.styleFrom(
+        backgroundColor: Colors.blue.shade800,
+        foregroundColor: Colors.white,
+        minimumSize: const Size(64, 44),
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(4)),
+      ),
+      onPressed: onPressed,
+      child: Text(label, style: const TextStyle(fontSize: 14, fontWeight: FontWeight.bold)),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     final state = context.watch<AppState>();
@@ -298,7 +470,11 @@ class _CameraInspectionScreenState extends State<CameraInspectionScreen> {
               color: _flashOn ? Colors.yellowAccent : Colors.white,
             ),
             onPressed: () {
-              setState(() => _flashOn = !_flashOn);
+              setState(() {
+                _flashOn = !_flashOn;
+                _userFlashOverride = true;
+              });
+              _applyFlash();
             },
           ),
           IconButton(
@@ -315,58 +491,13 @@ class _CameraInspectionScreenState extends State<CameraInspectionScreen> {
       ),
       body: Stack(
         children: [
-          // Khung nhìn camera giả lập (mô phỏng ống kính)
-          Positioned.fill(
-            child: Container(
-              color: Colors.blueGrey.shade900,
-              child: Center(
-                child: Column(
-                  mainAxisAlignment: MainAxisAlignment.center,
-                  children: [
-                    Icon(Icons.directions_car_filled, size: 90, color: Colors.white.withOpacity(0.12)),
-                    const SizedBox(height: 12),
-                    Text(
-                      "[ Ống kính Camera nội bộ App ]\n(Chặn chọn ảnh từ thư viện máy)",
-                      textAlign: TextAlign.center,
-                      style: TextStyle(color: Colors.white.withOpacity(0.3), fontSize: 13),
-                    ),
-                  ],
-                ),
-              ),
-            ),
-          ),
+          // Ống kính camera thật (xem trước trực tiếp)
+          Positioned.fill(child: _buildCameraPreview()),
 
           // Custom Overlay theo từng bước & loại xe
           Positioned.fill(
             child: CustomPaint(
               painter: CameraOverlayPainter(step: step, vehicleType: state.selectedVehicleType),
-            ),
-          ),
-
-          // Watermark hiển thị trực tiếp trên màn hình camera
-          Positioned(
-            left: 20,
-            bottom: 120,
-            child: Container(
-              padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
-              decoration: BoxDecoration(
-                color: Colors.black.withOpacity(0.65),
-                borderRadius: BorderRadius.circular(6),
-                border: Border.all(color: Colors.white24),
-              ),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text("Biển số: ${state.selectedPlate} | TX: ${state.currentDriverId}",
-                      style: const TextStyle(color: Colors.yellowAccent, fontSize: 11, fontWeight: FontWeight.bold)),
-                  Text("Giờ: ${DateTime.now().toLocal().toString().substring(0, 19)} (UTC+7)",
-                      style: const TextStyle(color: Colors.white70, fontSize: 10)),
-                  Text("Tọa độ GPS: $_mockLat, $_mockLng (±${_mockAccuracy}m)",
-                      style: const TextStyle(color: Colors.white70, fontSize: 10)),
-                  const Text("Thiết bị: DEV-VIVO-Y21-9982 (Watermark gốc)",
-                      style: TextStyle(color: Colors.white38, fontSize: 9)),
-                ],
-              ),
             ),
           ),
 
@@ -390,13 +521,44 @@ class _CameraInspectionScreenState extends State<CameraInspectionScreen> {
             ),
           ),
 
-          // Thanh điều khiển chụp ảnh phía dưới
+          // Cụm dưới cùng: Watermark (Biển số, Giờ, GPS) + thanh nút chụp
+          // xếp dọc để watermark luôn nằm trong dải tối BÊN DƯỚI khung ngắm,
+          // không đè lên viền vàng hay hình mẫu xe nữa
           Positioned(
             bottom: 20,
             left: 0,
             right: 0,
-            child: Row(
-              mainAxisAlignment: MainAxisAlignment.spaceEvenly,
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Padding(
+                  padding: const EdgeInsets.only(left: 20),
+                  child: Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                    decoration: BoxDecoration(
+                      color: Colors.black.withOpacity(0.65),
+                      borderRadius: BorderRadius.circular(6),
+                      border: Border.all(color: Colors.white24),
+                    ),
+                    child: Column(
+                      mainAxisSize: MainAxisSize.min,
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text("Biển số: ${state.selectedPlate} | TX: ${state.currentDriverId}",
+                            style: const TextStyle(color: Colors.yellowAccent, fontSize: 11, fontWeight: FontWeight.bold)),
+                        const SizedBox(height: 2),
+                        Text("Giờ: ${DateTime.now().toLocal().toString().substring(0, 19)} (UTC+7)",
+                            style: const TextStyle(color: Colors.white70, fontSize: 10)),
+                        Text("GPS: $_mockLat, $_mockLng (±${_mockAccuracy}m) | DEV-VIVO-Y21-9982",
+                            style: const TextStyle(color: Colors.white70, fontSize: 9)),
+                      ],
+                    ),
+                  ),
+                ),
+                const SizedBox(height: 8),
+                Row(
+                  mainAxisAlignment: MainAxisAlignment.spaceEvenly,
               children: [
                 // Số bước
                 Container(
@@ -413,7 +575,7 @@ class _CameraInspectionScreenState extends State<CameraInspectionScreen> {
 
                 // Nút chụp tròn
                 GestureDetector(
-                  onTap: _onStepCaptured,
+                  onTap: _isCameraReady && !_isCapturing ? _takePicture : null,
                   child: Container(
                     width: 76,
                     height: 76,
@@ -426,10 +588,16 @@ class _CameraInspectionScreenState extends State<CameraInspectionScreen> {
                       child: Container(
                         width: 58,
                         height: 58,
-                        decoration: const BoxDecoration(
+                        decoration: BoxDecoration(
                           shape: BoxShape.circle,
-                          color: Colors.white,
+                          color: _isCameraReady ? Colors.white : Colors.white24,
                         ),
+                        child: _isCapturing
+                            ? const Padding(
+                                padding: EdgeInsets.all(16),
+                                child: CircularProgressIndicator(strokeWidth: 3, color: Colors.black54),
+                              )
+                            : null,
                       ),
                     ),
                   ),
@@ -445,6 +613,8 @@ class _CameraInspectionScreenState extends State<CameraInspectionScreen> {
                   },
                   icon: const Icon(Icons.build, color: Colors.orangeAccent, size: 28),
                 ),
+              ],
+            ),
               ],
             ),
           ),

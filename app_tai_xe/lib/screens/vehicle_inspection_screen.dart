@@ -19,6 +19,9 @@ class _VehicleInspectionReviewScreenState extends State<VehicleInspectionReviewS
   final TextEditingController _searchCtrl = TextEditingController();
   final TextEditingController _noteCtrl = TextEditingController();
   bool _isSubmitting = false;
+  // Lịch sử các lượt chụp 5 ảnh của biển số đang xem (phục vụ slide xem ngày trước / ngày sau)
+  List<dynamic> _plateHistory = [];
+  int _historyIndex = 0;
 
   @override
   void initState() {
@@ -58,6 +61,16 @@ class _VehicleInspectionReviewScreenState extends State<VehicleInspectionReviewS
         _isLoading = false;
       });
     }
+    // Tải lịch sử các lượt chụp của biển số đang chọn để phục vụ slide xem ngày trước / ngày sau
+    final String plateKey = (_selectedRecord?['plate_number'] ?? '').toString();
+    if (plateKey.isNotEmpty) {
+      _loadPlateHistory(plateKey, focusInspectionId: _focusIdOf(_selectedRecord));
+    } else if (mounted) {
+      setState(() {
+        _plateHistory = [];
+        _historyIndex = 0;
+      });
+    }
   }
 
   Future<void> _pickFilterDate() async {
@@ -86,6 +99,241 @@ class _VehicleInspectionReviewScreenState extends State<VehicleInspectionReviewS
       }
       return flagStatus == _filterStatus;
     }).toList();
+  }
+
+  /// Lấy id dạng int từ bản ghi (chống dữ liệu id trả về dạng chuỗi)
+  int? _focusIdOf(dynamic record) {
+    if (record == null) return null;
+    final id = record['id'];
+    if (id is int) return id;
+    return int.tryParse('$id');
+  }
+
+  /// Tải toàn bộ lịch sử chụp 5 ảnh của một biển số (mọi ngày), sắp xếp theo ngày tăng dần.
+  /// Cùng một ngày có nhiều lượt chụp thì lượt mới nhất (id lớn) đứng sau để slide tới được lượt mới.
+  Future<void> _loadPlateHistory(String plate, {int? focusInspectionId}) async {
+    final data = await AdminService.fetchInspections(plateNumber: plate);
+    final list = [...data];
+    list.sort((a, b) {
+      final dateA = (a['check_date'] ?? '').toString();
+      final dateB = (b['check_date'] ?? '').toString();
+      final byDate = dateA.compareTo(dateB);
+      if (byDate != 0) return byDate;
+      final idA = (a['id'] as num?) ?? 0;
+      final idB = (b['id'] as num?) ?? 0;
+      return idA.compareTo(idB);
+    });
+
+    if (mounted) {
+      setState(() {
+        _plateHistory = list;
+        // Mặc định trỏ tới bản ghi đang chọn trong danh sách; không thấy thì theo ngày, cuối cùng là lượt mới nhất
+        int idx = -1;
+        if (focusInspectionId != null) {
+          idx = list.indexWhere((e) => e['id'] == focusInspectionId);
+        }
+        if (idx < 0 && _selectedRecord != null) {
+          final selectedDate = (_selectedRecord!['check_date'] ?? '').toString();
+          idx = list.indexWhere((e) => (e['check_date'] ?? '').toString() == selectedDate);
+        }
+        _historyIndex = idx >= 0 ? idx : (list.isEmpty ? 0 : list.length - 1);
+        if (list.isNotEmpty) {
+          _selectedRecord = list[_historyIndex];
+          _noteCtrl.text = _selectedRecord?['flag_reason'] ?? '';
+        }
+      });
+    }
+  }
+
+  /// Trượt tới lượt chụp liền trước (delta = -1) hoặc liền sau (delta = 1) của biển số
+  void _slideHistory(int delta) {
+    if (_plateHistory.isEmpty) return;
+    final next = (_historyIndex + delta).clamp(0, _plateHistory.length - 1);
+    if (next == _historyIndex) return;
+    setState(() {
+      _historyIndex = next;
+      _selectedRecord = _plateHistory[next];
+      _noteCtrl.text = _selectedRecord?['flag_reason'] ?? '';
+    });
+  }
+
+  /// Định dạng ngày dd/MM/yyyy từ chuỗi YYYY-MM-DD
+  String _formatDateLabel(String dateRaw) {
+    try {
+      final d = DateTime.parse(dateRaw);
+      return "${d.day.toString().padLeft(2, '0')}/${d.month.toString().padLeft(2, '0')}/${d.year}";
+    } catch (_) {
+      return dateRaw;
+    }
+  }
+
+  /// Thanh slide xem ảnh chụp ngày trước / ngày sau của một biển số xe nhất định
+  Widget _buildDayNavBar() {
+    if (_plateHistory.isEmpty) return const SizedBox.shrink();
+    final viewed = _plateHistory[_historyIndex];
+    final dateRaw = (viewed['check_date'] ?? '').toString();
+    final flagStatus = (viewed['flag_status'] ?? 'none').toString().toLowerCase();
+
+    Color statusColor = Colors.grey.shade700;
+    Color statusBg = Colors.grey.shade100;
+    String statusLabel = "Chưa duyệt";
+    if (flagStatus == 'approved') {
+      statusColor = Colors.green.shade800;
+      statusBg = Colors.green.shade50;
+      statusLabel = "Đã duyệt";
+    } else if (flagStatus == 'rejected') {
+      statusColor = Colors.red.shade800;
+      statusBg = Colors.red.shade50;
+      statusLabel = "Từ chối / Chụp lại";
+    } else if (flagStatus == 'monitored') {
+      statusColor = Colors.amber.shade900;
+      statusBg = Colors.amber.shade50;
+      statusLabel = "Đang theo dõi";
+    }
+
+    final bool canPrev = _historyIndex > 0;
+    final bool canNext = _historyIndex < _plateHistory.length - 1;
+
+    // Danh sách các ngày đã chụp distinct để nhảy nhanh tới ngày cụ thể
+    final List<String> distinctDates = [];
+    for (final e in _plateHistory) {
+      final d = (e['check_date'] ?? '').toString();
+      if (d.isNotEmpty && !distinctDates.contains(d)) distinctDates.add(d);
+    }
+
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+      decoration: BoxDecoration(
+        color: Colors.blue.shade50,
+        borderRadius: BorderRadius.circular(4),
+        border: Border.all(color: Colors.blue.shade200),
+      ),
+      child: Wrap(
+        spacing: 8,
+        runSpacing: 6,
+        crossAxisAlignment: WrapCrossAlignment.center,
+        children: [
+          const Icon(Icons.photo_library_outlined, size: 18, color: Colors.blue),
+          const Text(
+            "Slide soi ảnh theo ngày:",
+            style: TextStyle(fontSize: 12.5, fontWeight: FontWeight.bold, color: Colors.blue),
+          ),
+          // Nút lùi về ảnh chụp ngày trước
+          SizedBox(
+            height: 36,
+            width: 36,
+            child: IconButton(
+              tooltip: "Ảnh ngày trước",
+              padding: EdgeInsets.zero,
+              icon: const Icon(Icons.chevron_left, size: 22),
+              color: canPrev ? Colors.blue.shade800 : Colors.grey.shade400,
+              style: IconButton.styleFrom(
+                backgroundColor: Colors.white,
+                shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(4),
+                  side: BorderSide(color: canPrev ? Colors.blue.shade300 : Colors.grey.shade300),
+                ),
+              ),
+              onPressed: canPrev ? () => _slideHistory(-1) : null,
+            ),
+          ),
+          Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(
+                "Ngày: ${_formatDateLabel(dateRaw)}",
+                style: const TextStyle(fontSize: 13.5, fontWeight: FontWeight.bold, color: Colors.blueGrey),
+              ),
+              const SizedBox(height: 2),
+              Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Text(
+                    "Lượt chụp ${_historyIndex + 1}/${_plateHistory.length}",
+                    style: TextStyle(fontSize: 11.5, color: Colors.grey.shade700),
+                  ),
+                  const SizedBox(width: 6),
+                  Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                    decoration: BoxDecoration(
+                      color: statusBg,
+                      borderRadius: BorderRadius.circular(3),
+                      border: Border.all(color: statusColor.withValues(alpha: 0.3)),
+                    ),
+                    child: Text(
+                      statusLabel,
+                      style: TextStyle(color: statusColor, fontSize: 10.5, fontWeight: FontWeight.bold),
+                    ),
+                  ),
+                ],
+              ),
+            ],
+          ),
+          // Nút chuyển tới ảnh chụp ngày sau
+          SizedBox(
+            height: 36,
+            width: 36,
+            child: IconButton(
+              tooltip: "Ảnh ngày sau",
+              padding: EdgeInsets.zero,
+              icon: const Icon(Icons.chevron_right, size: 22),
+              color: canNext ? Colors.blue.shade800 : Colors.grey.shade400,
+              style: IconButton.styleFrom(
+                backgroundColor: Colors.white,
+                shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(4),
+                  side: BorderSide(color: canNext ? Colors.blue.shade300 : Colors.grey.shade300),
+                ),
+              ),
+              onPressed: canNext ? () => _slideHistory(1) : null,
+            ),
+          ),
+          // Ô chọn nhanh ngày chụp cụ thể
+          if (distinctDates.length > 1)
+            Container(
+              height: 36,
+              padding: const EdgeInsets.symmetric(horizontal: 8),
+              decoration: BoxDecoration(
+                color: Colors.white,
+                borderRadius: BorderRadius.circular(4),
+                border: Border.all(color: Colors.grey.shade300),
+              ),
+              child: DropdownButtonHideUnderline(
+                child: DropdownButton<String>(
+                  value: dateRaw,
+                  isDense: true,
+                  icon: const Icon(Icons.expand_more, size: 18),
+                  menuMaxHeight: 300,
+                  items: distinctDates.map((d) {
+                    return DropdownMenuItem<String>(
+                      value: d,
+                      child: Text("Ngày ${_formatDateLabel(d)}", style: const TextStyle(fontSize: 12.5)),
+                    );
+                  }).toList(),
+                  onChanged: (val) {
+                    if (val == null) return;
+                    // Nhảy tới lượt chụp mới nhất trong ngày được chọn
+                    int target = 0;
+                    for (int i = 0; i < _plateHistory.length; i++) {
+                      if ((_plateHistory[i]['check_date'] ?? '').toString() == val) target = i;
+                    }
+                    setState(() {
+                      _historyIndex = target;
+                      _selectedRecord = _plateHistory[target];
+                      _noteCtrl.text = _selectedRecord?['flag_reason'] ?? '';
+                    });
+                  },
+                ),
+              ),
+            ),
+          Text(
+            "Tổng ${distinctDates.length} ngày chụp của biển số ${(_selectedRecord?['plate_number'] ?? '').toString()}",
+            style: TextStyle(fontSize: 11.5, color: Colors.grey.shade600),
+          ),
+        ],
+      ),
+    );
   }
 
   Future<void> _updateReviewStatus(String status) async {
@@ -541,6 +789,10 @@ class _VehicleInspectionReviewScreenState extends State<VehicleInspectionReviewS
                                                 _selectedRecord = item;
                                                 _noteCtrl.text = item['flag_reason'] ?? '';
                                               });
+                                              final String plateKey = (item['plate_number'] ?? '').toString();
+                                              if (plateKey.isNotEmpty) {
+                                                _loadPlateHistory(plateKey, focusInspectionId: _focusIdOf(item));
+                                              }
                                             },
                                             child: Container(
                                               padding: const EdgeInsets.all(10),
@@ -653,6 +905,10 @@ class _VehicleInspectionReviewScreenState extends State<VehicleInspectionReviewS
                                   child: Column(
                                     crossAxisAlignment: CrossAxisAlignment.stretch,
                                     children: [
+                                      // Thanh slide xem ảnh chụp ngày trước / ngày sau của biển số đang chọn
+                                      _buildDayNavBar(),
+                                      const SizedBox(height: 10),
+
                                       // Thẻ thông tin tóm tắt xe & ODO
                                       Container(
                                         padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
@@ -875,6 +1131,15 @@ class _VehicleInspectionReviewScreenState extends State<VehicleInspectionReviewS
               _noteCtrl.clear();
             }
           });
+          final String plateKey = (_selectedRecord?['plate_number'] ?? '').toString();
+          if (plateKey.isNotEmpty) {
+            _loadPlateHistory(plateKey, focusInspectionId: _focusIdOf(_selectedRecord));
+          } else if (mounted) {
+            setState(() {
+              _plateHistory = [];
+              _historyIndex = 0;
+            });
+          }
         },
         borderRadius: BorderRadius.circular(4),
         child: AnimatedContainer(
