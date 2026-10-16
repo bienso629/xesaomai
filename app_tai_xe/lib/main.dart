@@ -1,9 +1,20 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
+import 'package:flutter/services.dart';
 import 'services/app_state.dart';
 import 'screens/login_screen.dart';
 
 void main() {
+  WidgetsFlutterBinding.ensureInitialized();
+  SystemChrome.setSystemUIOverlayStyle(
+    const SystemUiOverlayStyle(
+      statusBarColor: Colors.transparent,
+      statusBarIconBrightness: Brightness.dark,
+      statusBarBrightness: Brightness.light,
+      systemNavigationBarColor: Colors.white,
+      systemNavigationBarIconBrightness: Brightness.dark,
+    ),
+  );
   runApp(const TaxiDriverApp());
 }
 
@@ -34,11 +45,22 @@ class TaxiDriverApp extends StatelessWidget {
               side: BorderSide(color: Colors.grey.shade400, width: 1),
             ),
           ),
+          // Quy chuẩn Dialog: chữ to dễ đọc trên mobile (Title 20px bold, Nội dung 15px, giãn dòng 1.5)
           dialogTheme: const DialogThemeData(
             elevation: 0,
             shadowColor: Colors.transparent,
             shape: RoundedRectangleBorder(
               borderRadius: BorderRadius.all(Radius.circular(4)),
+            ),
+            titleTextStyle: TextStyle(
+              fontSize: 20,
+              fontWeight: FontWeight.bold,
+              color: Colors.black87,
+            ),
+            contentTextStyle: TextStyle(
+              fontSize: 15,
+              height: 1.5,
+              color: Colors.black87,
             ),
           ),
           appBarTheme: const AppBarTheme(
@@ -84,6 +106,7 @@ class TaxiDriverApp extends StatelessWidget {
             style: ElevatedButton.styleFrom(
               elevation: 0,
               shadowColor: Colors.transparent,
+              textStyle: const TextStyle(fontSize: 14, fontWeight: FontWeight.bold),
               minimumSize: const Size(64, 44),
               shape: const RoundedRectangleBorder(
                 borderRadius: BorderRadius.all(Radius.circular(4)),
@@ -96,6 +119,17 @@ class TaxiDriverApp extends StatelessWidget {
           outlinedButtonTheme: OutlinedButtonThemeData(
             style: OutlinedButton.styleFrom(
               minimumSize: const Size(64, 44),
+              shape: const RoundedRectangleBorder(
+                borderRadius: BorderRadius.all(Radius.circular(4)),
+              ),
+              padding: const EdgeInsets.symmetric(horizontal: 16),
+            ),
+          ),
+          // Quy chuẩn nút văn bản (TextButton) trong Dialog: chiều cao 44px, chữ 14px đậm
+          textButtonTheme: TextButtonThemeData(
+            style: TextButton.styleFrom(
+              minimumSize: const Size(64, 44),
+              textStyle: const TextStyle(fontSize: 14, fontWeight: FontWeight.w600),
               shape: const RoundedRectangleBorder(
                 borderRadius: BorderRadius.all(Radius.circular(4)),
               ),

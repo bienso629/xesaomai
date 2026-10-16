@@ -17,11 +17,17 @@ class DispatchSupervisorScreen extends StatefulWidget {
     this.onTabChanged,
   });
 
-  static Future<void> showShiftHistoryDialog(BuildContext context, {Map<String, dynamic>? targetUser}) =>
-      _DispatchSupervisorScreenState.showShiftHistoryDialog(context, targetUser: targetUser);
+  static Future<void> showShiftHistoryDialog(
+    BuildContext context, {
+    Map<String, dynamic>? targetUser,
+  }) => _DispatchSupervisorScreenState.showShiftHistoryDialog(
+    context,
+    targetUser: targetUser,
+  );
 
   @override
-  State<DispatchSupervisorScreen> createState() => _DispatchSupervisorScreenState();
+  State<DispatchSupervisorScreen> createState() =>
+      _DispatchSupervisorScreenState();
 }
 
 class _DispatchSupervisorScreenState extends State<DispatchSupervisorScreen> {
@@ -132,7 +138,10 @@ class _DispatchSupervisorScreenState extends State<DispatchSupervisorScreen> {
         children: [
           Card(
             elevation: 0,
-            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(4), side: BorderSide(color: Colors.grey.shade400, width: 1)),
+            shape: RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(4),
+              side: BorderSide(color: Colors.grey.shade400, width: 1),
+            ),
             child: Padding(
               padding: const EdgeInsets.all(14.0),
               child: Column(
@@ -145,7 +154,10 @@ class _DispatchSupervisorScreenState extends State<DispatchSupervisorScreen> {
                       Expanded(
                         child: Text(
                           "Tích hợp Zalo OA & GPS Vietmap / Bình Anh",
-                          style: TextStyle(fontWeight: FontWeight.bold, fontSize: 14),
+                          style: TextStyle(
+                            fontWeight: FontWeight.bold,
+                            fontSize: 14,
+                          ),
                         ),
                       ),
                     ],
@@ -154,7 +166,11 @@ class _DispatchSupervisorScreenState extends State<DispatchSupervisorScreen> {
                   Text(
                     "• Zalo OA (Group KH Nhơn Trạch): Nhận yêu cầu 55 tấn xi măng lúc 07:15.\n"
                     "• Đề xuất 3 xe gần nhất từ Vietmap/Bình Anh: 51D-928.45 (cách 1.2km) - 51D-772.19 (cách 3.4km) - 60C-441.82 (cách 5.1km).",
-                    style: TextStyle(fontSize: 12, color: Colors.black87, height: 1.4),
+                    style: TextStyle(
+                      fontSize: 12,
+                      color: Colors.black87,
+                      height: 1.4,
+                    ),
                   ),
                 ],
               ),
@@ -165,11 +181,21 @@ class _DispatchSupervisorScreenState extends State<DispatchSupervisorScreen> {
           Row(
             children: [
               Expanded(
-                child: _buildMetricCard("Tổng người dùng", "${_users.length} tài khoản", Icons.people, Colors.indigo),
+                child: _buildMetricCard(
+                  "Tổng người dùng",
+                  "${_users.length} tài khoản",
+                  Icons.people,
+                  Colors.indigo,
+                ),
               ),
               const SizedBox(width: 12),
               Expanded(
-                child: _buildMetricCard("Tổng phương tiện", "${_summary['total_vehicles'] ?? _vehicles.length} xe", Icons.directions_car, Colors.blue),
+                child: _buildMetricCard(
+                  "Tổng phương tiện",
+                  "${_summary['total_vehicles'] ?? _vehicles.length} xe",
+                  Icons.directions_car,
+                  Colors.blue,
+                ),
               ),
             ],
           ),
@@ -177,7 +203,12 @@ class _DispatchSupervisorScreenState extends State<DispatchSupervisorScreen> {
           Row(
             children: [
               Expanded(
-                child: _buildMetricCard("Đơn hàng hôm nay", "${_summary['total_orders'] ?? _orders.length} đơn", Icons.receipt_long, Colors.teal),
+                child: _buildMetricCard(
+                  "Đơn hàng hôm nay",
+                  "${_summary['total_orders'] ?? _orders.length} đơn",
+                  Icons.receipt_long,
+                  Colors.teal,
+                ),
               ),
               const SizedBox(width: 12),
               Expanded(
@@ -210,7 +241,10 @@ class _DispatchSupervisorScreenState extends State<DispatchSupervisorScreen> {
         return Card(
           elevation: 0,
           margin: const EdgeInsets.only(bottom: 12),
-          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(4), side: BorderSide(color: Colors.grey.shade400, width: 1)),
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(4),
+            side: BorderSide(color: Colors.grey.shade400, width: 1),
+          ),
           child: Padding(
             padding: const EdgeInsets.all(14),
             child: Column(
@@ -219,28 +253,67 @@ class _DispatchSupervisorScreenState extends State<DispatchSupervisorScreen> {
                 Row(
                   mainAxisAlignment: MainAxisAlignment.spaceBetween,
                   children: [
-                    Text(o['order_code'] ?? 'MÃ ĐƠN HÀNG', style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 15, color: Colors.blueAccent)),
+                    Text(
+                      o['order_code'] ?? 'MÃ ĐƠN HÀNG',
+                      style: const TextStyle(
+                        fontWeight: FontWeight.bold,
+                        fontSize: 15,
+                        color: Colors.blueAccent,
+                      ),
+                    ),
                     Container(
-                      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 8,
+                        vertical: 3,
+                      ),
                       decoration: BoxDecoration(
                         color: Colors.blue.shade50,
                         borderRadius: BorderRadius.circular(4),
                       ),
-                      child: Text(_translateTransportType(o['transport_type']), style: TextStyle(color: Colors.blue.shade800, fontSize: 11, fontWeight: FontWeight.bold)),
+                      child: Text(
+                        _translateTransportType(o['transport_type']),
+                        style: TextStyle(
+                          color: Colors.blue.shade800,
+                          fontSize: 11,
+                          fontWeight: FontWeight.bold,
+                        ),
+                      ),
                     ),
                   ],
                 ),
                 const SizedBox(height: 8),
-                Text("Sản phẩm: ${o['product_name'] ?? 'Vật liệu'} (${o['cargo_weight_tons']} tấn)", style: const TextStyle(fontWeight: FontWeight.bold)),
+                Text(
+                  "Sản phẩm: ${o['product_name'] ?? 'Vật liệu'} (${o['cargo_weight_tons']} tấn)",
+                  style: const TextStyle(fontWeight: FontWeight.bold),
+                ),
                 const SizedBox(height: 4),
-                Text("• Nơi nhận: ${o['pickup_address'] ?? 'N/A'}", style: const TextStyle(fontSize: 12, color: Colors.black87)),
-                Text("• Điểm giao: ${o['delivery_address'] ?? 'N/A'}", style: const TextStyle(fontSize: 12, color: Colors.black87)),
+                Text(
+                  "• Nơi nhận: ${o['pickup_address'] ?? 'N/A'}",
+                  style: const TextStyle(fontSize: 12, color: Colors.black87),
+                ),
+                Text(
+                  "• Điểm giao: ${o['delivery_address'] ?? 'N/A'}",
+                  style: const TextStyle(fontSize: 12, color: Colors.black87),
+                ),
                 const Divider(),
                 Row(
                   mainAxisAlignment: MainAxisAlignment.spaceBetween,
                   children: [
-                    Text("Xe: ${o['assigned_vehicle_plate'] ?? 'Chưa gán'}", style: const TextStyle(fontSize: 12, fontWeight: FontWeight.bold)),
-                    Text("Tài xế: ${o['driver_name'] ?? 'Nguyễn Văn A'}", style: const TextStyle(fontSize: 12, color: Colors.teal, fontWeight: FontWeight.bold)),
+                    Text(
+                      "Xe: ${o['assigned_vehicle_plate'] ?? 'Chưa gán'}",
+                      style: const TextStyle(
+                        fontSize: 12,
+                        fontWeight: FontWeight.bold,
+                      ),
+                    ),
+                    Text(
+                      "Tài xế: ${o['driver_name'] ?? 'Nguyễn Văn A'}",
+                      style: const TextStyle(
+                        fontSize: 12,
+                        color: Colors.teal,
+                        fontWeight: FontWeight.bold,
+                      ),
+                    ),
                   ],
                 ),
               ],
@@ -269,10 +342,15 @@ class _DispatchSupervisorScreenState extends State<DispatchSupervisorScreen> {
           if (query.isNotEmpty) {
             final plate = (v['plate_number'] ?? '').toString().toLowerCase();
             final vtype = (v['vehicle_type'] ?? '').toString().toLowerCase();
-            final driverName = (v['driver_name'] ?? '').toString().toLowerCase();
-            final ownerCompany = (v['owner_company'] ?? '').toString().toLowerCase();
+            final driverName = (v['driver_name'] ?? '')
+                .toString()
+                .toLowerCase();
+            final ownerCompany = (v['owner_company'] ?? '')
+                .toString()
+                .toLowerCase();
 
-            final match = plate.contains(query) ||
+            final match =
+                plate.contains(query) ||
                 vtype.contains(query) ||
                 driverName.contains(query) ||
                 ownerCompany.contains(query);
@@ -283,11 +361,20 @@ class _DispatchSupervisorScreenState extends State<DispatchSupervisorScreen> {
         }).toList();
 
         final totalItems = filteredVehicles.length;
-        final totalPages = (totalItems / _vehiclePageSize).ceil().clamp(1, 99999);
+        final totalPages = (totalItems / _vehiclePageSize).ceil().clamp(
+          1,
+          99999,
+        );
         final validPage = _vehicleCurrentPage.clamp(1, totalPages);
-        final startIndex = totalItems == 0 ? 0 : (validPage - 1) * _vehiclePageSize;
-        final endIndex = (startIndex + _vehiclePageSize > totalItems) ? totalItems : startIndex + _vehiclePageSize;
-        final paginatedVehicles = totalItems == 0 ? [] : filteredVehicles.sublist(startIndex, endIndex);
+        final startIndex = totalItems == 0
+            ? 0
+            : (validPage - 1) * _vehiclePageSize;
+        final endIndex = (startIndex + _vehiclePageSize > totalItems)
+            ? totalItems
+            : startIndex + _vehiclePageSize;
+        final paginatedVehicles = totalItems == 0
+            ? []
+            : filteredVehicles.sublist(startIndex, endIndex);
 
         return Column(
           children: [
@@ -311,7 +398,8 @@ class _DispatchSupervisorScreenState extends State<DispatchSupervisorScreen> {
                           });
                         },
                         decoration: InputDecoration(
-                          hintText: "Tìm theo biển số xe, loại xe, tài xế phụ trách...",
+                          hintText:
+                              "Tìm theo biển số xe, loại xe, tài xế phụ trách...",
                           hintStyle: const TextStyle(fontSize: 13),
                           prefixIcon: const Icon(Icons.search, size: 20),
                           suffixIcon: _vehicleSearchQuery.isNotEmpty
@@ -326,7 +414,10 @@ class _DispatchSupervisorScreenState extends State<DispatchSupervisorScreen> {
                                   },
                                 )
                               : null,
-                          contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 0),
+                          contentPadding: const EdgeInsets.symmetric(
+                            horizontal: 12,
+                            vertical: 0,
+                          ),
                         ),
                       ),
                     ),
@@ -341,13 +432,28 @@ class _DispatchSupervisorScreenState extends State<DispatchSupervisorScreen> {
                         value: _selectedOwnershipFilter,
                         decoration: const InputDecoration(
                           prefixIcon: Icon(Icons.filter_alt_outlined, size: 20),
-                          contentPadding: EdgeInsets.symmetric(horizontal: 12, vertical: 0),
+                          contentPadding: EdgeInsets.symmetric(
+                            horizontal: 12,
+                            vertical: 0,
+                          ),
                         ),
                         items: const [
-                          DropdownMenuItem(value: 'ALL', child: Text("Tất cả sở hữu")),
-                          DropdownMenuItem(value: 'INTERNAL', child: Text("Xe nội bộ")),
-                          DropdownMenuItem(value: 'RENTAL', child: Text("Xe thuê ngoài")),
-                          DropdownMenuItem(value: 'CUSTOMER_SELF', child: Text("Xe khách hàng")),
+                          DropdownMenuItem(
+                            value: 'ALL',
+                            child: Text("Tất cả sở hữu"),
+                          ),
+                          DropdownMenuItem(
+                            value: 'INTERNAL',
+                            child: Text("Xe nội bộ"),
+                          ),
+                          DropdownMenuItem(
+                            value: 'RENTAL',
+                            child: Text("Xe thuê ngoài"),
+                          ),
+                          DropdownMenuItem(
+                            value: 'CUSTOMER_SELF',
+                            child: Text("Xe khách hàng"),
+                          ),
                         ],
                         onChanged: (val) {
                           if (val != null) {
@@ -364,7 +470,11 @@ class _DispatchSupervisorScreenState extends State<DispatchSupervisorScreen> {
                   // Thống kê số lượng phương tiện
                   Text(
                     "(${filteredVehicles.length}/${_vehicles.length} phương tiện)",
-                    style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 13, color: Colors.blueGrey),
+                    style: const TextStyle(
+                      fontWeight: FontWeight.bold,
+                      fontSize: 13,
+                      color: Colors.blueGrey,
+                    ),
                   ),
                   const SizedBox(width: 14),
                   // Nút làm mới dữ liệu
@@ -377,10 +487,18 @@ class _DispatchSupervisorScreenState extends State<DispatchSupervisorScreen> {
                         minimumSize: Size.zero,
                         tapTargetSize: MaterialTapTargetSize.shrinkWrap,
                         padding: const EdgeInsets.symmetric(horizontal: 12),
-                        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(4)),
+                        shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(4),
+                        ),
                       ),
                       icon: const Icon(Icons.refresh, size: 16),
-                      label: const Text("Tải lại danh sách", style: TextStyle(fontWeight: FontWeight.w600, fontSize: 13)),
+                      label: const Text(
+                        "Tải lại danh sách",
+                        style: TextStyle(
+                          fontWeight: FontWeight.w600,
+                          fontSize: 13,
+                        ),
+                      ),
                       onPressed: _loadAllManagementData,
                     ),
                   ),
@@ -395,11 +513,19 @@ class _DispatchSupervisorScreenState extends State<DispatchSupervisorScreen> {
                       child: Column(
                         mainAxisAlignment: MainAxisAlignment.center,
                         children: [
-                          Icon(Icons.no_transfer, size: 48, color: Colors.grey.shade400),
+                          Icon(
+                            Icons.no_transfer,
+                            size: 48,
+                            color: Colors.grey.shade400,
+                          ),
                           const SizedBox(height: 12),
                           Text(
                             "Không tìm thấy phương tiện nào phù hợp với bộ lọc",
-                            style: TextStyle(fontSize: 14, color: Colors.grey.shade600, fontWeight: FontWeight.w500),
+                            style: TextStyle(
+                              fontSize: 14,
+                              color: Colors.grey.shade600,
+                              fontWeight: FontWeight.w500,
+                            ),
                           ),
                         ],
                       ),
@@ -411,9 +537,13 @@ class _DispatchSupervisorScreenState extends State<DispatchSupervisorScreen> {
                           child: SingleChildScrollView(
                             scrollDirection: Axis.horizontal,
                             child: ConstrainedBox(
-                              constraints: BoxConstraints(minWidth: constraints.maxWidth),
+                              constraints: BoxConstraints(
+                                minWidth: constraints.maxWidth,
+                              ),
                               child: DataTable(
-                                headingRowColor: MaterialStateProperty.all(Colors.grey.shade100),
+                                headingRowColor: MaterialStateProperty.all(
+                                  Colors.grey.shade100,
+                                ),
                                 headingRowHeight: 44,
                                 dividerThickness: 0,
                                 dataRowMaxHeight: 64,
@@ -421,24 +551,94 @@ class _DispatchSupervisorScreenState extends State<DispatchSupervisorScreen> {
                                 horizontalMargin: 16,
                                 columnSpacing: 24,
                                 columns: const [
-                                  DataColumn(label: Text("Biển số xe", style: TextStyle(fontWeight: FontWeight.bold, fontSize: 13))),
-                                  DataColumn(label: Text("Loại phương tiện", style: TextStyle(fontWeight: FontWeight.bold, fontSize: 13))),
-                                  DataColumn(label: Text("Hình thức sở hữu", style: TextStyle(fontWeight: FontWeight.bold, fontSize: 13))),
-                                  DataColumn(label: Text("Tài xế chỉ định", style: TextStyle(fontWeight: FontWeight.bold, fontSize: 13))),
-                                  DataColumn(label: Text("Đơn vị quản lý", style: TextStyle(fontWeight: FontWeight.bold, fontSize: 13))),
-                                  DataColumn(label: Text("Trạng thái", style: TextStyle(fontWeight: FontWeight.bold, fontSize: 13))),
-                                  DataColumn(label: Text("Thao tác", style: TextStyle(fontWeight: FontWeight.bold, fontSize: 13))),
+                                  DataColumn(
+                                    label: Text(
+                                      "Biển số xe",
+                                      style: TextStyle(
+                                        fontWeight: FontWeight.bold,
+                                        fontSize: 13,
+                                      ),
+                                    ),
+                                  ),
+                                  DataColumn(
+                                    label: Text(
+                                      "Loại phương tiện",
+                                      style: TextStyle(
+                                        fontWeight: FontWeight.bold,
+                                        fontSize: 13,
+                                      ),
+                                    ),
+                                  ),
+                                  DataColumn(
+                                    label: Text(
+                                      "Hình thức sở hữu",
+                                      style: TextStyle(
+                                        fontWeight: FontWeight.bold,
+                                        fontSize: 13,
+                                      ),
+                                    ),
+                                  ),
+                                  DataColumn(
+                                    label: Text(
+                                      "Tài xế chỉ định",
+                                      style: TextStyle(
+                                        fontWeight: FontWeight.bold,
+                                        fontSize: 13,
+                                      ),
+                                    ),
+                                  ),
+                                  DataColumn(
+                                    label: Text(
+                                      "Đơn vị quản lý",
+                                      style: TextStyle(
+                                        fontWeight: FontWeight.bold,
+                                        fontSize: 13,
+                                      ),
+                                    ),
+                                  ),
+                                  DataColumn(
+                                    label: Text(
+                                      "Trạng thái",
+                                      style: TextStyle(
+                                        fontWeight: FontWeight.bold,
+                                        fontSize: 13,
+                                      ),
+                                    ),
+                                  ),
+                                  DataColumn(
+                                    label: Text(
+                                      "Thao tác",
+                                      style: TextStyle(
+                                        fontWeight: FontWeight.bold,
+                                        fontSize: 13,
+                                      ),
+                                    ),
+                                  ),
                                 ],
-                                rows: List.generate(paginatedVehicles.length, (idx) {
+                                rows: List.generate(paginatedVehicles.length, (
+                                  idx,
+                                ) {
                                   final v = paginatedVehicles[idx];
-                                  final rowColor = idx % 2 == 0 ? Colors.white : Colors.grey.shade50;
-                                  final plate = (v['plate_number'] ?? 'N/A').toString();
-                                  final vtype = (v['vehicle_type'] ?? 'Xe tải').toString();
-                                  final ownType = (v['ownership_type'] ?? 'INTERNAL').toString();
-                                  final driverName = (v['driver_name'] ?? '').toString();
-                                  final driverUsername = (v['driver_username'] ?? '').toString();
-                                  final driverPhone = (v['driver_phone'] ?? '').toString();
-                                  final ownerCompany = (v['owner_company'] ?? 'Sao Mai Logistics').toString();
+                                  final rowColor = idx % 2 == 0
+                                      ? Colors.white
+                                      : Colors.grey.shade50;
+                                  final plate = (v['plate_number'] ?? 'N/A')
+                                      .toString();
+                                  final vtype = (v['vehicle_type'] ?? 'Xe tải')
+                                      .toString();
+                                  final ownType =
+                                      (v['ownership_type'] ?? 'INTERNAL')
+                                          .toString();
+                                  final driverName = (v['driver_name'] ?? '')
+                                      .toString();
+                                  final driverUsername =
+                                      (v['driver_username'] ?? '').toString();
+                                  final driverPhone = (v['driver_phone'] ?? '')
+                                      .toString();
+                                  final ownerCompany =
+                                      (v['owner_company'] ??
+                                              'Sao Mai Logistics')
+                                          .toString();
 
                                   DataCell makeCell(Widget child) {
                                     return DataCell(
@@ -474,9 +674,14 @@ class _DispatchSupervisorScreenState extends State<DispatchSupervisorScreen> {
                                               padding: const EdgeInsets.all(6),
                                               decoration: BoxDecoration(
                                                 color: Colors.blue.shade50,
-                                                borderRadius: BorderRadius.circular(4),
+                                                borderRadius:
+                                                    BorderRadius.circular(4),
                                               ),
-                                              child: const Icon(Icons.local_shipping, size: 18, color: Colors.blue),
+                                              child: const Icon(
+                                                Icons.local_shipping,
+                                                size: 18,
+                                                color: Colors.blue,
+                                              ),
                                             ),
                                             const SizedBox(width: 10),
                                             Text(
@@ -492,16 +697,28 @@ class _DispatchSupervisorScreenState extends State<DispatchSupervisorScreen> {
                                       ),
                                       // Cột 2: Loại phương tiện
                                       makeCell(
-                                        Text(vtype, style: const TextStyle(fontSize: 12.5)),
+                                        Text(
+                                          vtype,
+                                          style: const TextStyle(
+                                            fontSize: 12.5,
+                                          ),
+                                        ),
                                       ),
                                       // Cột 3: Hình thức sở hữu
                                       makeCell(
                                         Container(
-                                          padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+                                          padding: const EdgeInsets.symmetric(
+                                            horizontal: 8,
+                                            vertical: 3,
+                                          ),
                                           decoration: BoxDecoration(
                                             color: ownBg,
-                                            borderRadius: BorderRadius.circular(4),
-                                            border: Border.all(color: ownBorder),
+                                            borderRadius: BorderRadius.circular(
+                                              4,
+                                            ),
+                                            border: Border.all(
+                                              color: ownBorder,
+                                            ),
                                           ),
                                           child: Text(
                                             _translateOwnershipType(ownType),
@@ -517,84 +734,138 @@ class _DispatchSupervisorScreenState extends State<DispatchSupervisorScreen> {
                                       makeCell(
                                         driverName.isNotEmpty
                                             ? InkWell(
-                                                borderRadius: BorderRadius.circular(4),
+                                                borderRadius:
+                                                    BorderRadius.circular(4),
                                                 onTap: () {
-                                                  final driverId = v['default_driver_id'];
+                                                  final driverId =
+                                                      v['default_driver_id'];
                                                   dynamic matchedUser;
                                                   if (driverId != null) {
                                                     for (final u in _users) {
-                                                      if (u is Map && u['id'] == driverId) {
+                                                      if (u is Map &&
+                                                          u['id'] == driverId) {
                                                         matchedUser = u;
                                                         break;
                                                       }
                                                     }
                                                   }
-                                                  if (matchedUser == null && driverUsername.isNotEmpty) {
+                                                  if (matchedUser == null &&
+                                                      driverUsername
+                                                          .isNotEmpty) {
                                                     for (final u in _users) {
-                                                      if (u is Map && u['username'] == driverUsername) {
+                                                      if (u is Map &&
+                                                          u['username'] ==
+                                                              driverUsername) {
                                                         matchedUser = u;
                                                         break;
                                                       }
                                                     }
                                                   }
                                                   if (matchedUser != null) {
-                                                    _showEditUserDialog(Map<String, dynamic>.from(matchedUser as Map));
+                                                    _showEditUserDialog(
+                                                      Map<String, dynamic>.from(
+                                                        matchedUser as Map,
+                                                      ),
+                                                    );
                                                   } else {
-                                                    ScaffoldMessenger.of(context).showSnackBar(
+                                                    ScaffoldMessenger.of(
+                                                      context,
+                                                    ).showSnackBar(
                                                       const SnackBar(
-                                                        backgroundColor: Colors.orange,
-                                                        content: Text("Không tìm thấy thông tin tài khoản người dùng."),
+                                                        backgroundColor:
+                                                            Colors.orange,
+                                                        content: Text(
+                                                          "Không tìm thấy thông tin tài khoản người dùng.",
+                                                        ),
                                                       ),
                                                     );
                                                   }
                                                 },
                                                 child: Padding(
-                                                  padding: const EdgeInsets.symmetric(vertical: 4, horizontal: 2),
+                                                  padding:
+                                                      const EdgeInsets.symmetric(
+                                                        vertical: 4,
+                                                        horizontal: 2,
+                                                      ),
                                                   child: Column(
-                                                    crossAxisAlignment: CrossAxisAlignment.start,
-                                                    mainAxisAlignment: MainAxisAlignment.center,
+                                                    crossAxisAlignment:
+                                                        CrossAxisAlignment
+                                                            .start,
+                                                    mainAxisAlignment:
+                                                        MainAxisAlignment
+                                                            .center,
                                                     children: [
                                                       Row(
-                                                        mainAxisSize: MainAxisSize.min,
+                                                        mainAxisSize:
+                                                            MainAxisSize.min,
                                                         children: [
-                                                          const Icon(Icons.person, size: 15, color: Colors.teal),
-                                                          const SizedBox(width: 4),
+                                                          const Icon(
+                                                            Icons.person,
+                                                            size: 15,
+                                                            color: Colors.teal,
+                                                          ),
+                                                          const SizedBox(
+                                                            width: 4,
+                                                          ),
                                                           Text(
                                                             driverName,
                                                             style: const TextStyle(
                                                               fontSize: 12.5,
-                                                              fontWeight: FontWeight.bold,
-                                                              color: Colors.teal,
-                                                              decoration: TextDecoration.underline,
-                                                              decorationColor: Colors.teal,
+                                                              fontWeight:
+                                                                  FontWeight
+                                                                      .bold,
+                                                              color:
+                                                                  Colors.teal,
+                                                              decoration:
+                                                                  TextDecoration
+                                                                      .underline,
+                                                              decorationColor:
+                                                                  Colors.teal,
                                                             ),
                                                           ),
                                                         ],
                                                       ),
                                                       const SizedBox(height: 2),
                                                       Row(
-                                                        mainAxisSize: MainAxisSize.min,
+                                                        mainAxisSize:
+                                                            MainAxisSize.min,
                                                         children: [
-                                                          if (driverUsername.isNotEmpty)
+                                                          if (driverUsername
+                                                              .isNotEmpty)
                                                             Text(
                                                               "@$driverUsername",
                                                               style: TextStyle(
                                                                 fontSize: 11,
-                                                                color: Colors.blueGrey.shade700,
-                                                                fontWeight: FontWeight.w500,
+                                                                color: Colors
+                                                                    .blueGrey
+                                                                    .shade700,
+                                                                fontWeight:
+                                                                    FontWeight
+                                                                        .w500,
                                                               ),
                                                             ),
-                                                          if (driverUsername.isNotEmpty && driverPhone.isNotEmpty)
+                                                          if (driverUsername
+                                                                  .isNotEmpty &&
+                                                              driverPhone
+                                                                  .isNotEmpty)
                                                             Text(
                                                               " • ",
-                                                              style: TextStyle(fontSize: 11, color: Colors.grey.shade400),
+                                                              style: TextStyle(
+                                                                fontSize: 11,
+                                                                color: Colors
+                                                                    .grey
+                                                                    .shade400,
+                                                              ),
                                                             ),
-                                                          if (driverPhone.isNotEmpty)
+                                                          if (driverPhone
+                                                              .isNotEmpty)
                                                             Text(
                                                               driverPhone,
                                                               style: TextStyle(
                                                                 fontSize: 11,
-                                                                color: Colors.grey.shade600,
+                                                                color: Colors
+                                                                    .grey
+                                                                    .shade600,
                                                               ),
                                                             ),
                                                         ],
@@ -616,17 +887,27 @@ class _DispatchSupervisorScreenState extends State<DispatchSupervisorScreen> {
                                       makeCell(
                                         Text(
                                           ownerCompany,
-                                          style: const TextStyle(fontSize: 12, color: Colors.black87),
+                                          style: const TextStyle(
+                                            fontSize: 12,
+                                            color: Colors.black87,
+                                          ),
                                         ),
                                       ),
                                       // Cột 6: Trạng thái
                                       makeCell(
                                         Container(
-                                          padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+                                          padding: const EdgeInsets.symmetric(
+                                            horizontal: 8,
+                                            vertical: 3,
+                                          ),
                                           decoration: BoxDecoration(
                                             color: Colors.green.shade50,
-                                            borderRadius: BorderRadius.circular(4),
-                                            border: Border.all(color: Colors.green.shade200),
+                                            borderRadius: BorderRadius.circular(
+                                              4,
+                                            ),
+                                            border: Border.all(
+                                              color: Colors.green.shade200,
+                                            ),
                                           ),
                                           child: Text(
                                             "Sẵn sàng hoạt động",
@@ -645,31 +926,74 @@ class _DispatchSupervisorScreenState extends State<DispatchSupervisorScreen> {
                                           children: [
                                             ElevatedButton.icon(
                                               style: ElevatedButton.styleFrom(
-                                                backgroundColor: Colors.teal.shade700,
+                                                backgroundColor:
+                                                    Colors.teal.shade700,
                                                 foregroundColor: Colors.white,
                                                 elevation: 0,
-                                                padding: const EdgeInsets.symmetric(horizontal: 10),
+                                                padding:
+                                                    const EdgeInsets.symmetric(
+                                                      horizontal: 10,
+                                                    ),
                                                 minimumSize: const Size(0, 32),
-                                                tapTargetSize: MaterialTapTargetSize.shrinkWrap,
-                                                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(4)),
+                                                tapTargetSize:
+                                                    MaterialTapTargetSize
+                                                        .shrinkWrap,
+                                                shape: RoundedRectangleBorder(
+                                                  borderRadius:
+                                                      BorderRadius.circular(4),
+                                                ),
                                               ),
-                                              icon: const Icon(Icons.photo_library_outlined, size: 14),
-                                              label: const Text("5 Ảnh", style: TextStyle(fontSize: 11.5, fontWeight: FontWeight.bold)),
-                                              onPressed: () => _showVehicleInspectionsDialog(plate, v),
+                                              icon: const Icon(
+                                                Icons.photo_library_outlined,
+                                                size: 14,
+                                              ),
+                                              label: const Text(
+                                                "5 Ảnh",
+                                                style: TextStyle(
+                                                  fontSize: 11.5,
+                                                  fontWeight: FontWeight.bold,
+                                                ),
+                                              ),
+                                              onPressed: () =>
+                                                  _showVehicleInspectionsDialog(
+                                                    plate,
+                                                    v,
+                                                  ),
                                             ),
                                             const SizedBox(width: 6),
                                             OutlinedButton.icon(
                                               style: OutlinedButton.styleFrom(
-                                                foregroundColor: Colors.blue.shade800,
-                                                side: BorderSide(color: Colors.blue.shade300),
-                                                padding: const EdgeInsets.symmetric(horizontal: 10),
+                                                foregroundColor:
+                                                    Colors.blue.shade800,
+                                                side: BorderSide(
+                                                  color: Colors.blue.shade300,
+                                                ),
+                                                padding:
+                                                    const EdgeInsets.symmetric(
+                                                      horizontal: 10,
+                                                    ),
                                                 minimumSize: const Size(0, 32),
-                                                tapTargetSize: MaterialTapTargetSize.shrinkWrap,
-                                                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(4)),
+                                                tapTargetSize:
+                                                    MaterialTapTargetSize
+                                                        .shrinkWrap,
+                                                shape: RoundedRectangleBorder(
+                                                  borderRadius:
+                                                      BorderRadius.circular(4),
+                                                ),
                                               ),
-                                              icon: const Icon(Icons.edit, size: 14),
-                                              label: const Text("Sửa", style: TextStyle(fontSize: 12, fontWeight: FontWeight.bold)),
-                                              onPressed: () => _showEditVehicleDialog(v),
+                                              icon: const Icon(
+                                                Icons.edit,
+                                                size: 14,
+                                              ),
+                                              label: const Text(
+                                                "Sửa",
+                                                style: TextStyle(
+                                                  fontSize: 12,
+                                                  fontWeight: FontWeight.bold,
+                                                ),
+                                              ),
+                                              onPressed: () =>
+                                                  _showEditVehicleDialog(v),
                                             ),
                                           ],
                                         ),
@@ -691,7 +1015,9 @@ class _DispatchSupervisorScreenState extends State<DispatchSupervisorScreen> {
                 padding: const EdgeInsets.symmetric(horizontal: 16),
                 decoration: BoxDecoration(
                   color: Colors.white,
-                  border: Border(top: BorderSide(color: Colors.grey.shade400, width: 1)),
+                  border: Border(
+                    top: BorderSide(color: Colors.grey.shade400, width: 1),
+                  ),
                 ),
                 child: Row(
                   mainAxisAlignment: MainAxisAlignment.spaceBetween,
@@ -699,18 +1025,29 @@ class _DispatchSupervisorScreenState extends State<DispatchSupervisorScreen> {
                     // Thông tin số bản ghi hiển thị
                     Text(
                       "Hiển thị ${startIndex + 1} - $endIndex trên tổng số $totalItems phương tiện",
-                      style: TextStyle(fontSize: 12, color: Colors.grey.shade700, fontWeight: FontWeight.w500),
+                      style: TextStyle(
+                        fontSize: 12,
+                        color: Colors.grey.shade700,
+                        fontWeight: FontWeight.w500,
+                      ),
                     ),
                     // Cụm điều khiển: Chọn PageSize + Các nút chuyển trang
                     Row(
                       children: [
-                        const Text("Số dòng/trang: ", style: TextStyle(fontSize: 12, color: Colors.black87)),
+                        const Text(
+                          "Số dòng/trang: ",
+                          style: TextStyle(fontSize: 12, color: Colors.black87),
+                        ),
                         const SizedBox(width: 4),
                         DropdownButton<int>(
                           value: _vehiclePageSize,
                           underline: const SizedBox(),
                           isDense: true,
-                          style: const TextStyle(fontSize: 12, color: Colors.blueGrey, fontWeight: FontWeight.bold),
+                          style: const TextStyle(
+                            fontSize: 12,
+                            color: Colors.blueGrey,
+                            fontWeight: FontWeight.bold,
+                          ),
                           items: const [
                             DropdownMenuItem(value: 5, child: Text("5")),
                             DropdownMenuItem(value: 10, child: Text("10")),
@@ -731,7 +1068,10 @@ class _DispatchSupervisorScreenState extends State<DispatchSupervisorScreen> {
                         IconButton(
                           icon: const Icon(Icons.first_page, size: 18),
                           padding: EdgeInsets.zero,
-                          constraints: const BoxConstraints(minWidth: 28, minHeight: 28),
+                          constraints: const BoxConstraints(
+                            minWidth: 28,
+                            minHeight: 28,
+                          ),
                           tooltip: "Trang đầu",
                           onPressed: validPage > 1
                               ? () {
@@ -745,7 +1085,10 @@ class _DispatchSupervisorScreenState extends State<DispatchSupervisorScreen> {
                         IconButton(
                           icon: const Icon(Icons.chevron_left, size: 18),
                           padding: EdgeInsets.zero,
-                          constraints: const BoxConstraints(minWidth: 28, minHeight: 28),
+                          constraints: const BoxConstraints(
+                            minWidth: 28,
+                            minHeight: 28,
+                          ),
                           tooltip: "Trang trước",
                           onPressed: validPage > 1
                               ? () {
@@ -758,7 +1101,10 @@ class _DispatchSupervisorScreenState extends State<DispatchSupervisorScreen> {
                         const SizedBox(width: 4),
                         // Nhãn hiển thị trang hiện tại
                         Container(
-                          padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 3),
+                          padding: const EdgeInsets.symmetric(
+                            horizontal: 10,
+                            vertical: 3,
+                          ),
                           decoration: BoxDecoration(
                             color: Colors.blue.shade50,
                             borderRadius: BorderRadius.circular(4),
@@ -777,7 +1123,10 @@ class _DispatchSupervisorScreenState extends State<DispatchSupervisorScreen> {
                         IconButton(
                           icon: const Icon(Icons.chevron_right, size: 18),
                           padding: EdgeInsets.zero,
-                          constraints: const BoxConstraints(minWidth: 28, minHeight: 28),
+                          constraints: const BoxConstraints(
+                            minWidth: 28,
+                            minHeight: 28,
+                          ),
                           tooltip: "Trang sau",
                           onPressed: validPage < totalPages
                               ? () {
@@ -791,7 +1140,10 @@ class _DispatchSupervisorScreenState extends State<DispatchSupervisorScreen> {
                         IconButton(
                           icon: const Icon(Icons.last_page, size: 18),
                           padding: EdgeInsets.zero,
-                          constraints: const BoxConstraints(minWidth: 28, minHeight: 28),
+                          constraints: const BoxConstraints(
+                            minWidth: 28,
+                            minHeight: 28,
+                          ),
                           tooltip: "Trang cuối",
                           onPressed: validPage < totalPages
                               ? () {
@@ -838,535 +1190,898 @@ class _DispatchSupervisorScreenState extends State<DispatchSupervisorScreen> {
     return Builder(
       builder: (context) {
         final query = _userSearchQuery.toLowerCase().trim();
-                    final filteredUsers = _users.where((u) {
-                      // 1. Kiểm tra vai trò (Role Filter)
-                      if (_selectedRoleFilter != 'ALL') {
-                        final roleCodes = (u['role_codes'] as List<dynamic>?)?.map((e) => e.toString()).toList() ?? [];
-                        if (!roleCodes.contains(_selectedRoleFilter)) {
-                          return false;
-                        }
-                      }
+        final filteredUsers = _users.where((u) {
+          // 1. Kiểm tra vai trò (Role Filter)
+          if (_selectedRoleFilter != 'ALL') {
+            final roleCodes =
+                (u['role_codes'] as List<dynamic>?)
+                    ?.map((e) => e.toString())
+                    .toList() ??
+                [];
+            if (!roleCodes.contains(_selectedRoleFilter)) {
+              return false;
+            }
+          }
 
-                      // 2. Kiểm tra từ khóa tìm kiếm (Search Query)
-                      if (query.isNotEmpty) {
-                        final username = (u['username'] ?? '').toString().toLowerCase();
-                        final fullName = (u['full_name'] ?? '').toString().toLowerCase();
-                        final phone = (u['phone'] ?? '').toString().toLowerCase();
-                        final roleNames = ((u['role_names'] as List<dynamic>?)?.join(' ') ?? '').toLowerCase();
-                        final address = (u['address'] ?? '').toString().toLowerCase();
-                        final email = (u['email'] ?? '').toString().toLowerCase();
+          // 2. Kiểm tra từ khóa tìm kiếm (Search Query)
+          if (query.isNotEmpty) {
+            final username = (u['username'] ?? '').toString().toLowerCase();
+            final fullName = (u['full_name'] ?? '').toString().toLowerCase();
+            final phone = (u['phone'] ?? '').toString().toLowerCase();
+            final roleNames =
+                ((u['role_names'] as List<dynamic>?)?.join(' ') ?? '')
+                    .toLowerCase();
+            final address = (u['address'] ?? '').toString().toLowerCase();
+            final email = (u['email'] ?? '').toString().toLowerCase();
 
-                        final match = username.contains(query) ||
-                            fullName.contains(query) ||
-                            phone.contains(query) ||
-                            roleNames.contains(query) ||
-                            address.contains(query) ||
-                            email.contains(query);
-                        if (!match) return false;
-                      }
+            final match =
+                username.contains(query) ||
+                fullName.contains(query) ||
+                phone.contains(query) ||
+                roleNames.contains(query) ||
+                address.contains(query) ||
+                email.contains(query);
+            if (!match) return false;
+          }
 
-                      return true;
-                    }).toList();
+          return true;
+        }).toList();
 
-                    final totalItems = filteredUsers.length;
-                    final totalPages = (totalItems / _userPageSize).ceil().clamp(1, 99999);
-                    final validPage = _userCurrentPage.clamp(1, totalPages);
-                    final startIndex = totalItems == 0 ? 0 : (validPage - 1) * _userPageSize;
-                    final endIndex = (startIndex + _userPageSize > totalItems) ? totalItems : startIndex + _userPageSize;
-                    final paginatedUsers = totalItems == 0 ? [] : filteredUsers.sublist(startIndex, endIndex);
+        final totalItems = filteredUsers.length;
+        final totalPages = (totalItems / _userPageSize).ceil().clamp(1, 99999);
+        final validPage = _userCurrentPage.clamp(1, totalPages);
+        final startIndex = totalItems == 0
+            ? 0
+            : (validPage - 1) * _userPageSize;
+        final endIndex = (startIndex + _userPageSize > totalItems)
+            ? totalItems
+            : startIndex + _userPageSize;
+        final paginatedUsers = totalItems == 0
+            ? []
+            : filteredUsers.sublist(startIndex, endIndex);
 
-                    return Column(
-                      children: [
-                        // Thanh công cụ gộp 1 hàng duy nhất: Tìm kiếm + Lọc vai trò + Thống kê & Thêm mới
-                        Container(
-                          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
-                          color: Colors.white,
-                          child: Row(
-                            children: [
-                              // Ô tìm kiếm tài khoản
-                              Expanded(
-                                flex: 4,
-                                child: SizedBox(
-                                  height: 44,
-                                  child: TextField(
-                                    controller: _userSearchCtrl,
-                                    onChanged: (val) {
-                                      setState(() {
-                                        _userSearchQuery = val;
-                                        _userCurrentPage = 1;
-                                      });
-                                    },
-                                    decoration: InputDecoration(
-                                      hintText: "Tìm theo tên, username, số điện thoại, email...",
-                                      hintStyle: const TextStyle(fontSize: 13),
-                                      prefixIcon: const Icon(Icons.search, size: 20),
-                                      suffixIcon: _userSearchQuery.isNotEmpty
-                                          ? IconButton(
-                                              icon: const Icon(Icons.clear, size: 18),
-                                              onPressed: () {
-                                                _userSearchCtrl.clear();
-                                                setState(() {
-                                                  _userSearchQuery = '';
-                                                  _userCurrentPage = 1;
-                                                });
-                                              },
-                                            )
-                                          : null,
-                                      contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 0),
-                                    ),
-                                  ),
-                                ),
-                              ),
-                              const SizedBox(width: 12),
-                              // Bộ lọc theo Vai trò
-                              Expanded(
-                                flex: 2,
-                                child: SizedBox(
-                                  height: 44,
-                                  child: DropdownButtonFormField<String>(
-                                    value: _selectedRoleFilter,
-                                    decoration: const InputDecoration(
-                                      prefixIcon: Icon(Icons.filter_list, size: 20),
-                                      contentPadding: EdgeInsets.symmetric(horizontal: 12, vertical: 0),
-                                    ),
-                                    items: [
-                                      const DropdownMenuItem(value: 'ALL', child: Text("Tất cả vai trò")),
-                                      ..._roles.map((r) => DropdownMenuItem(
-                                            value: r['code'].toString(),
-                                            child: Text(r['name'] ?? r['code']),
-                                          )),
-                                    ],
-                                    onChanged: (val) {
-                                      if (val != null) {
-                                        setState(() {
-                                          _selectedRoleFilter = val;
-                                          _userCurrentPage = 1;
-                                        });
-                                      }
-                                    },
-                                  ),
-                                ),
-                              ),
-                              const SizedBox(width: 14),
-                              // Thống kê số lượng bản ghi
-                              Text(
-                                "(${filteredUsers.length}/${_users.length} tài khoản)",
-                                style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 13, color: Colors.blueGrey),
-                              ),
-                              const SizedBox(width: 14),
-                              // Nút Thêm tài khoản mới (Nút nội dòng toolbar: chuẩn chiều cao 38px, không lấn át thị giác)
-                              SizedBox(
-                                height: 38,
-                                child: ElevatedButton.icon(
-                                  style: ElevatedButton.styleFrom(
-                                    backgroundColor: Colors.blue.shade800,
-                                    foregroundColor: Colors.white,
-                                    minimumSize: Size.zero,
-                                    tapTargetSize: MaterialTapTargetSize.shrinkWrap,
-                                    padding: const EdgeInsets.symmetric(horizontal: 12),
-                                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(4)),
-                                  ),
-                                  icon: const Icon(Icons.person_add, size: 16),
-                                  label: const Text("Thêm tài khoản mới", style: TextStyle(fontWeight: FontWeight.w600, fontSize: 13)),
-                                  onPressed: _showCreateUserDialog,
-                                ),
-                              ),
-                            ],
+        return Column(
+          children: [
+            // Thanh công cụ gộp 1 hàng duy nhất: Tìm kiếm + Lọc vai trò + Thống kê & Thêm mới
+            Container(
+              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+              color: Colors.white,
+              child: Row(
+                children: [
+                  // Ô tìm kiếm tài khoản
+                  Expanded(
+                    flex: 4,
+                    child: SizedBox(
+                      height: 44,
+                      child: TextField(
+                        controller: _userSearchCtrl,
+                        onChanged: (val) {
+                          setState(() {
+                            _userSearchQuery = val;
+                            _userCurrentPage = 1;
+                          });
+                        },
+                        decoration: InputDecoration(
+                          hintText:
+                              "Tìm theo tên, username, số điện thoại, email...",
+                          hintStyle: const TextStyle(fontSize: 13),
+                          prefixIcon: const Icon(Icons.search, size: 20),
+                          suffixIcon: _userSearchQuery.isNotEmpty
+                              ? IconButton(
+                                  icon: const Icon(Icons.clear, size: 18),
+                                  onPressed: () {
+                                    _userSearchCtrl.clear();
+                                    setState(() {
+                                      _userSearchQuery = '';
+                                      _userCurrentPage = 1;
+                                    });
+                                  },
+                                )
+                              : null,
+                          contentPadding: const EdgeInsets.symmetric(
+                            horizontal: 12,
+                            vertical: 0,
                           ),
                         ),
-                        const Divider(height: 1),
-                        Expanded(
-                          child: paginatedUsers.isEmpty
-                              ? Center(
-                                  child: Column(
-                                    mainAxisAlignment: MainAxisAlignment.center,
-                                    children: [
-                                      Icon(Icons.search_off, size: 48, color: Colors.grey.shade400),
-                                      const SizedBox(height: 12),
-                                      Text(
-                                        "Không tìm thấy tài khoản người dùng phù hợp",
-                                        style: TextStyle(fontSize: 14, color: Colors.grey.shade600, fontWeight: FontWeight.w500),
+                      ),
+                    ),
+                  ),
+                  const SizedBox(width: 12),
+                  // Bộ lọc theo Vai trò
+                  Expanded(
+                    flex: 2,
+                    child: SizedBox(
+                      height: 44,
+                      child: DropdownButtonFormField<String>(
+                        value: _selectedRoleFilter,
+                        decoration: const InputDecoration(
+                          prefixIcon: Icon(Icons.filter_list, size: 20),
+                          contentPadding: EdgeInsets.symmetric(
+                            horizontal: 12,
+                            vertical: 0,
+                          ),
+                        ),
+                        items: [
+                          const DropdownMenuItem(
+                            value: 'ALL',
+                            child: Text("Tất cả vai trò"),
+                          ),
+                          ..._roles.map(
+                            (r) => DropdownMenuItem(
+                              value: r['code'].toString(),
+                              child: Text(r['name'] ?? r['code']),
+                            ),
+                          ),
+                        ],
+                        onChanged: (val) {
+                          if (val != null) {
+                            setState(() {
+                              _selectedRoleFilter = val;
+                              _userCurrentPage = 1;
+                            });
+                          }
+                        },
+                      ),
+                    ),
+                  ),
+                  const SizedBox(width: 14),
+                  // Thống kê số lượng bản ghi
+                  Text(
+                    "(${filteredUsers.length}/${_users.length} tài khoản)",
+                    style: const TextStyle(
+                      fontWeight: FontWeight.bold,
+                      fontSize: 13,
+                      color: Colors.blueGrey,
+                    ),
+                  ),
+                  const SizedBox(width: 14),
+                  // Nút Thêm tài khoản mới (Nút nội dòng toolbar: chuẩn chiều cao 38px, không lấn át thị giác)
+                  SizedBox(
+                    height: 38,
+                    child: ElevatedButton.icon(
+                      style: ElevatedButton.styleFrom(
+                        backgroundColor: Colors.blue.shade800,
+                        foregroundColor: Colors.white,
+                        minimumSize: Size.zero,
+                        tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                        padding: const EdgeInsets.symmetric(horizontal: 12),
+                        shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(4),
+                        ),
+                      ),
+                      icon: const Icon(Icons.person_add, size: 16),
+                      label: const Text(
+                        "Thêm tài khoản mới",
+                        style: TextStyle(
+                          fontWeight: FontWeight.w600,
+                          fontSize: 13,
+                        ),
+                      ),
+                      onPressed: _showCreateUserDialog,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+            const Divider(height: 1),
+            Expanded(
+              child: paginatedUsers.isEmpty
+                  ? Center(
+                      child: Column(
+                        mainAxisAlignment: MainAxisAlignment.center,
+                        children: [
+                          Icon(
+                            Icons.search_off,
+                            size: 48,
+                            color: Colors.grey.shade400,
+                          ),
+                          const SizedBox(height: 12),
+                          Text(
+                            "Không tìm thấy tài khoản người dùng phù hợp",
+                            style: TextStyle(
+                              fontSize: 14,
+                              color: Colors.grey.shade600,
+                              fontWeight: FontWeight.w500,
+                            ),
+                          ),
+                        ],
+                      ),
+                    )
+                  : LayoutBuilder(
+                      builder: (context, constraints) {
+                        return SingleChildScrollView(
+                          scrollDirection: Axis.vertical,
+                          child: SingleChildScrollView(
+                            scrollDirection: Axis.horizontal,
+                            child: ConstrainedBox(
+                              constraints: BoxConstraints(
+                                minWidth: constraints.maxWidth,
+                              ),
+                              child: DataTable(
+                                headingRowColor: MaterialStateProperty.all(
+                                  Colors.grey.shade100,
+                                ),
+                                headingRowHeight: 44,
+                                dividerThickness: 0,
+                                dataRowMaxHeight: 76,
+                                dataRowMinHeight: 72,
+                                horizontalMargin: 16,
+                                columnSpacing: 20,
+                                columns: const [
+                                  DataColumn(
+                                    label: Text(
+                                      "Ảnh",
+                                      style: TextStyle(
+                                        fontWeight: FontWeight.bold,
+                                        fontSize: 13,
                                       ),
-                                    ],
+                                    ),
                                   ),
-                                )
-                              : LayoutBuilder(
-                                  builder: (context, constraints) {
-                                    return SingleChildScrollView(
-                                      scrollDirection: Axis.vertical,
-                                      child: SingleChildScrollView(
-                                        scrollDirection: Axis.horizontal,
-                                        child: ConstrainedBox(
-                                          constraints: BoxConstraints(minWidth: constraints.maxWidth),
-                                          child: DataTable(
-                                            headingRowColor: MaterialStateProperty.all(Colors.grey.shade100),
-                                            headingRowHeight: 44,
-                                            dividerThickness: 0,
-                                            dataRowMaxHeight: 76,
-                                            dataRowMinHeight: 72,
-                                            horizontalMargin: 16,
-                                            columnSpacing: 20,
-                                            columns: const [
-                                              DataColumn(label: Text("Ảnh", style: TextStyle(fontWeight: FontWeight.bold, fontSize: 13))),
-                                              DataColumn(label: Text("Tài khoản & Họ tên", style: TextStyle(fontWeight: FontWeight.bold, fontSize: 13))),
-                                              DataColumn(label: Text("Số điện thoại", style: TextStyle(fontWeight: FontWeight.bold, fontSize: 13))),
-                                              DataColumn(label: Text("Vai trò & Phân loại", style: TextStyle(fontWeight: FontWeight.bold, fontSize: 13))),
-                                              DataColumn(label: Text("Trạng thái", style: TextStyle(fontWeight: FontWeight.bold, fontSize: 13))),
-                                              DataColumn(label: Text("Lịch sử", style: TextStyle(fontWeight: FontWeight.bold, fontSize: 13))),
-                                              DataColumn(label: Text("Thao tác", style: TextStyle(fontWeight: FontWeight.bold, fontSize: 13))),
-                                            ],
-                                            rows: List.generate(paginatedUsers.length, (rowIndex) {
-                                              final u = paginatedUsers[rowIndex];
-                                              final roles = (u['role_names'] as List<dynamic>?)?.join(', ') ?? 'Chưa gán vai trò';
-                                              final isSystemAdmin = u['username'] == 'admin';
-                                              final isLastRow = rowIndex == paginatedUsers.length - 1;
-                                              final cellBorder = isLastRow
-                                                  ? null
-                                                  : Border(bottom: BorderSide(color: Colors.grey.shade300, width: 1));
+                                  DataColumn(
+                                    label: Text(
+                                      "Tài khoản & Họ tên",
+                                      style: TextStyle(
+                                        fontWeight: FontWeight.bold,
+                                        fontSize: 13,
+                                      ),
+                                    ),
+                                  ),
+                                  DataColumn(
+                                    label: Text(
+                                      "Số điện thoại",
+                                      style: TextStyle(
+                                        fontWeight: FontWeight.bold,
+                                        fontSize: 13,
+                                      ),
+                                    ),
+                                  ),
+                                  DataColumn(
+                                    label: Text(
+                                      "Vai trò & Phân loại",
+                                      style: TextStyle(
+                                        fontWeight: FontWeight.bold,
+                                        fontSize: 13,
+                                      ),
+                                    ),
+                                  ),
+                                  DataColumn(
+                                    label: Text(
+                                      "Trạng thái",
+                                      style: TextStyle(
+                                        fontWeight: FontWeight.bold,
+                                        fontSize: 13,
+                                      ),
+                                    ),
+                                  ),
+                                  DataColumn(
+                                    label: Text(
+                                      "Lịch sử",
+                                      style: TextStyle(
+                                        fontWeight: FontWeight.bold,
+                                        fontSize: 13,
+                                      ),
+                                    ),
+                                  ),
+                                  DataColumn(
+                                    label: Text(
+                                      "Thao tác",
+                                      style: TextStyle(
+                                        fontWeight: FontWeight.bold,
+                                        fontSize: 13,
+                                      ),
+                                    ),
+                                  ),
+                                ],
+                                rows: List.generate(paginatedUsers.length, (
+                                  rowIndex,
+                                ) {
+                                  final u = paginatedUsers[rowIndex];
+                                  final roles =
+                                      (u['role_names'] as List<dynamic>?)?.join(
+                                        ', ',
+                                      ) ??
+                                      'Chưa gán vai trò';
+                                  final isSystemAdmin =
+                                      u['username'] == 'admin';
+                                  final isLastRow =
+                                      rowIndex == paginatedUsers.length - 1;
+                                  final cellBorder = isLastRow
+                                      ? null
+                                      : Border(
+                                          bottom: BorderSide(
+                                            color: Colors.grey.shade300,
+                                            width: 1,
+                                          ),
+                                        );
 
-                                              DataCell makeCell(Widget child, {AlignmentGeometry alignment = Alignment.centerLeft}) {
-                                                return DataCell(
-                                                  Container(
-                                                    alignment: alignment,
-                                                    decoration: BoxDecoration(border: cellBorder),
-                                                    child: child,
-                                                  ),
-                                                );
-                                              }
+                                  DataCell makeCell(
+                                    Widget child, {
+                                    AlignmentGeometry alignment =
+                                        Alignment.centerLeft,
+                                  }) {
+                                    return DataCell(
+                                      Container(
+                                        alignment: alignment,
+                                        decoration: BoxDecoration(
+                                          border: cellBorder,
+                                        ),
+                                        child: child,
+                                      ),
+                                    );
+                                  }
 
-                                              return DataRow(
-                                                cells: [
-                                                  // Cột 1: Avatar 1:1 bo góc 4px
-                                                  makeCell(
-                                                    Padding(
-                                                      padding: const EdgeInsets.symmetric(vertical: 8),
-                                                      child: _buildUserAvatarItem(u, size: 52.0),
-                                                    ),
-                                                  ),
-                                                  // Cột 2: Tài khoản & Họ tên
-                                                  makeCell(
-                                                    Column(
-                                                      mainAxisAlignment: MainAxisAlignment.center,
-                                                      crossAxisAlignment: CrossAxisAlignment.start,
-                                                      children: [
-                                                        Text(
-                                                          u['full_name'] ?? u['username'],
-                                                          style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 13),
-                                                        ),
-                                                        const SizedBox(height: 2),
-                                                        Text(
-                                                          "(@${u['username']})",
-                                                          style: const TextStyle(fontSize: 11, color: Colors.blueGrey),
-                                                        ),
-                                                        if (u['email'] != null && u['email'].toString().isNotEmpty)
-                                                          Text(
-                                                            u['email'],
-                                                            style: TextStyle(fontSize: 11, color: Colors.grey.shade600),
-                                                          ),
-                                                      ],
-                                                    ),
-                                                  ),
-                                                  // Cột 3: Số điện thoại
-                                                  makeCell(
-                                                    Text(
-                                                      u['phone'] ?? 'Chưa cập nhật',
-                                                      style: const TextStyle(fontSize: 12),
-                                                    ),
-                                                  ),
-                                                  // Cột 4: Vai trò & Phân loại (đã gộp)
-                                                  makeCell(
-                                                    Builder(
-                                                      builder: (context) {
-                                                        final roleNames = (u['role_names'] as List<dynamic>?)?.map((e) => e.toString()).toList() ?? [];
-                                                        final roleCodes = (u['role_codes'] as List<dynamic>?)?.map((e) => e.toString()).toList() ?? [];
-                                                        if (roleNames.isEmpty) {
-                                                          return const Text("Chưa gán", style: TextStyle(fontSize: 12, color: Colors.grey));
-                                                        }
-                                                        final isDriver = roleCodes.contains('driver');
-                                                        final driverType = u['driver_type'];
-                                                        return Wrap(
-                                                          spacing: 6,
-                                                          runSpacing: 4,
-                                                          crossAxisAlignment: WrapCrossAlignment.center,
-                                                          children: [
-                                                            ...List.generate(roleNames.length, (idx) {
-                                                              final name = roleNames[idx];
-                                                              final code = idx < roleCodes.length ? roleCodes[idx] : '';
-                                                              Color bgColor = Colors.indigo.shade50;
-                                                              Color borderColor = Colors.indigo.shade200;
-                                                              Color textColor = Colors.indigo.shade800;
-
-                                                              if (code == 'admin') {
-                                                                bgColor = Colors.red.shade50;
-                                                                borderColor = Colors.red.shade200;
-                                                                textColor = Colors.red.shade900;
-                                                              } else if (code == 'driver') {
-                                                                bgColor = Colors.teal.shade50;
-                                                                borderColor = Colors.teal.shade200;
-                                                                textColor = Colors.teal.shade900;
-                                                              } else if (code == 'gas_station') {
-                                                                bgColor = Colors.amber.shade50;
-                                                                borderColor = Colors.amber.shade300;
-                                                                textColor = Colors.orange.shade900;
-                                                              } else if (code == 'dispatcher') {
-                                                                bgColor = Colors.blue.shade50;
-                                                                borderColor = Colors.blue.shade200;
-                                                                textColor = Colors.blue.shade800;
-                                                              } else if (code == 'mechanic') {
-                                                                bgColor = Colors.purple.shade50;
-                                                                borderColor = Colors.purple.shade200;
-                                                                textColor = Colors.purple.shade900;
-                                                              }
-
-                                                              return Container(
-                                                                padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 3),
-                                                                decoration: BoxDecoration(
-                                                                  color: bgColor,
-                                                                  borderRadius: BorderRadius.circular(4),
-                                                                  border: Border.all(color: borderColor),
-                                                                ),
-                                                                child: Text(
-                                                                  name,
-                                                                  style: TextStyle(
-                                                                    color: textColor,
-                                                                    fontSize: 11,
-                                                                    fontWeight: FontWeight.bold,
-                                                                  ),
-                                                                ),
-                                                              );
-                                                            }),
-                                                            if (isDriver && driverType != null && driverType.toString().isNotEmpty)
-                                                              Container(
-                                                                padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 3),
-                                                                decoration: BoxDecoration(
-                                                                  color: Colors.blueGrey.shade50,
-                                                                  borderRadius: BorderRadius.circular(4),
-                                                                  border: Border.all(color: Colors.blueGrey.shade200),
-                                                                ),
-                                                                child: Text(
-                                                                  _translateDriverType(driverType),
-                                                                  style: TextStyle(
-                                                                    fontSize: 11,
-                                                                    fontWeight: FontWeight.w600,
-                                                                    color: Colors.blueGrey.shade900,
-                                                                  ),
-                                                                ),
-                                                              ),
-                                                          ],
-                                                        );
-                                                      },
-                                                    ),
-                                                  ),
-                                                  // Cột 6: Trạng thái
-                                                  makeCell(
-                                                    Container(
-                                                      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-                                                      decoration: BoxDecoration(
-                                                        color: u['is_active'] == true ? Colors.green.shade50 : Colors.red.shade50,
-                                                        borderRadius: BorderRadius.circular(4),
-                                                        border: Border.all(
-                                                          color: u['is_active'] == true ? Colors.green.shade200 : Colors.red.shade200,
-                                                        ),
-                                                      ),
-                                                      child: Text(
-                                                        u['is_active'] == true ? "Hoạt động" : "Khóa",
-                                                        style: TextStyle(
-                                                          color: u['is_active'] == true ? Colors.green.shade800 : Colors.red.shade800,
-                                                          fontSize: 11,
-                                                          fontWeight: FontWeight.bold,
-                                                        ),
-                                                      ),
-                                                    ),
-                                                  ),
-                                                  // Cột 7: Lịch sử trực ca
-                                                  makeCell(
-                                                    Builder(
-                                                      builder: (context) {
-                                                        final roleCodes = (u['role_codes'] as List<dynamic>?)?.map((e) => e.toString()).toList() ?? [];
-                                                        final isDispatcherUser = roleCodes.contains('dispatcher');
-
-                                                        if (isDispatcherUser) {
-                                                          return OutlinedButton.icon(
-                                                            style: OutlinedButton.styleFrom(
-                                                              foregroundColor: Colors.blue.shade900,
-                                                              side: BorderSide(color: Colors.blue.shade300),
-                                                              padding: const EdgeInsets.symmetric(horizontal: 8),
-                                                              minimumSize: const Size(0, 32),
-                                                              tapTargetSize: MaterialTapTargetSize.shrinkWrap,
-                                                              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(4)),
-                                                            ),
-                                                            icon: const Icon(Icons.history, size: 14),
-                                                            label: const Text("Lịch sử ca trực", style: TextStyle(fontSize: 11, fontWeight: FontWeight.bold)),
-                                                            onPressed: () => showShiftHistoryDialog(context, targetUser: u),
-                                                          );
-                                                        } else {
-                                                          return Text(
-                                                            "-",
-                                                            style: TextStyle(color: Colors.grey.shade400, fontSize: 13),
-                                                          );
-                                                        }
-                                                      },
-                                                    ),
-                                                  ),
-                                                  // Cột 8: Cụm nút thao tác
-                                                  makeCell(
-                                                    Row(
-                                                      mainAxisSize: MainAxisSize.min,
-                                                      children: [
-                                                        OutlinedButton.icon(
-                                                          style: OutlinedButton.styleFrom(
-                                                            foregroundColor: Colors.blueGrey.shade800,
-                                                            padding: const EdgeInsets.symmetric(horizontal: 8),
-                                                            minimumSize: const Size(0, 32),
-                                                            tapTargetSize: MaterialTapTargetSize.shrinkWrap,
-                                                          ),
-                                                          icon: const Icon(Icons.key, size: 14),
-                                                          label: const Text("Mật khẩu", style: TextStyle(fontSize: 11)),
-                                                          onPressed: () => _showChangePasswordDialog(u),
-                                                        ),
-                                                        const SizedBox(width: 6),
-                                                        OutlinedButton.icon(
-                                                          style: OutlinedButton.styleFrom(
-                                                            foregroundColor: Colors.blue.shade800,
-                                                            padding: const EdgeInsets.symmetric(horizontal: 8),
-                                                            minimumSize: const Size(0, 32),
-                                                            tapTargetSize: MaterialTapTargetSize.shrinkWrap,
-                                                          ),
-                                                          icon: const Icon(Icons.edit, size: 14),
-                                                          label: const Text("Sửa", style: TextStyle(fontSize: 11)),
-                                                          onPressed: () => _showEditUserDialog(u),
-                                                        ),
-                                                        if (!isSystemAdmin) ...[
-                                                          const SizedBox(width: 6),
-                                                          OutlinedButton.icon(
-                                                            style: OutlinedButton.styleFrom(
-                                                              foregroundColor: Colors.red.shade700,
-                                                              side: BorderSide(color: Colors.red.shade300),
-                                                              padding: const EdgeInsets.symmetric(horizontal: 8),
-                                                              minimumSize: const Size(0, 32),
-                                                              tapTargetSize: MaterialTapTargetSize.shrinkWrap,
-                                                            ),
-                                                            icon: const Icon(Icons.delete_outline, size: 14),
-                                                            label: const Text("Xóa", style: TextStyle(fontSize: 11)),
-                                                            onPressed: () => _confirmDeleteUser(u),
-                                                          ),
-                                                        ],
-                                                      ],
-                                                    ),
-                                                  ),
-                                                ],
-                                              );
-                                            }),
+                                  return DataRow(
+                                    cells: [
+                                      // Cột 1: Avatar 1:1 bo góc 4px
+                                      makeCell(
+                                        Padding(
+                                          padding: const EdgeInsets.symmetric(
+                                            vertical: 8,
+                                          ),
+                                          child: _buildUserAvatarItem(
+                                            u,
+                                            size: 52.0,
                                           ),
                                         ),
                                       ),
-                                    );
-                                  },
-                          ),
-                        ),
-                      // THANH ĐIỀU HƯỚNG PHÂN TRANG (PAGINATION BAR)
-                      if (filteredUsers.isNotEmpty)
-                        Container(
-                          height: 40,
-                          padding: const EdgeInsets.symmetric(horizontal: 16),
-                          decoration: BoxDecoration(
-                            color: Colors.white,
-                            border: Border(top: BorderSide(color: Colors.grey.shade400, width: 1)),
-                          ),
-                          child: Row(
-                            mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                            children: [
-                              // Thông tin số bản ghi hiển thị
-                              Text(
-                                "Hiển thị ${startIndex + 1} - ${endIndex} trên tổng số ${totalItems} tài khoản",
-                                style: TextStyle(fontSize: 12, color: Colors.grey.shade700, fontWeight: FontWeight.w500),
-                              ),
-                              // Cụm điều khiển: Chọn PageSize + Các nút chuyển trang
-                              Row(
-                                children: [
-                                  const Text("Số dòng/trang: ", style: TextStyle(fontSize: 12, color: Colors.black87)),
-                                  const SizedBox(width: 4),
-                                  DropdownButton<int>(
-                                    value: _userPageSize,
-                                    underline: const SizedBox(),
-                                    isDense: true,
-                                    style: const TextStyle(fontSize: 12, color: Colors.blueGrey, fontWeight: FontWeight.bold),
-                                    items: const [
-                                      DropdownMenuItem(value: 5, child: Text("5")),
-                                      DropdownMenuItem(value: 10, child: Text("10")),
-                                      DropdownMenuItem(value: 20, child: Text("20")),
-                                      DropdownMenuItem(value: 50, child: Text("50")),
+                                      // Cột 2: Tài khoản & Họ tên
+                                      makeCell(
+                                        Column(
+                                          mainAxisAlignment:
+                                              MainAxisAlignment.center,
+                                          crossAxisAlignment:
+                                              CrossAxisAlignment.start,
+                                          children: [
+                                            Text(
+                                              u['full_name'] ?? u['username'],
+                                              style: const TextStyle(
+                                                fontWeight: FontWeight.bold,
+                                                fontSize: 13,
+                                              ),
+                                            ),
+                                            const SizedBox(height: 2),
+                                            Text(
+                                              "(@${u['username']})",
+                                              style: const TextStyle(
+                                                fontSize: 11,
+                                                color: Colors.blueGrey,
+                                              ),
+                                            ),
+                                            if (u['email'] != null &&
+                                                u['email']
+                                                    .toString()
+                                                    .isNotEmpty)
+                                              Text(
+                                                u['email'],
+                                                style: TextStyle(
+                                                  fontSize: 11,
+                                                  color: Colors.grey.shade600,
+                                                ),
+                                              ),
+                                          ],
+                                        ),
+                                      ),
+                                      // Cột 3: Số điện thoại
+                                      makeCell(
+                                        Text(
+                                          u['phone'] ?? 'Chưa cập nhật',
+                                          style: const TextStyle(fontSize: 12),
+                                        ),
+                                      ),
+                                      // Cột 4: Vai trò & Phân loại (đã gộp)
+                                      makeCell(
+                                        Builder(
+                                          builder: (context) {
+                                            final roleNames =
+                                                (u['role_names']
+                                                        as List<dynamic>?)
+                                                    ?.map((e) => e.toString())
+                                                    .toList() ??
+                                                [];
+                                            final roleCodes =
+                                                (u['role_codes']
+                                                        as List<dynamic>?)
+                                                    ?.map((e) => e.toString())
+                                                    .toList() ??
+                                                [];
+                                            if (roleNames.isEmpty) {
+                                              return const Text(
+                                                "Chưa gán",
+                                                style: TextStyle(
+                                                  fontSize: 12,
+                                                  color: Colors.grey,
+                                                ),
+                                              );
+                                            }
+                                            final isDriver = roleCodes.contains(
+                                              'driver',
+                                            );
+                                            final driverType = u['driver_type'];
+                                            return Wrap(
+                                              spacing: 6,
+                                              runSpacing: 4,
+                                              crossAxisAlignment:
+                                                  WrapCrossAlignment.center,
+                                              children: [
+                                                ...List.generate(roleNames.length, (
+                                                  idx,
+                                                ) {
+                                                  final name = roleNames[idx];
+                                                  final code =
+                                                      idx < roleCodes.length
+                                                      ? roleCodes[idx]
+                                                      : '';
+                                                  Color bgColor =
+                                                      Colors.indigo.shade50;
+                                                  Color borderColor =
+                                                      Colors.indigo.shade200;
+                                                  Color textColor =
+                                                      Colors.indigo.shade800;
+
+                                                  if (code == 'admin') {
+                                                    bgColor =
+                                                        Colors.red.shade50;
+                                                    borderColor =
+                                                        Colors.red.shade200;
+                                                    textColor =
+                                                        Colors.red.shade900;
+                                                  } else if (code == 'driver') {
+                                                    bgColor =
+                                                        Colors.teal.shade50;
+                                                    borderColor =
+                                                        Colors.teal.shade200;
+                                                    textColor =
+                                                        Colors.teal.shade900;
+                                                  } else if (code ==
+                                                      'gas_station') {
+                                                    bgColor =
+                                                        Colors.amber.shade50;
+                                                    borderColor =
+                                                        Colors.amber.shade300;
+                                                    textColor =
+                                                        Colors.orange.shade900;
+                                                  } else if (code ==
+                                                      'dispatcher') {
+                                                    bgColor =
+                                                        Colors.blue.shade50;
+                                                    borderColor =
+                                                        Colors.blue.shade200;
+                                                    textColor =
+                                                        Colors.blue.shade800;
+                                                  } else if (code ==
+                                                      'mechanic') {
+                                                    bgColor =
+                                                        Colors.purple.shade50;
+                                                    borderColor =
+                                                        Colors.purple.shade200;
+                                                    textColor =
+                                                        Colors.purple.shade900;
+                                                  }
+
+                                                  return Container(
+                                                    padding:
+                                                        const EdgeInsets.symmetric(
+                                                          horizontal: 7,
+                                                          vertical: 3,
+                                                        ),
+                                                    decoration: BoxDecoration(
+                                                      color: bgColor,
+                                                      borderRadius:
+                                                          BorderRadius.circular(
+                                                            4,
+                                                          ),
+                                                      border: Border.all(
+                                                        color: borderColor,
+                                                      ),
+                                                    ),
+                                                    child: Text(
+                                                      name,
+                                                      style: TextStyle(
+                                                        color: textColor,
+                                                        fontSize: 11,
+                                                        fontWeight:
+                                                            FontWeight.bold,
+                                                      ),
+                                                    ),
+                                                  );
+                                                }),
+                                                if (isDriver &&
+                                                    driverType != null &&
+                                                    driverType
+                                                        .toString()
+                                                        .isNotEmpty)
+                                                  Container(
+                                                    padding:
+                                                        const EdgeInsets.symmetric(
+                                                          horizontal: 7,
+                                                          vertical: 3,
+                                                        ),
+                                                    decoration: BoxDecoration(
+                                                      color: Colors
+                                                          .blueGrey
+                                                          .shade50,
+                                                      borderRadius:
+                                                          BorderRadius.circular(
+                                                            4,
+                                                          ),
+                                                      border: Border.all(
+                                                        color: Colors
+                                                            .blueGrey
+                                                            .shade200,
+                                                      ),
+                                                    ),
+                                                    child: Text(
+                                                      _translateDriverType(
+                                                        driverType,
+                                                      ),
+                                                      style: TextStyle(
+                                                        fontSize: 11,
+                                                        fontWeight:
+                                                            FontWeight.w600,
+                                                        color: Colors
+                                                            .blueGrey
+                                                            .shade900,
+                                                      ),
+                                                    ),
+                                                  ),
+                                              ],
+                                            );
+                                          },
+                                        ),
+                                      ),
+                                      // Cột 6: Trạng thái
+                                      makeCell(
+                                        Container(
+                                          padding: const EdgeInsets.symmetric(
+                                            horizontal: 8,
+                                            vertical: 4,
+                                          ),
+                                          decoration: BoxDecoration(
+                                            color: u['is_active'] == true
+                                                ? Colors.green.shade50
+                                                : Colors.red.shade50,
+                                            borderRadius: BorderRadius.circular(
+                                              4,
+                                            ),
+                                            border: Border.all(
+                                              color: u['is_active'] == true
+                                                  ? Colors.green.shade200
+                                                  : Colors.red.shade200,
+                                            ),
+                                          ),
+                                          child: Text(
+                                            u['is_active'] == true
+                                                ? "Hoạt động"
+                                                : "Khóa",
+                                            style: TextStyle(
+                                              color: u['is_active'] == true
+                                                  ? Colors.green.shade800
+                                                  : Colors.red.shade800,
+                                              fontSize: 11,
+                                              fontWeight: FontWeight.bold,
+                                            ),
+                                          ),
+                                        ),
+                                      ),
+                                      // Cột 7: Lịch sử trực ca
+                                      makeCell(
+                                        Builder(
+                                          builder: (context) {
+                                            final roleCodes =
+                                                (u['role_codes']
+                                                        as List<dynamic>?)
+                                                    ?.map((e) => e.toString())
+                                                    .toList() ??
+                                                [];
+                                            final isDispatcherUser = roleCodes
+                                                .contains('dispatcher');
+
+                                            if (isDispatcherUser) {
+                                              return OutlinedButton.icon(
+                                                style: OutlinedButton.styleFrom(
+                                                  foregroundColor:
+                                                      Colors.blue.shade900,
+                                                  side: BorderSide(
+                                                    color: Colors.blue.shade300,
+                                                  ),
+                                                  padding:
+                                                      const EdgeInsets.symmetric(
+                                                        horizontal: 8,
+                                                      ),
+                                                  minimumSize: const Size(
+                                                    0,
+                                                    32,
+                                                  ),
+                                                  tapTargetSize:
+                                                      MaterialTapTargetSize
+                                                          .shrinkWrap,
+                                                  shape: RoundedRectangleBorder(
+                                                    borderRadius:
+                                                        BorderRadius.circular(
+                                                          4,
+                                                        ),
+                                                  ),
+                                                ),
+                                                icon: const Icon(
+                                                  Icons.history,
+                                                  size: 14,
+                                                ),
+                                                label: const Text(
+                                                  "Lịch sử ca trực",
+                                                  style: TextStyle(
+                                                    fontSize: 11,
+                                                    fontWeight: FontWeight.bold,
+                                                  ),
+                                                ),
+                                                onPressed: () =>
+                                                    showShiftHistoryDialog(
+                                                      context,
+                                                      targetUser: u,
+                                                    ),
+                                              );
+                                            } else {
+                                              return Text(
+                                                "-",
+                                                style: TextStyle(
+                                                  color: Colors.grey.shade400,
+                                                  fontSize: 13,
+                                                ),
+                                              );
+                                            }
+                                          },
+                                        ),
+                                      ),
+                                      // Cột 8: Cụm nút thao tác
+                                      makeCell(
+                                        Row(
+                                          mainAxisSize: MainAxisSize.min,
+                                          children: [
+                                            OutlinedButton.icon(
+                                              style: OutlinedButton.styleFrom(
+                                                foregroundColor:
+                                                    Colors.blueGrey.shade800,
+                                                padding:
+                                                    const EdgeInsets.symmetric(
+                                                      horizontal: 8,
+                                                    ),
+                                                minimumSize: const Size(0, 32),
+                                                tapTargetSize:
+                                                    MaterialTapTargetSize
+                                                        .shrinkWrap,
+                                              ),
+                                              icon: const Icon(
+                                                Icons.key,
+                                                size: 14,
+                                              ),
+                                              label: const Text(
+                                                "Mật khẩu",
+                                                style: TextStyle(fontSize: 11),
+                                              ),
+                                              onPressed: () =>
+                                                  _showChangePasswordDialog(u),
+                                            ),
+                                            const SizedBox(width: 6),
+                                            OutlinedButton.icon(
+                                              style: OutlinedButton.styleFrom(
+                                                foregroundColor:
+                                                    Colors.blue.shade800,
+                                                padding:
+                                                    const EdgeInsets.symmetric(
+                                                      horizontal: 8,
+                                                    ),
+                                                minimumSize: const Size(0, 32),
+                                                tapTargetSize:
+                                                    MaterialTapTargetSize
+                                                        .shrinkWrap,
+                                              ),
+                                              icon: const Icon(
+                                                Icons.edit,
+                                                size: 14,
+                                              ),
+                                              label: const Text(
+                                                "Sửa",
+                                                style: TextStyle(fontSize: 11),
+                                              ),
+                                              onPressed: () =>
+                                                  _showEditUserDialog(u),
+                                            ),
+                                            if (!isSystemAdmin) ...[
+                                              const SizedBox(width: 6),
+                                              OutlinedButton.icon(
+                                                style: OutlinedButton.styleFrom(
+                                                  foregroundColor:
+                                                      Colors.red.shade700,
+                                                  side: BorderSide(
+                                                    color: Colors.red.shade300,
+                                                  ),
+                                                  padding:
+                                                      const EdgeInsets.symmetric(
+                                                        horizontal: 8,
+                                                      ),
+                                                  minimumSize: const Size(
+                                                    0,
+                                                    32,
+                                                  ),
+                                                  tapTargetSize:
+                                                      MaterialTapTargetSize
+                                                          .shrinkWrap,
+                                                ),
+                                                icon: const Icon(
+                                                  Icons.delete_outline,
+                                                  size: 14,
+                                                ),
+                                                label: const Text(
+                                                  "Xóa",
+                                                  style: TextStyle(
+                                                    fontSize: 11,
+                                                  ),
+                                                ),
+                                                onPressed: () =>
+                                                    _confirmDeleteUser(u),
+                                              ),
+                                            ],
+                                          ],
+                                        ),
+                                      ),
                                     ],
-                                    onChanged: (val) {
-                                      if (val != null) {
-                                        setState(() {
-                                          _userPageSize = val;
-                                          _userCurrentPage = 1;
-                                        });
-                                      }
-                                    },
-                                  ),
-                                  const SizedBox(width: 12),
-                                  // Nút về trang đầu
-                                  IconButton(
-                                    icon: const Icon(Icons.first_page, size: 18),
-                                    tooltip: "Trang đầu",
-                                    padding: EdgeInsets.zero,
-                                    constraints: const BoxConstraints(minWidth: 28, minHeight: 28),
-                                    splashRadius: 16,
-                                    onPressed: validPage > 1 ? () => setState(() => _userCurrentPage = 1) : null,
-                                  ),
-                                  // Nút trang trước
-                                  IconButton(
-                                    icon: const Icon(Icons.chevron_left, size: 18),
-                                    tooltip: "Trang trước",
-                                    padding: EdgeInsets.zero,
-                                    constraints: const BoxConstraints(minWidth: 28, minHeight: 28),
-                                    splashRadius: 16,
-                                    onPressed: validPage > 1 ? () => setState(() => _userCurrentPage = validPage - 1) : null,
-                                  ),
-                                  const SizedBox(width: 4),
-                                  // Hiển thị số trang hiện tại / tổng số trang
-                                  Container(
-                                    padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
-                                    decoration: BoxDecoration(
-                                      color: Colors.blue.shade50,
-                                      borderRadius: BorderRadius.circular(4),
-                                      border: Border.all(color: Colors.blue.shade200),
-                                    ),
-                                    child: Text(
-                                      "Trang $validPage / $totalPages",
-                                      style: TextStyle(fontSize: 11, fontWeight: FontWeight.bold, color: Colors.blue.shade800),
-                                    ),
-                                  ),
-                                  const SizedBox(width: 4),
-                                  // Nút trang sau
-                                  IconButton(
-                                    icon: const Icon(Icons.chevron_right, size: 18),
-                                    tooltip: "Trang sau",
-                                    padding: EdgeInsets.zero,
-                                    constraints: const BoxConstraints(minWidth: 28, minHeight: 28),
-                                    splashRadius: 16,
-                                    onPressed: validPage < totalPages ? () => setState(() => _userCurrentPage = validPage + 1) : null,
-                                  ),
-                                  // Nút tới trang cuối
-                                  IconButton(
-                                    icon: const Icon(Icons.last_page, size: 18),
-                                    tooltip: "Trang cuối",
-                                    padding: EdgeInsets.zero,
-                                    constraints: const BoxConstraints(minWidth: 28, minHeight: 28),
-                                    splashRadius: 16,
-                                    onPressed: validPage < totalPages ? () => setState(() => _userCurrentPage = totalPages) : null,
-                                  ),
-                                ],
+                                  );
+                                }),
                               ),
-                            ],
+                            ),
+                          ),
+                        );
+                      },
+                    ),
+            ),
+            // THANH ĐIỀU HƯỚNG PHÂN TRANG (PAGINATION BAR)
+            if (filteredUsers.isNotEmpty)
+              Container(
+                height: 40,
+                padding: const EdgeInsets.symmetric(horizontal: 16),
+                decoration: BoxDecoration(
+                  color: Colors.white,
+                  border: Border(
+                    top: BorderSide(color: Colors.grey.shade400, width: 1),
+                  ),
+                ),
+                child: Row(
+                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                  children: [
+                    // Thông tin số bản ghi hiển thị
+                    Text(
+                      "Hiển thị ${startIndex + 1} - ${endIndex} trên tổng số ${totalItems} tài khoản",
+                      style: TextStyle(
+                        fontSize: 12,
+                        color: Colors.grey.shade700,
+                        fontWeight: FontWeight.w500,
+                      ),
+                    ),
+                    // Cụm điều khiển: Chọn PageSize + Các nút chuyển trang
+                    Row(
+                      children: [
+                        const Text(
+                          "Số dòng/trang: ",
+                          style: TextStyle(fontSize: 12, color: Colors.black87),
+                        ),
+                        const SizedBox(width: 4),
+                        DropdownButton<int>(
+                          value: _userPageSize,
+                          underline: const SizedBox(),
+                          isDense: true,
+                          style: const TextStyle(
+                            fontSize: 12,
+                            color: Colors.blueGrey,
+                            fontWeight: FontWeight.bold,
+                          ),
+                          items: const [
+                            DropdownMenuItem(value: 5, child: Text("5")),
+                            DropdownMenuItem(value: 10, child: Text("10")),
+                            DropdownMenuItem(value: 20, child: Text("20")),
+                            DropdownMenuItem(value: 50, child: Text("50")),
+                          ],
+                          onChanged: (val) {
+                            if (val != null) {
+                              setState(() {
+                                _userPageSize = val;
+                                _userCurrentPage = 1;
+                              });
+                            }
+                          },
+                        ),
+                        const SizedBox(width: 12),
+                        // Nút về trang đầu
+                        IconButton(
+                          icon: const Icon(Icons.first_page, size: 18),
+                          tooltip: "Trang đầu",
+                          padding: EdgeInsets.zero,
+                          constraints: const BoxConstraints(
+                            minWidth: 28,
+                            minHeight: 28,
+                          ),
+                          splashRadius: 16,
+                          onPressed: validPage > 1
+                              ? () => setState(() => _userCurrentPage = 1)
+                              : null,
+                        ),
+                        // Nút trang trước
+                        IconButton(
+                          icon: const Icon(Icons.chevron_left, size: 18),
+                          tooltip: "Trang trước",
+                          padding: EdgeInsets.zero,
+                          constraints: const BoxConstraints(
+                            minWidth: 28,
+                            minHeight: 28,
+                          ),
+                          splashRadius: 16,
+                          onPressed: validPage > 1
+                              ? () => setState(
+                                  () => _userCurrentPage = validPage - 1,
+                                )
+                              : null,
+                        ),
+                        const SizedBox(width: 4),
+                        // Hiển thị số trang hiện tại / tổng số trang
+                        Container(
+                          padding: const EdgeInsets.symmetric(
+                            horizontal: 8,
+                            vertical: 3,
+                          ),
+                          decoration: BoxDecoration(
+                            color: Colors.blue.shade50,
+                            borderRadius: BorderRadius.circular(4),
+                            border: Border.all(color: Colors.blue.shade200),
+                          ),
+                          child: Text(
+                            "Trang $validPage / $totalPages",
+                            style: TextStyle(
+                              fontSize: 11,
+                              fontWeight: FontWeight.bold,
+                              color: Colors.blue.shade800,
+                            ),
                           ),
                         ),
-                    ],
-                  );
-                },
-              );
+                        const SizedBox(width: 4),
+                        // Nút trang sau
+                        IconButton(
+                          icon: const Icon(Icons.chevron_right, size: 18),
+                          tooltip: "Trang sau",
+                          padding: EdgeInsets.zero,
+                          constraints: const BoxConstraints(
+                            minWidth: 28,
+                            minHeight: 28,
+                          ),
+                          splashRadius: 16,
+                          onPressed: validPage < totalPages
+                              ? () => setState(
+                                  () => _userCurrentPage = validPage + 1,
+                                )
+                              : null,
+                        ),
+                        // Nút tới trang cuối
+                        IconButton(
+                          icon: const Icon(Icons.last_page, size: 18),
+                          tooltip: "Trang cuối",
+                          padding: EdgeInsets.zero,
+                          constraints: const BoxConstraints(
+                            minWidth: 28,
+                            minHeight: 28,
+                          ),
+                          splashRadius: 16,
+                          onPressed: validPage < totalPages
+                              ? () => setState(
+                                  () => _userCurrentPage = totalPages,
+                                )
+                              : null,
+                        ),
+                      ],
+                    ),
+                  ],
+                ),
+              ),
+          ],
+        );
+      },
+    );
   }
 
   // Subtab 2: Danh sách Roles & Cấu hình Quyền (Dynamic RBAC) kèm Thêm, Sửa, Xóa
@@ -1374,242 +2089,348 @@ class _DispatchSupervisorScreenState extends State<DispatchSupervisorScreen> {
     return Column(
       children: [
         // Thanh công cụ Subtab 2: Thống kê & Nút Thêm vai trò mới (chuẩn 38px inline)
-                  Container(
-                    padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
-                    color: Colors.white,
-                    child: Row(
-                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                      children: [
-                        Row(
-                          children: [
-                            const Icon(Icons.security, color: Colors.indigo, size: 20),
-                            const SizedBox(width: 8),
-                            Text(
-                              "Cấu hình Phân quyền động (${_roles.length} vai trò • ${_permissions.length} quyền hạt nhân)",
-                              style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 13, color: Colors.blueGrey),
-                            ),
-                          ],
-                        ),
-                        SizedBox(
-                          height: 38,
-                          child: ElevatedButton.icon(
-                            style: ElevatedButton.styleFrom(
-                              backgroundColor: Colors.indigo.shade700,
-                              foregroundColor: Colors.white,
-                              minimumSize: Size.zero,
-                              tapTargetSize: MaterialTapTargetSize.shrinkWrap,
-                              padding: const EdgeInsets.symmetric(horizontal: 14),
-                              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(4)),
-                            ),
-                            icon: const Icon(Icons.add_moderator, size: 16),
-                            label: const Text("Thêm vai trò mới", style: TextStyle(fontWeight: FontWeight.w600, fontSize: 13)),
-                            onPressed: _showCreateRoleDialog,
-                          ),
-                        ),
-                      ],
+        Container(
+          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+          color: Colors.white,
+          child: Row(
+            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+            children: [
+              Row(
+                children: [
+                  const Icon(Icons.security, color: Colors.indigo, size: 20),
+                  const SizedBox(width: 8),
+                  Text(
+                    "Cấu hình Phân quyền động (${_roles.length} vai trò • ${_permissions.length} quyền hạt nhân)",
+                    style: const TextStyle(
+                      fontWeight: FontWeight.bold,
+                      fontSize: 13,
+                      color: Colors.blueGrey,
                     ),
                   ),
-                  const Divider(height: 1),
-                  Expanded(
-                    child: ListView.builder(
-                      padding: const EdgeInsets.all(16),
-                      itemCount: _roles.length,
-                      itemBuilder: (context, index) {
-                        final r = _roles[index];
-                        final permCodes = (r['permission_codes'] as List<dynamic>?)?.map((e) => e.toString()).toList() ?? [];
-                        final permNames = (r['permission_names'] as List<dynamic>?)?.map((e) => e.toString()).toList() ?? [];
-                        final isSystemCore = r['is_system'] == true || ['admin', 'driver', 'dispatcher', 'gas_station', 'mechanic', 'manager'].contains(r['code']);
+                ],
+              ),
+              SizedBox(
+                height: 38,
+                child: ElevatedButton.icon(
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: Colors.indigo.shade700,
+                    foregroundColor: Colors.white,
+                    minimumSize: Size.zero,
+                    tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                    padding: const EdgeInsets.symmetric(horizontal: 14),
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(4),
+                    ),
+                  ),
+                  icon: const Icon(Icons.add_moderator, size: 16),
+                  label: const Text(
+                    "Thêm vai trò mới",
+                    style: TextStyle(fontWeight: FontWeight.w600, fontSize: 13),
+                  ),
+                  onPressed: _showCreateRoleDialog,
+                ),
+              ),
+            ],
+          ),
+        ),
+        const Divider(height: 1),
+        Expanded(
+          child: ListView.builder(
+            padding: const EdgeInsets.all(16),
+            itemCount: _roles.length,
+            itemBuilder: (context, index) {
+              final r = _roles[index];
+              final permCodes =
+                  (r['permission_codes'] as List<dynamic>?)
+                      ?.map((e) => e.toString())
+                      .toList() ??
+                  [];
+              final permNames =
+                  (r['permission_names'] as List<dynamic>?)
+                      ?.map((e) => e.toString())
+                      .toList() ??
+                  [];
+              final isSystemCore =
+                  r['is_system'] == true ||
+                  [
+                    'admin',
+                    'driver',
+                    'dispatcher',
+                    'gas_station',
+                    'mechanic',
+                    'manager',
+                  ].contains(r['code']);
 
-                        return Card(
-                          elevation: 0,
-                          margin: const EdgeInsets.only(bottom: 12),
-                          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(4), side: BorderSide(color: Colors.grey.shade400, width: 1)),
-                          child: Padding(
-                            padding: const EdgeInsets.all(16),
+              return Card(
+                elevation: 0,
+                margin: const EdgeInsets.only(bottom: 12),
+                shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(4),
+                  side: BorderSide(color: Colors.grey.shade400, width: 1),
+                ),
+                child: Padding(
+                  padding: const EdgeInsets.all(16),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Row(
+                        crossAxisAlignment: CrossAxisAlignment.center,
+                        children: [
+                          Icon(
+                            r['code'] == 'admin'
+                                ? Icons.verified_user
+                                : Icons.shield_outlined,
+                            color: r['code'] == 'admin'
+                                ? Colors.red.shade700
+                                : Colors.indigo,
+                            size: 22,
+                          ),
+                          const SizedBox(width: 10),
+                          Expanded(
                             child: Column(
                               crossAxisAlignment: CrossAxisAlignment.start,
                               children: [
                                 Row(
-                                  crossAxisAlignment: CrossAxisAlignment.center,
-                                  children: [
-                                    Icon(
-                                      r['code'] == 'admin' ? Icons.verified_user : Icons.shield_outlined,
-                                      color: r['code'] == 'admin' ? Colors.red.shade700 : Colors.indigo,
-                                      size: 22,
-                                    ),
-                                    const SizedBox(width: 10),
-                                    Expanded(
-                                      child: Column(
-                                        crossAxisAlignment: CrossAxisAlignment.start,
-                                        children: [
-                                          Row(
-                                            children: [
-                                              Text(
-                                                r['name'] ?? 'Vai trò',
-                                                style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 15),
-                                              ),
-                                              const SizedBox(width: 8),
-                                              Container(
-                                                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
-                                                decoration: BoxDecoration(
-                                                  color: Colors.grey.shade100,
-                                                  borderRadius: BorderRadius.circular(4),
-                                                  border: Border.all(color: Colors.grey.shade400),
-                                                ),
-                                                child: Text(
-                                                  "Mã: ${r['code']}",
-                                                  style: TextStyle(color: Colors.blueGrey.shade800, fontSize: 11, fontWeight: FontWeight.bold),
-                                                ),
-                                              ),
-                                              if (isSystemCore) ...[
-                                                const SizedBox(width: 6),
-                                                Container(
-                                                  padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
-                                                  decoration: BoxDecoration(
-                                                    color: Colors.amber.shade50,
-                                                    borderRadius: BorderRadius.circular(4),
-                                                    border: Border.all(color: Colors.amber.shade300),
-                                                  ),
-                                                  child: Text(
-                                                    "Hệ thống",
-                                                    style: TextStyle(color: Colors.amber.shade900, fontSize: 10, fontWeight: FontWeight.bold),
-                                                  ),
-                                                ),
-                                              ],
-                                            ],
-                                          ),
-                                          if (r['description'] != null && r['description'].toString().isNotEmpty) ...[
-                                            const SizedBox(height: 4),
-                                            Text(
-                                              r['description'],
-                                              style: TextStyle(fontSize: 12, color: Colors.grey.shade700),
-                                            ),
-                                          ],
-                                        ],
-                                      ),
-                                    ),
-                                    // Cụm nút Thao tác: Sửa quyền & Xóa
-                                    Row(
-                                      mainAxisSize: MainAxisSize.min,
-                                      children: [
-                                        OutlinedButton.icon(
-                                          style: OutlinedButton.styleFrom(
-                                            foregroundColor: Colors.indigo.shade700,
-                                            padding: const EdgeInsets.symmetric(horizontal: 10),
-                                            minimumSize: const Size(0, 32),
-                                            tapTargetSize: MaterialTapTargetSize.shrinkWrap,
-                                          ),
-                                          icon: const Icon(Icons.tune, size: 14),
-                                          label: const Text("Cấu hình quyền", style: TextStyle(fontSize: 11, fontWeight: FontWeight.bold)),
-                                          onPressed: () => _showEditRoleDialog(r),
-                                        ),
-                                        if (!isSystemCore) ...[
-                                          const SizedBox(width: 8),
-                                          OutlinedButton.icon(
-                                            style: OutlinedButton.styleFrom(
-                                              foregroundColor: Colors.red.shade700,
-                                              padding: const EdgeInsets.symmetric(horizontal: 8),
-                                              minimumSize: const Size(0, 32),
-                                              tapTargetSize: MaterialTapTargetSize.shrinkWrap,
-                                            ),
-                                            icon: const Icon(Icons.delete_outline, size: 14),
-                                            label: const Text("Xóa", style: TextStyle(fontSize: 11, fontWeight: FontWeight.bold)),
-                                            onPressed: () => _showDeleteRoleDialog(r),
-                                          ),
-                                        ],
-                                      ],
-                                    ),
-                                  ],
-                                ),
-                                const SizedBox(height: 12),
-                                const Divider(height: 1),
-                                const SizedBox(height: 10),
-                                Row(
                                   children: [
                                     Text(
-                                      "Danh sách hành động chức năng được cấp (${permNames.length} quyền):",
-                                      style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 12, color: Colors.blueGrey),
+                                      r['name'] ?? 'Vai trò',
+                                      style: const TextStyle(
+                                        fontWeight: FontWeight.bold,
+                                        fontSize: 15,
+                                      ),
                                     ),
+                                    const SizedBox(width: 8),
+                                    Container(
+                                      padding: const EdgeInsets.symmetric(
+                                        horizontal: 8,
+                                        vertical: 2,
+                                      ),
+                                      decoration: BoxDecoration(
+                                        color: Colors.grey.shade100,
+                                        borderRadius: BorderRadius.circular(4),
+                                        border: Border.all(
+                                          color: Colors.grey.shade400,
+                                        ),
+                                      ),
+                                      child: Text(
+                                        "Mã: ${r['code']}",
+                                        style: TextStyle(
+                                          color: Colors.blueGrey.shade800,
+                                          fontSize: 11,
+                                          fontWeight: FontWeight.bold,
+                                        ),
+                                      ),
+                                    ),
+                                    if (isSystemCore) ...[
+                                      const SizedBox(width: 6),
+                                      Container(
+                                        padding: const EdgeInsets.symmetric(
+                                          horizontal: 6,
+                                          vertical: 2,
+                                        ),
+                                        decoration: BoxDecoration(
+                                          color: Colors.amber.shade50,
+                                          borderRadius: BorderRadius.circular(
+                                            4,
+                                          ),
+                                          border: Border.all(
+                                            color: Colors.amber.shade300,
+                                          ),
+                                        ),
+                                        child: Text(
+                                          "Hệ thống",
+                                          style: TextStyle(
+                                            color: Colors.amber.shade900,
+                                            fontSize: 10,
+                                            fontWeight: FontWeight.bold,
+                                          ),
+                                        ),
+                                      ),
+                                    ],
                                   ],
                                 ),
-                                const SizedBox(height: 8),
-                                if (permNames.isEmpty)
+                                if (r['description'] != null &&
+                                    r['description'].toString().isNotEmpty) ...[
+                                  const SizedBox(height: 4),
                                   Text(
-                                    "Chưa được cấp bất kỳ quyền nào. Bấm 'Cấu hình quyền' để thêm quyền chức năng.",
-                                    style: TextStyle(fontSize: 12, color: Colors.red.shade400, fontStyle: FontStyle.italic),
-                                  )
-                                else
-                                  Wrap(
-                                    spacing: 6,
-                                    runSpacing: 6,
-                                    children: List.generate(permNames.length, (pIdx) {
-                                      final pName = permNames[pIdx];
-                                      final pCode = pIdx < permCodes.length ? permCodes[pIdx] : '';
-                                      
-                                      Color chipBg = Colors.blue.shade50;
-                                      Color chipBorder = Colors.blue.shade200;
-                                      Color chipText = Colors.blue.shade900;
-                                      
-                                      if (pCode.startsWith('order:')) {
-                                        chipBg = Colors.teal.shade50;
-                                        chipBorder = Colors.teal.shade200;
-                                        chipText = Colors.teal.shade900;
-                                      } else if (pCode.startsWith('product:')) {
-                                        chipBg = Colors.cyan.shade50;
-                                        chipBorder = Colors.cyan.shade200;
-                                        chipText = Colors.cyan.shade900;
-                                      } else if (pCode.startsWith('vehicle:') || pCode.startsWith('driver:')) {
-                                        chipBg = Colors.blue.shade50;
-                                        chipBorder = Colors.blue.shade200;
-                                        chipText = Colors.blue.shade900;
-                                      } else if (pCode.startsWith('fuel:') || pCode.startsWith('gas_station:')) {
-                                        chipBg = Colors.amber.shade50;
-                                        chipBorder = Colors.amber.shade200;
-                                        chipText = Colors.orange.shade900;
-                                      } else if (pCode.startsWith('inspection:')) {
-                                        chipBg = Colors.purple.shade50;
-                                        chipBorder = Colors.purple.shade200;
-                                        chipText = Colors.purple.shade900;
-                                      } else if (pCode.startsWith('breakdown:') || pCode.startsWith('maintenance:')) {
-                                        chipBg = Colors.brown.shade50;
-                                        chipBorder = Colors.brown.shade200;
-                                        chipText = Colors.brown.shade900;
-                                      } else if (pCode.startsWith('user:') || pCode.startsWith('system:')) {
-                                        chipBg = Colors.indigo.shade50;
-                                        chipBorder = Colors.indigo.shade200;
-                                        chipText = Colors.indigo.shade900;
-                                      }
-
-                                      return Container(
-                                        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-                                        decoration: BoxDecoration(
-                                          color: chipBg,
-                                          borderRadius: BorderRadius.circular(4),
-                                          border: Border.all(color: chipBorder),
-                                        ),
-                                        child: Row(
-                                          mainAxisSize: MainAxisSize.min,
-                                          children: [
-                                            const Icon(Icons.check_circle_outline, size: 12, color: Colors.green),
-                                            const SizedBox(width: 4),
-                                            Text(
-                                              pName,
-                                              style: TextStyle(color: chipText, fontSize: 11, fontWeight: FontWeight.w600),
-                                            ),
-                                          ],
-                                        ),
-                                      );
-                                    }),
+                                    r['description'],
+                                    style: TextStyle(
+                                      fontSize: 12,
+                                      color: Colors.grey.shade700,
+                                    ),
                                   ),
+                                ],
                               ],
                             ),
                           ),
-                        );
-                      },
-                    ),
+                          // Cụm nút Thao tác: Sửa quyền & Xóa
+                          Row(
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              OutlinedButton.icon(
+                                style: OutlinedButton.styleFrom(
+                                  foregroundColor: Colors.indigo.shade700,
+                                  padding: const EdgeInsets.symmetric(
+                                    horizontal: 10,
+                                  ),
+                                  minimumSize: const Size(0, 32),
+                                  tapTargetSize:
+                                      MaterialTapTargetSize.shrinkWrap,
+                                ),
+                                icon: const Icon(Icons.tune, size: 14),
+                                label: const Text(
+                                  "Cấu hình quyền",
+                                  style: TextStyle(
+                                    fontSize: 11,
+                                    fontWeight: FontWeight.bold,
+                                  ),
+                                ),
+                                onPressed: () => _showEditRoleDialog(r),
+                              ),
+                              if (!isSystemCore) ...[
+                                const SizedBox(width: 8),
+                                OutlinedButton.icon(
+                                  style: OutlinedButton.styleFrom(
+                                    foregroundColor: Colors.red.shade700,
+                                    padding: const EdgeInsets.symmetric(
+                                      horizontal: 8,
+                                    ),
+                                    minimumSize: const Size(0, 32),
+                                    tapTargetSize:
+                                        MaterialTapTargetSize.shrinkWrap,
+                                  ),
+                                  icon: const Icon(
+                                    Icons.delete_outline,
+                                    size: 14,
+                                  ),
+                                  label: const Text(
+                                    "Xóa",
+                                    style: TextStyle(
+                                      fontSize: 11,
+                                      fontWeight: FontWeight.bold,
+                                    ),
+                                  ),
+                                  onPressed: () => _showDeleteRoleDialog(r),
+                                ),
+                              ],
+                            ],
+                          ),
+                        ],
+                      ),
+                      const SizedBox(height: 12),
+                      const Divider(height: 1),
+                      const SizedBox(height: 10),
+                      Row(
+                        children: [
+                          Text(
+                            "Danh sách hành động chức năng được cấp (${permNames.length} quyền):",
+                            style: const TextStyle(
+                              fontWeight: FontWeight.bold,
+                              fontSize: 12,
+                              color: Colors.blueGrey,
+                            ),
+                          ),
+                        ],
+                      ),
+                      const SizedBox(height: 8),
+                      if (permNames.isEmpty)
+                        Text(
+                          "Chưa được cấp bất kỳ quyền nào. Bấm 'Cấu hình quyền' để thêm quyền chức năng.",
+                          style: TextStyle(
+                            fontSize: 12,
+                            color: Colors.red.shade400,
+                            fontStyle: FontStyle.italic,
+                          ),
+                        )
+                      else
+                        Wrap(
+                          spacing: 6,
+                          runSpacing: 6,
+                          children: List.generate(permNames.length, (pIdx) {
+                            final pName = permNames[pIdx];
+                            final pCode = pIdx < permCodes.length
+                                ? permCodes[pIdx]
+                                : '';
+
+                            Color chipBg = Colors.blue.shade50;
+                            Color chipBorder = Colors.blue.shade200;
+                            Color chipText = Colors.blue.shade900;
+
+                            if (pCode.startsWith('order:')) {
+                              chipBg = Colors.teal.shade50;
+                              chipBorder = Colors.teal.shade200;
+                              chipText = Colors.teal.shade900;
+                            } else if (pCode.startsWith('product:')) {
+                              chipBg = Colors.cyan.shade50;
+                              chipBorder = Colors.cyan.shade200;
+                              chipText = Colors.cyan.shade900;
+                            } else if (pCode.startsWith('vehicle:') ||
+                                pCode.startsWith('driver:')) {
+                              chipBg = Colors.blue.shade50;
+                              chipBorder = Colors.blue.shade200;
+                              chipText = Colors.blue.shade900;
+                            } else if (pCode.startsWith('fuel:') ||
+                                pCode.startsWith('gas_station:')) {
+                              chipBg = Colors.amber.shade50;
+                              chipBorder = Colors.amber.shade200;
+                              chipText = Colors.orange.shade900;
+                            } else if (pCode.startsWith('inspection:')) {
+                              chipBg = Colors.purple.shade50;
+                              chipBorder = Colors.purple.shade200;
+                              chipText = Colors.purple.shade900;
+                            } else if (pCode.startsWith('breakdown:') ||
+                                pCode.startsWith('maintenance:')) {
+                              chipBg = Colors.brown.shade50;
+                              chipBorder = Colors.brown.shade200;
+                              chipText = Colors.brown.shade900;
+                            } else if (pCode.startsWith('user:') ||
+                                pCode.startsWith('system:')) {
+                              chipBg = Colors.indigo.shade50;
+                              chipBorder = Colors.indigo.shade200;
+                              chipText = Colors.indigo.shade900;
+                            }
+
+                            return Container(
+                              padding: const EdgeInsets.symmetric(
+                                horizontal: 8,
+                                vertical: 4,
+                              ),
+                              decoration: BoxDecoration(
+                                color: chipBg,
+                                borderRadius: BorderRadius.circular(4),
+                                border: Border.all(color: chipBorder),
+                              ),
+                              child: Row(
+                                mainAxisSize: MainAxisSize.min,
+                                children: [
+                                  const Icon(
+                                    Icons.check_circle_outline,
+                                    size: 12,
+                                    color: Colors.green,
+                                  ),
+                                  const SizedBox(width: 4),
+                                  Text(
+                                    pName,
+                                    style: TextStyle(
+                                      color: chipText,
+                                      fontSize: 11,
+                                      fontWeight: FontWeight.w600,
+                                    ),
+                                  ),
+                                ],
+                              ),
+                            );
+                          }),
+                        ),
+                    ],
                   ),
-                ],
+                ),
               );
+            },
+          ),
+        ),
+      ],
+    );
   }
 
   // TAB 5: Cây dầu đối soát GPS & Nhiên liệu
@@ -1622,7 +2443,10 @@ class _DispatchSupervisorScreenState extends State<DispatchSupervisorScreen> {
         return Card(
           elevation: 0,
           margin: const EdgeInsets.only(bottom: 12),
-          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(4), side: BorderSide(color: Colors.grey.shade400, width: 1)),
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(4),
+            side: BorderSide(color: Colors.grey.shade400, width: 1),
+          ),
           child: Padding(
             padding: const EdgeInsets.all(14),
             child: Column(
@@ -1633,15 +2457,33 @@ class _DispatchSupervisorScreenState extends State<DispatchSupervisorScreen> {
                     const Icon(Icons.local_gas_station, color: Colors.orange),
                     const SizedBox(width: 8),
                     Expanded(
-                      child: Text(gs['name'] ?? 'Tên trạm cấp dầu', style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 14)),
+                      child: Text(
+                        gs['name'] ?? 'Tên trạm cấp dầu',
+                        style: const TextStyle(
+                          fontWeight: FontWeight.bold,
+                          fontSize: 14,
+                        ),
+                      ),
                     ),
                   ],
                 ),
                 const SizedBox(height: 6),
-                Text("Địa chỉ: ${gs['address']}", style: const TextStyle(fontSize: 12)),
+                Text(
+                  "Địa chỉ: ${gs['address']}",
+                  style: const TextStyle(fontSize: 12),
+                ),
                 const SizedBox(height: 4),
-                Text("Tọa độ GPS: Lat ${gs['lat']} - Lng ${gs['lng']}", style: const TextStyle(fontSize: 12, color: Colors.blueGrey)),
-                Text("Bán kính cho phép đối soát: ${gs['allowed_radius_meters']} mét (Kiểm tra lệch vị trí tự động)", style: const TextStyle(fontSize: 12, color: Colors.deepOrange)),
+                Text(
+                  "Tọa độ GPS: Lat ${gs['lat']} - Lng ${gs['lng']}",
+                  style: const TextStyle(fontSize: 12, color: Colors.blueGrey),
+                ),
+                Text(
+                  "Bán kính cho phép đối soát: ${gs['allowed_radius_meters']} mét (Kiểm tra lệch vị trí tự động)",
+                  style: const TextStyle(
+                    fontSize: 12,
+                    color: Colors.deepOrange,
+                  ),
+                ),
               ],
             ),
           ),
@@ -1660,16 +2502,27 @@ class _DispatchSupervisorScreenState extends State<DispatchSupervisorScreen> {
         return Card(
           elevation: 0,
           margin: const EdgeInsets.only(bottom: 12),
-          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(4), side: BorderSide(color: Colors.grey.shade400, width: 1)),
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(4),
+            side: BorderSide(color: Colors.grey.shade400, width: 1),
+          ),
           child: ListTile(
             leading: CircleAvatar(
               backgroundColor: Colors.amber.shade100,
               child: const Icon(Icons.category, color: Colors.deepOrange),
             ),
-            title: Text(p['name'] ?? 'Tên sản phẩm', style: const TextStyle(fontWeight: FontWeight.bold)),
-            subtitle: Text("Mã: ${p['code']} | Đơn vị tính: ${p['unit']}\nThời gian bơm chuẩn: ${p['standard_pump_time_minutes']} phút"),
+            title: Text(
+              p['name'] ?? 'Tên sản phẩm',
+              style: const TextStyle(fontWeight: FontWeight.bold),
+            ),
+            subtitle: Text(
+              "Mã: ${p['code']} | Đơn vị tính: ${p['unit']}\nThời gian bơm chuẩn: ${p['standard_pump_time_minutes']} phút",
+            ),
             trailing: p['requires_air_pump'] == true
-                ? const Chip(label: Text("Cần máy nén"), backgroundColor: Colors.amber)
+                ? const Chip(
+                    label: Text("Cần máy nén"),
+                    backgroundColor: Colors.amber,
+                  )
                 : const Chip(label: Text("Không nén khí")),
           ),
         );
@@ -1717,10 +2570,19 @@ class _DispatchSupervisorScreenState extends State<DispatchSupervisorScreen> {
     }
   }
 
-  Widget _buildMetricCard(String title, String value, IconData icon, Color color, {VoidCallback? onTap}) {
+  Widget _buildMetricCard(
+    String title,
+    String value,
+    IconData icon,
+    Color color, {
+    VoidCallback? onTap,
+  }) {
     return Card(
       elevation: 0,
-      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(4), side: BorderSide(color: Colors.grey.shade400, width: 1)),
+      shape: RoundedRectangleBorder(
+        borderRadius: BorderRadius.circular(4),
+        side: BorderSide(color: Colors.grey.shade400, width: 1),
+      ),
       child: InkWell(
         borderRadius: BorderRadius.circular(4),
         onTap: onTap,
@@ -1734,14 +2596,31 @@ class _DispatchSupervisorScreenState extends State<DispatchSupervisorScreen> {
                   Icon(icon, color: color, size: 20),
                   const SizedBox(width: 8),
                   Expanded(
-                    child: Text(title, style: const TextStyle(fontSize: 12, color: Colors.black54)),
+                    child: Text(
+                      title,
+                      style: const TextStyle(
+                        fontSize: 12,
+                        color: Colors.black54,
+                      ),
+                    ),
                   ),
                   if (onTap != null)
-                    Icon(Icons.chevron_right, size: 16, color: Colors.grey.shade500),
+                    Icon(
+                      Icons.chevron_right,
+                      size: 16,
+                      color: Colors.grey.shade500,
+                    ),
                 ],
               ),
               const SizedBox(height: 10),
-              Text(value, style: TextStyle(fontSize: 20, fontWeight: FontWeight.bold, color: color)),
+              Text(
+                value,
+                style: TextStyle(
+                  fontSize: 20,
+                  fontWeight: FontWeight.bold,
+                  color: color,
+                ),
+              ),
             ],
           ),
         ),
@@ -1754,8 +2633,11 @@ class _DispatchSupervisorScreenState extends State<DispatchSupervisorScreen> {
     // Nút Nhận ca chỉ dành riêng cho tài khoản có vai trò Điều phối viên (dispatcher)
     // Quản trị viên (admin) và Giám đốc (manager) chỉ được xem, tuyệt đối không hiển thị nút này
     final username = (state.currentUsername ?? '').trim().toLowerCase();
-    final userRoles = state.userRoles.map((r) => r.toString().toLowerCase()).toList();
-    final bool isDispatcher = userRoles.contains('dispatcher') &&
+    final userRoles = state.userRoles
+        .map((r) => r.toString().toLowerCase())
+        .toList();
+    final bool isDispatcher =
+        userRoles.contains('dispatcher') &&
         !userRoles.contains('admin') &&
         !userRoles.contains('manager') &&
         username != 'admin';
@@ -1790,7 +2672,11 @@ class _DispatchSupervisorScreenState extends State<DispatchSupervisorScreen> {
                           color: Colors.blue.shade50,
                           borderRadius: BorderRadius.circular(4),
                         ),
-                        child: Icon(Icons.headset_mic, color: Colors.blue.shade800, size: 20),
+                        child: Icon(
+                          Icons.headset_mic,
+                          color: Colors.blue.shade800,
+                          size: 20,
+                        ),
                       ),
                       const SizedBox(width: 10),
                       Expanded(
@@ -1799,11 +2685,17 @@ class _DispatchSupervisorScreenState extends State<DispatchSupervisorScreen> {
                           children: [
                             const Text(
                               "Điều phối viên Đang trực ca",
-                              style: TextStyle(fontWeight: FontWeight.bold, fontSize: 14),
+                              style: TextStyle(
+                                fontWeight: FontWeight.bold,
+                                fontSize: 14,
+                              ),
                             ),
                             Text(
                               "Hệ thống cho phép nhiều điều phối viên cùng nhận ca và đồng hành trực tuyến",
-                              style: TextStyle(fontSize: 11.5, color: Colors.grey.shade600),
+                              style: TextStyle(
+                                fontSize: 11.5,
+                                color: Colors.grey.shade600,
+                              ),
                             ),
                           ],
                         ),
@@ -1824,12 +2716,17 @@ class _DispatchSupervisorScreenState extends State<DispatchSupervisorScreen> {
                             elevation: 0,
                             minimumSize: const Size(0, 36),
                             padding: const EdgeInsets.symmetric(horizontal: 14),
-                            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(4)),
+                            shape: RoundedRectangleBorder(
+                              borderRadius: BorderRadius.circular(4),
+                            ),
                           ),
                           icon: const Icon(Icons.login, size: 16),
                           label: const Text(
                             "Nhận ca trực",
-                            style: TextStyle(fontSize: 12.5, fontWeight: FontWeight.bold),
+                            style: TextStyle(
+                              fontSize: 12.5,
+                              fontWeight: FontWeight.bold,
+                            ),
                           ),
                           onPressed: () => _handleCheckinShift(state),
                         )
@@ -1838,11 +2735,16 @@ class _DispatchSupervisorScreenState extends State<DispatchSupervisorScreen> {
                           mainAxisSize: MainAxisSize.min,
                           children: [
                             Container(
-                              padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                              padding: const EdgeInsets.symmetric(
+                                horizontal: 8,
+                                vertical: 4,
+                              ),
                               decoration: BoxDecoration(
                                 color: Colors.green.shade50,
                                 borderRadius: BorderRadius.circular(4),
-                                border: Border.all(color: Colors.green.shade300),
+                                border: Border.all(
+                                  color: Colors.green.shade300,
+                                ),
                               ),
                               child: Row(
                                 children: [
@@ -1872,13 +2774,20 @@ class _DispatchSupervisorScreenState extends State<DispatchSupervisorScreen> {
                                 foregroundColor: Colors.red.shade700,
                                 side: BorderSide(color: Colors.red.shade300),
                                 minimumSize: const Size(0, 34),
-                                padding: const EdgeInsets.symmetric(horizontal: 10),
-                                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(4)),
+                                padding: const EdgeInsets.symmetric(
+                                  horizontal: 10,
+                                ),
+                                shape: RoundedRectangleBorder(
+                                  borderRadius: BorderRadius.circular(4),
+                                ),
                               ),
                               icon: const Icon(Icons.logout, size: 15),
                               label: const Text(
                                 "Bàn giao / Hết ca",
-                                style: TextStyle(fontSize: 12, fontWeight: FontWeight.w600),
+                                style: TextStyle(
+                                  fontSize: 12,
+                                  fontWeight: FontWeight.w600,
+                                ),
                               ),
                               onPressed: () => _handleCheckoutShift(),
                             ),
@@ -1904,12 +2813,19 @@ class _DispatchSupervisorScreenState extends State<DispatchSupervisorScreen> {
                 child: Row(
                   mainAxisAlignment: MainAxisAlignment.center,
                   children: [
-                    Icon(Icons.info_outline, size: 18, color: Colors.blueGrey.shade400),
+                    Icon(
+                      Icons.info_outline,
+                      size: 18,
+                      color: Colors.blueGrey.shade400,
+                    ),
                     const SizedBox(width: 8),
                     Flexible(
                       child: Text(
                         "Chưa có điều phối viên nào nhận ca trong thời điểm hiện tại.",
-                        style: TextStyle(fontSize: 12.5, color: Colors.blueGrey.shade600),
+                        style: TextStyle(
+                          fontSize: 12.5,
+                          color: Colors.blueGrey.shade600,
+                        ),
                         textAlign: TextAlign.center,
                       ),
                     ),
@@ -1921,7 +2837,8 @@ class _DispatchSupervisorScreenState extends State<DispatchSupervisorScreen> {
                 spacing: 12,
                 runSpacing: 10,
                 children: _activeShifts.map((shift) {
-                  final fullName = shift['full_name'] ?? shift['username'] ?? 'Điều phối';
+                  final fullName =
+                      shift['full_name'] ?? shift['username'] ?? 'Điều phối';
                   final username = shift['username'] ?? '';
                   final phone = shift['phone'] ?? '';
                   final startedAtStr = shift['started_at']?.toString() ?? '';
@@ -1930,7 +2847,8 @@ class _DispatchSupervisorScreenState extends State<DispatchSupervisorScreen> {
                   String timeFormatted = '';
                   try {
                     final dt = DateTime.parse(startedAtStr).toLocal();
-                    timeFormatted = "${dt.hour.toString().padLeft(2, '0')}:${dt.minute.toString().padLeft(2, '0')} (${dt.day}/${dt.month})";
+                    timeFormatted =
+                        "${dt.hour.toString().padLeft(2, '0')}:${dt.minute.toString().padLeft(2, '0')} (${dt.day}/${dt.month})";
                   } catch (_) {
                     timeFormatted = startedAtStr;
                   }
@@ -1941,10 +2859,14 @@ class _DispatchSupervisorScreenState extends State<DispatchSupervisorScreen> {
                     constraints: const BoxConstraints(minWidth: 260),
                     padding: const EdgeInsets.all(10),
                     decoration: BoxDecoration(
-                      color: isMe ? Colors.blue.shade50.withOpacity(0.5) : Colors.white,
+                      color: isMe
+                          ? Colors.blue.shade50.withOpacity(0.5)
+                          : Colors.white,
                       borderRadius: BorderRadius.circular(4),
                       border: Border.all(
-                        color: isMe ? Colors.blue.shade300 : Colors.grey.shade300,
+                        color: isMe
+                            ? Colors.blue.shade300
+                            : Colors.grey.shade300,
                         width: isMe ? 1.5 : 1,
                       ),
                     ),
@@ -1968,14 +2890,21 @@ class _DispatchSupervisorScreenState extends State<DispatchSupervisorScreen> {
                                 if (isMe) ...[
                                   const SizedBox(width: 6),
                                   Container(
-                                    padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 1),
+                                    padding: const EdgeInsets.symmetric(
+                                      horizontal: 5,
+                                      vertical: 1,
+                                    ),
                                     decoration: BoxDecoration(
                                       color: Colors.blue.shade700,
                                       borderRadius: BorderRadius.circular(3),
                                     ),
                                     child: const Text(
                                       "Tôi",
-                                      style: TextStyle(color: Colors.white, fontSize: 10, fontWeight: FontWeight.bold),
+                                      style: TextStyle(
+                                        color: Colors.white,
+                                        fontSize: 10,
+                                        fontWeight: FontWeight.bold,
+                                      ),
                                     ),
                                   ),
                                 ],
@@ -1984,7 +2913,10 @@ class _DispatchSupervisorScreenState extends State<DispatchSupervisorScreen> {
                             const SizedBox(height: 2),
                             Text(
                               "@$username • $shiftName",
-                              style: TextStyle(fontSize: 11, color: Colors.blueGrey.shade700),
+                              style: TextStyle(
+                                fontSize: 11,
+                                color: Colors.blueGrey.shade700,
+                              ),
                             ),
                             const SizedBox(height: 2),
                             Row(
@@ -2000,11 +2932,21 @@ class _DispatchSupervisorScreenState extends State<DispatchSupervisorScreen> {
                                 const SizedBox(width: 4),
                                 Text(
                                   "Bắt đầu: $timeFormatted",
-                                  style: TextStyle(fontSize: 10.5, color: Colors.green.shade800, fontWeight: FontWeight.w600),
+                                  style: TextStyle(
+                                    fontSize: 10.5,
+                                    color: Colors.green.shade800,
+                                    fontWeight: FontWeight.w600,
+                                  ),
                                 ),
                                 if (phone.isNotEmpty) ...[
                                   const SizedBox(width: 8),
-                                  Text("• SĐT: $phone", style: TextStyle(fontSize: 10.5, color: Colors.grey.shade600)),
+                                  Text(
+                                    "• SĐT: $phone",
+                                    style: TextStyle(
+                                      fontSize: 10.5,
+                                      color: Colors.grey.shade600,
+                                    ),
+                                  ),
                                 ],
                               ],
                             ),
@@ -2034,7 +2976,10 @@ class _DispatchSupervisorScreenState extends State<DispatchSupervisorScreen> {
             children: [
               Icon(Icons.headset_mic, color: Colors.blue),
               SizedBox(width: 8),
-              Text("Nhận ca trực điều phối", style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16)),
+              Text(
+                "Nhận ca trực điều phối",
+                style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16),
+              ),
             ],
           ),
           content: SizedBox(
@@ -2048,32 +2993,53 @@ class _DispatchSupervisorScreenState extends State<DispatchSupervisorScreen> {
                   style: TextStyle(fontSize: 13, height: 1.4),
                 ),
                 const SizedBox(height: 16),
-                const Text("Chọn ca trực:", style: TextStyle(fontSize: 12, fontWeight: FontWeight.bold)),
+                const Text(
+                  "Chọn ca trực:",
+                  style: TextStyle(fontSize: 12, fontWeight: FontWeight.bold),
+                ),
                 const SizedBox(height: 6),
                 DropdownButtonFormField<String>(
                   value: selectedShift,
                   decoration: const InputDecoration(
                     border: OutlineInputBorder(),
-                    contentPadding: EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+                    contentPadding: EdgeInsets.symmetric(
+                      horizontal: 12,
+                      vertical: 10,
+                    ),
                   ),
                   items: const [
-                    DropdownMenuItem(value: 'Ca ngày', child: Text("Ca ngày (07:00 - 19:00)")),
-                    DropdownMenuItem(value: 'Ca đêm', child: Text("Ca đêm (19:00 - 07:00)")),
-                    DropdownMenuItem(value: 'Ca tăng cường', child: Text("Ca tăng cường / Giờ cao điểm")),
+                    DropdownMenuItem(
+                      value: 'Ca ngày',
+                      child: Text("Ca ngày (07:00 - 19:00)"),
+                    ),
+                    DropdownMenuItem(
+                      value: 'Ca đêm',
+                      child: Text("Ca đêm (19:00 - 07:00)"),
+                    ),
+                    DropdownMenuItem(
+                      value: 'Ca tăng cường',
+                      child: Text("Ca tăng cường / Giờ cao điểm"),
+                    ),
                   ],
                   onChanged: (val) {
                     if (val != null) setDialogState(() => selectedShift = val);
                   },
                 ),
                 const SizedBox(height: 12),
-                const Text("Ghi chú bắt đầu ca (nếu có):", style: TextStyle(fontSize: 12, fontWeight: FontWeight.bold)),
+                const Text(
+                  "Ghi chú bắt đầu ca (nếu có):",
+                  style: TextStyle(fontSize: 12, fontWeight: FontWeight.bold),
+                ),
                 const SizedBox(height: 6),
                 TextField(
                   controller: noteCtrl,
                   decoration: const InputDecoration(
                     hintText: "Nhập ghi chú hoặc dặn dò khi nhận ca...",
                     border: OutlineInputBorder(),
-                    contentPadding: EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+                    contentPadding: EdgeInsets.symmetric(
+                      horizontal: 12,
+                      vertical: 10,
+                    ),
                   ),
                   maxLines: 2,
                 ),
@@ -2089,7 +3055,9 @@ class _DispatchSupervisorScreenState extends State<DispatchSupervisorScreen> {
               style: ElevatedButton.styleFrom(
                 backgroundColor: Colors.blue.shade800,
                 foregroundColor: Colors.white,
-                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(4)),
+                shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(4),
+                ),
               ),
               onPressed: () => Navigator.of(dialogCtx).pop(true),
               child: const Text("Xác nhận Nhận ca"),
@@ -2111,7 +3079,11 @@ class _DispatchSupervisorScreenState extends State<DispatchSupervisorScreen> {
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
           backgroundColor: res['success'] == true ? Colors.green : Colors.red,
-          content: Text(res['success'] == true ? "Đã nhận ca trực thành công! Trạng thái đang làm việc đã được cập nhật." : "Lỗi: ${res['message']}"),
+          content: Text(
+            res['success'] == true
+                ? "Đã nhận ca trực thành công! Trạng thái đang làm việc đã được cập nhật."
+                : "Lỗi: ${res['message']}",
+          ),
         ),
       );
     }
@@ -2128,7 +3100,10 @@ class _DispatchSupervisorScreenState extends State<DispatchSupervisorScreen> {
           children: [
             Icon(Icons.assignment_turned_in, color: Colors.teal),
             SizedBox(width: 8),
-            Text("Bàn giao ca trực & Kết thúc", style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16)),
+            Text(
+              "Bàn giao ca trực & Kết thúc",
+              style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16),
+            ),
           ],
         ),
         content: SizedBox(
@@ -2142,14 +3117,21 @@ class _DispatchSupervisorScreenState extends State<DispatchSupervisorScreen> {
                 style: TextStyle(fontSize: 13, height: 1.4),
               ),
               const SizedBox(height: 12),
-              const Text("Nội dung bàn giao / Ghi chú ca sau:", style: TextStyle(fontSize: 12, fontWeight: FontWeight.bold)),
+              const Text(
+                "Nội dung bàn giao / Ghi chú ca sau:",
+                style: TextStyle(fontSize: 12, fontWeight: FontWeight.bold),
+              ),
               const SizedBox(height: 6),
               TextField(
                 controller: noteCtrl,
                 decoration: const InputDecoration(
-                  hintText: "Ghi chú đơn hàng cần chú ý, sự cố xe đang theo dõi...",
+                  hintText:
+                      "Ghi chú đơn hàng cần chú ý, sự cố xe đang theo dõi...",
                   border: OutlineInputBorder(),
-                  contentPadding: EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+                  contentPadding: EdgeInsets.symmetric(
+                    horizontal: 12,
+                    vertical: 10,
+                  ),
                 ),
                 maxLines: 3,
               ),
@@ -2165,7 +3147,9 @@ class _DispatchSupervisorScreenState extends State<DispatchSupervisorScreen> {
             style: ElevatedButton.styleFrom(
               backgroundColor: Colors.teal.shade700,
               foregroundColor: Colors.white,
-              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(4)),
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(4),
+              ),
             ),
             onPressed: () => Navigator.of(dialogCtx).pop(true),
             child: const Text("Xác nhận Bàn giao"),
@@ -2185,7 +3169,11 @@ class _DispatchSupervisorScreenState extends State<DispatchSupervisorScreen> {
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
           backgroundColor: res['success'] == true ? Colors.green : Colors.red,
-          content: Text(res['success'] == true ? "Đã bàn giao và kết thúc ca trực thành công!" : "Lỗi: ${res['message']}"),
+          content: Text(
+            res['success'] == true
+                ? "Đã bàn giao và kết thúc ca trực thành công!"
+                : "Lỗi: ${res['message']}",
+          ),
         ),
       );
     }
@@ -2195,9 +3183,14 @@ class _DispatchSupervisorScreenState extends State<DispatchSupervisorScreen> {
     showShiftHistoryDialog(context);
   }
 
-  static Future<void> showShiftHistoryDialog(BuildContext context, {Map<String, dynamic>? targetUser}) async {
+  static Future<void> showShiftHistoryDialog(
+    BuildContext context, {
+    Map<String, dynamic>? targetUser,
+  }) async {
     final int? filterUserId = targetUser?['id'] as int?;
-    final String? filterFullName = targetUser?['full_name'] as String? ?? targetUser?['username'] as String?;
+    final String? filterFullName =
+        targetUser?['full_name'] as String? ??
+        targetUser?['username'] as String?;
 
     DateTime? filterDate;
     int shiftCurrentPage = 1;
@@ -2212,7 +3205,9 @@ class _DispatchSupervisorScreenState extends State<DispatchSupervisorScreen> {
             return Dialog(
               elevation: 0,
               backgroundColor: Colors.white,
-              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(4)),
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(4),
+              ),
               child: Container(
                 width: 980,
                 height: 620,
@@ -2222,7 +3217,10 @@ class _DispatchSupervisorScreenState extends State<DispatchSupervisorScreen> {
                   borderRadius: BorderRadius.circular(4),
                 ),
                 child: FutureBuilder<List<dynamic>>(
-                  future: AdminService.fetchShiftHistory(userId: filterUserId, limit: 100),
+                  future: AdminService.fetchShiftHistory(
+                    userId: filterUserId,
+                    limit: 100,
+                  ),
                   builder: (context, snapshot) {
                     return Column(
                       crossAxisAlignment: CrossAxisAlignment.start,
@@ -2238,7 +3236,11 @@ class _DispatchSupervisorScreenState extends State<DispatchSupervisorScreen> {
                                     color: Colors.blue.shade50,
                                     borderRadius: BorderRadius.circular(4),
                                   ),
-                                  child: Icon(Icons.history, color: Colors.blue.shade800, size: 22),
+                                  child: Icon(
+                                    Icons.history,
+                                    color: Colors.blue.shade800,
+                                    size: 22,
+                                  ),
                                 ),
                                 const SizedBox(width: 12),
                                 Column(
@@ -2248,13 +3250,19 @@ class _DispatchSupervisorScreenState extends State<DispatchSupervisorScreen> {
                                       filterFullName != null
                                           ? "Nhật ký & Lịch sử ca trực - $filterFullName"
                                           : "Nhật ký & Lịch sử ca trực Điều phối viên",
-                                      style: const TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
+                                      style: const TextStyle(
+                                        fontSize: 16,
+                                        fontWeight: FontWeight.bold,
+                                      ),
                                     ),
                                     Text(
                                       filterFullName != null
                                           ? "Ghi nhận chi tiết thời gian nhận ca, kết thúc, bàn giao công việc của $filterFullName"
                                           : "Ghi nhận chi tiết thời gian nhận ca, kết thúc, bàn giao công việc của từng điều phối viên",
-                                      style: TextStyle(fontSize: 12, color: Colors.grey.shade600),
+                                      style: TextStyle(
+                                        fontSize: 12,
+                                        color: Colors.grey.shade600,
+                                      ),
                                     ),
                                   ],
                                 ),
@@ -2270,7 +3278,10 @@ class _DispatchSupervisorScreenState extends State<DispatchSupervisorScreen> {
                         // THANH BỘ LỌC THEO NGÀY THÁNG NĂM
                         Container(
                           margin: const EdgeInsets.only(top: 8, bottom: 12),
-                          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                          padding: const EdgeInsets.symmetric(
+                            horizontal: 12,
+                            vertical: 8,
+                          ),
                           decoration: BoxDecoration(
                             color: Colors.grey.shade50,
                             borderRadius: BorderRadius.circular(4),
@@ -2278,11 +3289,18 @@ class _DispatchSupervisorScreenState extends State<DispatchSupervisorScreen> {
                           ),
                           child: Row(
                             children: [
-                              Icon(Icons.filter_alt, size: 18, color: Colors.blue.shade800),
+                              Icon(
+                                Icons.filter_alt,
+                                size: 18,
+                                color: Colors.blue.shade800,
+                              ),
                               const SizedBox(width: 8),
                               const Text(
                                 "Lọc theo ngày:",
-                                style: TextStyle(fontWeight: FontWeight.bold, fontSize: 13),
+                                style: TextStyle(
+                                  fontWeight: FontWeight.bold,
+                                  fontSize: 13,
+                                ),
                               ),
                               const SizedBox(width: 10),
                               InkWell(
@@ -2305,16 +3323,29 @@ class _DispatchSupervisorScreenState extends State<DispatchSupervisorScreen> {
                                 },
                                 borderRadius: BorderRadius.circular(4),
                                 child: Container(
-                                  padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+                                  padding: const EdgeInsets.symmetric(
+                                    horizontal: 10,
+                                    vertical: 6,
+                                  ),
                                   decoration: BoxDecoration(
                                     color: Colors.white,
                                     borderRadius: BorderRadius.circular(4),
-                                    border: Border.all(color: filterDate != null ? Colors.blue.shade600 : Colors.grey.shade400),
+                                    border: Border.all(
+                                      color: filterDate != null
+                                          ? Colors.blue.shade600
+                                          : Colors.grey.shade400,
+                                    ),
                                   ),
                                   child: Row(
                                     mainAxisSize: MainAxisSize.min,
                                     children: [
-                                      Icon(Icons.calendar_today, size: 14, color: filterDate != null ? Colors.blue.shade800 : Colors.grey.shade700),
+                                      Icon(
+                                        Icons.calendar_today,
+                                        size: 14,
+                                        color: filterDate != null
+                                            ? Colors.blue.shade800
+                                            : Colors.grey.shade700,
+                                      ),
                                       const SizedBox(width: 6),
                                       Text(
                                         filterDate != null
@@ -2322,8 +3353,12 @@ class _DispatchSupervisorScreenState extends State<DispatchSupervisorScreen> {
                                             : "Tất cả các ngày",
                                         style: TextStyle(
                                           fontSize: 12.5,
-                                          fontWeight: filterDate != null ? FontWeight.bold : FontWeight.normal,
-                                          color: filterDate != null ? Colors.blue.shade900 : Colors.black87,
+                                          fontWeight: filterDate != null
+                                              ? FontWeight.bold
+                                              : FontWeight.normal,
+                                          color: filterDate != null
+                                              ? Colors.blue.shade900
+                                              : Colors.black87,
                                         ),
                                       ),
                                     ],
@@ -2334,12 +3369,26 @@ class _DispatchSupervisorScreenState extends State<DispatchSupervisorScreen> {
                                 const SizedBox(width: 8),
                                 TextButton.icon(
                                   style: TextButton.styleFrom(
-                                    padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                                    padding: const EdgeInsets.symmetric(
+                                      horizontal: 8,
+                                      vertical: 4,
+                                    ),
                                     minimumSize: Size.zero,
-                                    tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                                    tapTargetSize:
+                                        MaterialTapTargetSize.shrinkWrap,
                                   ),
-                                  icon: const Icon(Icons.clear, size: 15, color: Colors.red),
-                                  label: const Text("Xóa lọc ngày", style: TextStyle(fontSize: 12, color: Colors.red)),
+                                  icon: const Icon(
+                                    Icons.clear,
+                                    size: 15,
+                                    color: Colors.red,
+                                  ),
+                                  label: const Text(
+                                    "Xóa lọc ngày",
+                                    style: TextStyle(
+                                      fontSize: 12,
+                                      color: Colors.red,
+                                    ),
+                                  ),
                                   onPressed: () {
                                     setDialogState(() {
                                       filterDate = null;
@@ -2351,16 +3400,18 @@ class _DispatchSupervisorScreenState extends State<DispatchSupervisorScreen> {
                               const Spacer(),
                               Text(
                                 "Định dạng: Ngày/Tháng/Năm",
-                                style: TextStyle(fontSize: 11, color: Colors.grey.shade600, fontStyle: FontStyle.italic),
+                                style: TextStyle(
+                                  fontSize: 11,
+                                  color: Colors.grey.shade600,
+                                  fontStyle: FontStyle.italic,
+                                ),
                               ),
                             ],
                           ),
                         ),
                         if (snapshot.connectionState == ConnectionState.waiting)
                           const Expanded(
-                            child: Center(
-                              child: CircularProgressIndicator(),
-                            ),
+                            child: Center(child: CircularProgressIndicator()),
                           )
                         else if (snapshot.hasError)
                           Expanded(
@@ -2377,13 +3428,20 @@ class _DispatchSupervisorScreenState extends State<DispatchSupervisorScreen> {
                               child: Column(
                                 mainAxisAlignment: MainAxisAlignment.center,
                                 children: [
-                                  Icon(Icons.event_busy, size: 48, color: Colors.blueGrey.shade300),
+                                  Icon(
+                                    Icons.event_busy,
+                                    size: 48,
+                                    color: Colors.blueGrey.shade300,
+                                  ),
                                   const SizedBox(height: 12),
                                   Text(
                                     filterFullName != null
                                         ? "Điều phối viên $filterFullName chưa có lịch sử ca trực nào."
                                         : "Chưa có dữ liệu lịch sử ca trực nào được ghi nhận.",
-                                    style: TextStyle(fontSize: 14, color: Colors.blueGrey.shade600),
+                                    style: TextStyle(
+                                      fontSize: 14,
+                                      color: Colors.blueGrey.shade600,
+                                    ),
                                   ),
                                 ],
                               ),
@@ -2397,10 +3455,13 @@ class _DispatchSupervisorScreenState extends State<DispatchSupervisorScreen> {
                                 // Lọc theo ngày nếu có chọn filterDate
                                 final filteredShifts = allShifts.where((shift) {
                                   if (filterDate == null) return true;
-                                  final startedAtStr = shift['started_at']?.toString() ?? '';
+                                  final startedAtStr =
+                                      shift['started_at']?.toString() ?? '';
                                   if (startedAtStr.isEmpty) return false;
                                   try {
-                                    final dt = DateTime.parse(startedAtStr).toLocal();
+                                    final dt = DateTime.parse(
+                                      startedAtStr,
+                                    ).toLocal();
                                     return dt.year == filterDate!.year &&
                                         dt.month == filterDate!.month &&
                                         dt.day == filterDate!.day;
@@ -2414,31 +3475,58 @@ class _DispatchSupervisorScreenState extends State<DispatchSupervisorScreen> {
                                     width: double.infinity,
                                     decoration: BoxDecoration(
                                       color: Colors.white,
-                                      border: Border.all(color: Colors.grey.shade300),
+                                      border: Border.all(
+                                        color: Colors.grey.shade300,
+                                      ),
                                       borderRadius: BorderRadius.circular(4),
                                     ),
                                     child: Center(
                                       child: Column(
-                                        mainAxisAlignment: MainAxisAlignment.center,
+                                        mainAxisAlignment:
+                                            MainAxisAlignment.center,
                                         children: [
-                                          Icon(Icons.search_off, size: 48, color: Colors.blueGrey.shade300),
+                                          Icon(
+                                            Icons.search_off,
+                                            size: 48,
+                                            color: Colors.blueGrey.shade300,
+                                          ),
                                           const SizedBox(height: 12),
                                           Text(
                                             "Không tìm thấy ca trực nào trong ngày ${filterDate!.day.toString().padLeft(2, '0')}/${filterDate!.month.toString().padLeft(2, '0')}/${filterDate!.year}",
-                                            style: TextStyle(fontSize: 13.5, color: Colors.blueGrey.shade700),
+                                            style: TextStyle(
+                                              fontSize: 13.5,
+                                              color: Colors.blueGrey.shade700,
+                                            ),
                                           ),
                                           const SizedBox(height: 12),
                                           OutlinedButton.icon(
                                             style: OutlinedButton.styleFrom(
-                                              padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 10),
-                                              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(4)),
-                                              side: BorderSide(color: Colors.blue.shade600, width: 1.2),
-                                              foregroundColor: Colors.blue.shade800,
+                                              padding:
+                                                  const EdgeInsets.symmetric(
+                                                    horizontal: 18,
+                                                    vertical: 10,
+                                                  ),
+                                              shape: RoundedRectangleBorder(
+                                                borderRadius:
+                                                    BorderRadius.circular(4),
+                                              ),
+                                              side: BorderSide(
+                                                color: Colors.blue.shade600,
+                                                width: 1.2,
+                                              ),
+                                              foregroundColor:
+                                                  Colors.blue.shade800,
                                             ),
-                                            icon: const Icon(Icons.refresh, size: 16),
+                                            icon: const Icon(
+                                              Icons.refresh,
+                                              size: 16,
+                                            ),
                                             label: const Text(
                                               "Hiển thị tất cả",
-                                              style: TextStyle(fontSize: 13.5, fontWeight: FontWeight.w600),
+                                              style: TextStyle(
+                                                fontSize: 13.5,
+                                                fontWeight: FontWeight.w600,
+                                              ),
                                             ),
                                             onPressed: () {
                                               setDialogState(() {
@@ -2454,11 +3542,23 @@ class _DispatchSupervisorScreenState extends State<DispatchSupervisorScreen> {
                                 }
 
                                 final totalItems = filteredShifts.length;
-                                final totalPages = (totalItems / shiftPageSize).ceil();
-                                final validPage = shiftCurrentPage > totalPages ? totalPages : (shiftCurrentPage < 1 ? 1 : shiftCurrentPage);
-                                final startIndex = (validPage - 1) * shiftPageSize;
-                                final endIndex = (startIndex + shiftPageSize > totalItems) ? totalItems : startIndex + shiftPageSize;
-                                final pagedShifts = filteredShifts.sublist(startIndex, endIndex);
+                                final totalPages = (totalItems / shiftPageSize)
+                                    .ceil();
+                                final validPage = shiftCurrentPage > totalPages
+                                    ? totalPages
+                                    : (shiftCurrentPage < 1
+                                          ? 1
+                                          : shiftCurrentPage);
+                                final startIndex =
+                                    (validPage - 1) * shiftPageSize;
+                                final endIndex =
+                                    (startIndex + shiftPageSize > totalItems)
+                                    ? totalItems
+                                    : startIndex + shiftPageSize;
+                                final pagedShifts = filteredShifts.sublist(
+                                  startIndex,
+                                  endIndex,
+                                );
 
                                 return Column(
                                   children: [
@@ -2466,31 +3566,64 @@ class _DispatchSupervisorScreenState extends State<DispatchSupervisorScreen> {
                                       child: Container(
                                         decoration: BoxDecoration(
                                           color: Colors.white,
-                                          border: Border.all(color: Colors.grey.shade300),
-                                          borderRadius: const BorderRadius.vertical(top: Radius.circular(4)),
+                                          border: Border.all(
+                                            color: Colors.grey.shade300,
+                                          ),
+                                          borderRadius:
+                                              const BorderRadius.vertical(
+                                                top: Radius.circular(4),
+                                              ),
                                         ),
                                         child: ClipRRect(
-                                          borderRadius: const BorderRadius.vertical(top: Radius.circular(4)),
+                                          borderRadius:
+                                              const BorderRadius.vertical(
+                                                top: Radius.circular(4),
+                                              ),
                                           child: ListView.separated(
                                             itemCount: pagedShifts.length,
-                                            separatorBuilder: (_, __) => Divider(height: 1, color: Colors.grey.shade200),
+                                            separatorBuilder: (_, __) =>
+                                                Divider(
+                                                  height: 1,
+                                                  color: Colors.grey.shade200,
+                                                ),
                                             itemBuilder: (context, index) {
                                               final shift = pagedShifts[index];
-                                              final shiftName = shift['shift_name'] ?? 'Ca ngày';
-                                              final status = shift['status'] ?? 'active';
-                                              final isActive = status == 'active';
-                                              final note = shift['note']?.toString() ?? '';
-                                              final handoverNote = shift['handover_note']?.toString() ?? '';
-                                              final durationHours = shift['duration_hours']?.toString() ?? '';
+                                              final shiftName =
+                                                  shift['shift_name'] ??
+                                                  'Ca ngày';
+                                              final status =
+                                                  shift['status'] ?? 'active';
+                                              final isActive =
+                                                  status == 'active';
+                                              final note =
+                                                  shift['note']?.toString() ??
+                                                  '';
+                                              final handoverNote =
+                                                  shift['handover_note']
+                                                      ?.toString() ??
+                                                  '';
+                                              final durationHours =
+                                                  shift['duration_hours']
+                                                      ?.toString() ??
+                                                  '';
 
-                                              final startedAtStr = shift['started_at']?.toString() ?? '';
-                                              final endedAtStr = shift['ended_at']?.toString() ?? '';
+                                              final startedAtStr =
+                                                  shift['started_at']
+                                                      ?.toString() ??
+                                                  '';
+                                              final endedAtStr =
+                                                  shift['ended_at']
+                                                      ?.toString() ??
+                                                  '';
 
                                               String startFmt = '-';
                                               if (startedAtStr.isNotEmpty) {
                                                 try {
-                                                  final dt = DateTime.parse(startedAtStr).toLocal();
-                                                  startFmt = "${dt.hour.toString().padLeft(2, '0')}:${dt.minute.toString().padLeft(2, '0')} (${dt.day.toString().padLeft(2, '0')}/${dt.month.toString().padLeft(2, '0')}/${dt.year})";
+                                                  final dt = DateTime.parse(
+                                                    startedAtStr,
+                                                  ).toLocal();
+                                                  startFmt =
+                                                      "${dt.hour.toString().padLeft(2, '0')}:${dt.minute.toString().padLeft(2, '0')} (${dt.day.toString().padLeft(2, '0')}/${dt.month.toString().padLeft(2, '0')}/${dt.year})";
                                                 } catch (_) {
                                                   startFmt = startedAtStr;
                                                 }
@@ -2499,30 +3632,60 @@ class _DispatchSupervisorScreenState extends State<DispatchSupervisorScreen> {
                                               String endFmt = 'Đang trực';
                                               if (endedAtStr.isNotEmpty) {
                                                 try {
-                                                  final dt = DateTime.parse(endedAtStr).toLocal();
-                                                  endFmt = "${dt.hour.toString().padLeft(2, '0')}:${dt.minute.toString().padLeft(2, '0')} (${dt.day.toString().padLeft(2, '0')}/${dt.month.toString().padLeft(2, '0')}/${dt.year})";
+                                                  final dt = DateTime.parse(
+                                                    endedAtStr,
+                                                  ).toLocal();
+                                                  endFmt =
+                                                      "${dt.hour.toString().padLeft(2, '0')}:${dt.minute.toString().padLeft(2, '0')} (${dt.day.toString().padLeft(2, '0')}/${dt.month.toString().padLeft(2, '0')}/${dt.year})";
                                                 } catch (_) {
                                                   endFmt = endedAtStr;
                                                 }
                                               }
 
                                               return Container(
-                                                color: isActive ? Colors.blue.shade50.withOpacity(0.3) : Colors.white,
-                                                padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+                                                color: isActive
+                                                    ? Colors.blue.shade50
+                                                          .withOpacity(0.3)
+                                                    : Colors.white,
+                                                padding:
+                                                    const EdgeInsets.symmetric(
+                                                      horizontal: 16,
+                                                      vertical: 12,
+                                                    ),
                                                 child: Row(
-                                                  crossAxisAlignment: CrossAxisAlignment.center,
+                                                  crossAxisAlignment:
+                                                      CrossAxisAlignment.center,
                                                   children: [
                                                     // Thông tin ca trực (đã bỏ avatar, tên đầy đủ và username theo yêu cầu)
                                                     Container(
-                                                      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                                                      padding:
+                                                          const EdgeInsets.symmetric(
+                                                            horizontal: 10,
+                                                            vertical: 4,
+                                                          ),
                                                       decoration: BoxDecoration(
-                                                        color: Colors.blue.shade50,
-                                                        borderRadius: BorderRadius.circular(4),
-                                                        border: Border.all(color: Colors.blue.shade200),
+                                                        color:
+                                                            Colors.blue.shade50,
+                                                        borderRadius:
+                                                            BorderRadius.circular(
+                                                              4,
+                                                            ),
+                                                        border: Border.all(
+                                                          color: Colors
+                                                              .blue
+                                                              .shade200,
+                                                        ),
                                                       ),
                                                       child: Text(
                                                         shiftName,
-                                                        style: TextStyle(fontSize: 12, fontWeight: FontWeight.bold, color: Colors.blue.shade900),
+                                                        style: TextStyle(
+                                                          fontSize: 12,
+                                                          fontWeight:
+                                                              FontWeight.bold,
+                                                          color: Colors
+                                                              .blue
+                                                              .shade900,
+                                                        ),
                                                       ),
                                                     ),
                                                     const SizedBox(width: 12),
@@ -2531,14 +3694,28 @@ class _DispatchSupervisorScreenState extends State<DispatchSupervisorScreen> {
                                                       width: 175,
                                                       child: Row(
                                                         children: [
-                                                          Icon(Icons.login, size: 14, color: Colors.green.shade700),
-                                                          const SizedBox(width: 6),
+                                                          Icon(
+                                                            Icons.login,
+                                                            size: 14,
+                                                            color: Colors
+                                                                .green
+                                                                .shade700,
+                                                          ),
+                                                          const SizedBox(
+                                                            width: 6,
+                                                          ),
                                                           Expanded(
                                                             child: Text(
                                                               "Bắt đầu: $startFmt",
-                                                              style: const TextStyle(fontSize: 12),
+                                                              style:
+                                                                  const TextStyle(
+                                                                    fontSize:
+                                                                        12,
+                                                                  ),
                                                               maxLines: 1,
-                                                              overflow: TextOverflow.ellipsis,
+                                                              overflow:
+                                                                  TextOverflow
+                                                                      .ellipsis,
                                                             ),
                                                           ),
                                                         ],
@@ -2550,18 +3727,42 @@ class _DispatchSupervisorScreenState extends State<DispatchSupervisorScreen> {
                                                       width: 175,
                                                       child: Row(
                                                         children: [
-                                                          Icon(Icons.logout, size: 14, color: isActive ? Colors.orange.shade700 : Colors.blueGrey.shade700),
-                                                          const SizedBox(width: 6),
+                                                          Icon(
+                                                            Icons.logout,
+                                                            size: 14,
+                                                            color: isActive
+                                                                ? Colors
+                                                                      .orange
+                                                                      .shade700
+                                                                : Colors
+                                                                      .blueGrey
+                                                                      .shade700,
+                                                          ),
+                                                          const SizedBox(
+                                                            width: 6,
+                                                          ),
                                                           Expanded(
                                                             child: Text(
                                                               "Kết thúc: $endFmt",
                                                               style: TextStyle(
                                                                 fontSize: 12,
-                                                                color: isActive ? Colors.green.shade800 : Colors.black87,
-                                                                fontWeight: isActive ? FontWeight.bold : FontWeight.normal,
+                                                                color: isActive
+                                                                    ? Colors
+                                                                          .green
+                                                                          .shade800
+                                                                    : Colors
+                                                                          .black87,
+                                                                fontWeight:
+                                                                    isActive
+                                                                    ? FontWeight
+                                                                          .bold
+                                                                    : FontWeight
+                                                                          .normal,
                                                               ),
                                                               maxLines: 1,
-                                                              overflow: TextOverflow.ellipsis,
+                                                              overflow:
+                                                                  TextOverflow
+                                                                      .ellipsis,
                                                             ),
                                                           ),
                                                         ],
@@ -2572,14 +3773,20 @@ class _DispatchSupervisorScreenState extends State<DispatchSupervisorScreen> {
                                                     SizedBox(
                                                       width: 130,
                                                       child: Text(
-                                                        durationHours.isNotEmpty ? "Thời lượng: $durationHours giờ" : "-",
+                                                        durationHours.isNotEmpty
+                                                            ? "Thời lượng: $durationHours giờ"
+                                                            : "-",
                                                         style: TextStyle(
                                                           fontSize: 11.5,
-                                                          color: Colors.blueGrey.shade700,
-                                                          fontStyle: FontStyle.italic,
+                                                          color: Colors
+                                                              .blueGrey
+                                                              .shade700,
+                                                          fontStyle:
+                                                              FontStyle.italic,
                                                         ),
                                                         maxLines: 1,
-                                                        overflow: TextOverflow.ellipsis,
+                                                        overflow: TextOverflow
+                                                            .ellipsis,
                                                       ),
                                                     ),
                                                     const SizedBox(width: 12),
@@ -2587,28 +3794,62 @@ class _DispatchSupervisorScreenState extends State<DispatchSupervisorScreen> {
                                                     Expanded(
                                                       flex: 4,
                                                       child: Column(
-                                                        crossAxisAlignment: CrossAxisAlignment.start,
+                                                        crossAxisAlignment:
+                                                            CrossAxisAlignment
+                                                                .start,
                                                         children: [
                                                           if (note.isNotEmpty)
                                                             Text(
                                                               "Ghi chú nhận ca: $note",
-                                                              style: const TextStyle(fontSize: 11.5, color: Colors.black87),
+                                                              style:
+                                                                  const TextStyle(
+                                                                    fontSize:
+                                                                        11.5,
+                                                                    color: Colors
+                                                                        .black87,
+                                                                  ),
                                                               maxLines: 2,
-                                                              overflow: TextOverflow.ellipsis,
+                                                              overflow:
+                                                                  TextOverflow
+                                                                      .ellipsis,
                                                             ),
-                                                          if (handoverNote.isNotEmpty) ...[
-                                                            if (note.isNotEmpty) const SizedBox(height: 4),
+                                                          if (handoverNote
+                                                              .isNotEmpty) ...[
+                                                            if (note.isNotEmpty)
+                                                              const SizedBox(
+                                                                height: 4,
+                                                              ),
                                                             Text(
                                                               "Bàn giao ca sau: $handoverNote",
-                                                              style: TextStyle(fontSize: 11.5, color: Colors.teal.shade900, fontWeight: FontWeight.w600),
+                                                              style: TextStyle(
+                                                                fontSize: 11.5,
+                                                                color: Colors
+                                                                    .teal
+                                                                    .shade900,
+                                                                fontWeight:
+                                                                    FontWeight
+                                                                        .w600,
+                                                              ),
                                                               maxLines: 2,
-                                                              overflow: TextOverflow.ellipsis,
+                                                              overflow:
+                                                                  TextOverflow
+                                                                      .ellipsis,
                                                             ),
                                                           ],
-                                                          if (note.isEmpty && handoverNote.isEmpty)
+                                                          if (note.isEmpty &&
+                                                              handoverNote
+                                                                  .isEmpty)
                                                             Text(
                                                               "Không có ghi chú",
-                                                              style: TextStyle(fontSize: 11, color: Colors.grey.shade500, fontStyle: FontStyle.italic),
+                                                              style: TextStyle(
+                                                                fontSize: 11,
+                                                                color: Colors
+                                                                    .grey
+                                                                    .shade500,
+                                                                fontStyle:
+                                                                    FontStyle
+                                                                        .italic,
+                                                              ),
                                                             ),
                                                         ],
                                                       ),
@@ -2616,18 +3857,48 @@ class _DispatchSupervisorScreenState extends State<DispatchSupervisorScreen> {
                                                     const SizedBox(width: 12),
                                                     // Cột 6: Tag trạng thái ca
                                                     Container(
-                                                      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
+                                                      padding:
+                                                          const EdgeInsets.symmetric(
+                                                            horizontal: 10,
+                                                            vertical: 5,
+                                                          ),
                                                       decoration: BoxDecoration(
-                                                        color: isActive ? Colors.green.shade50 : Colors.grey.shade100,
-                                                        borderRadius: BorderRadius.circular(4),
-                                                        border: Border.all(color: isActive ? Colors.green.shade400 : Colors.grey.shade400),
+                                                        color: isActive
+                                                            ? Colors
+                                                                  .green
+                                                                  .shade50
+                                                            : Colors
+                                                                  .grey
+                                                                  .shade100,
+                                                        borderRadius:
+                                                            BorderRadius.circular(
+                                                              4,
+                                                            ),
+                                                        border: Border.all(
+                                                          color: isActive
+                                                              ? Colors
+                                                                    .green
+                                                                    .shade400
+                                                              : Colors
+                                                                    .grey
+                                                                    .shade400,
+                                                        ),
                                                       ),
                                                       child: Text(
-                                                        isActive ? "Đang trực" : "Đã hoàn thành",
+                                                        isActive
+                                                            ? "Đang trực"
+                                                            : "Đã hoàn thành",
                                                         style: TextStyle(
                                                           fontSize: 11,
-                                                          fontWeight: FontWeight.bold,
-                                                          color: isActive ? Colors.green.shade800 : Colors.grey.shade700,
+                                                          fontWeight:
+                                                              FontWeight.bold,
+                                                          color: isActive
+                                                              ? Colors
+                                                                    .green
+                                                                    .shade800
+                                                              : Colors
+                                                                    .grey
+                                                                    .shade700,
                                                         ),
                                                       ),
                                                     ),
@@ -2642,37 +3913,78 @@ class _DispatchSupervisorScreenState extends State<DispatchSupervisorScreen> {
                                     // THANH PHÂN TRANG CHO CA TRỰC
                                     Container(
                                       height: 40,
-                                      padding: const EdgeInsets.symmetric(horizontal: 16),
+                                      padding: const EdgeInsets.symmetric(
+                                        horizontal: 16,
+                                      ),
                                       decoration: BoxDecoration(
                                         color: Colors.white,
                                         border: Border(
-                                          left: BorderSide(color: Colors.grey.shade300, width: 1),
-                                          right: BorderSide(color: Colors.grey.shade300, width: 1),
-                                          bottom: BorderSide(color: Colors.grey.shade300, width: 1),
+                                          left: BorderSide(
+                                            color: Colors.grey.shade300,
+                                            width: 1,
+                                          ),
+                                          right: BorderSide(
+                                            color: Colors.grey.shade300,
+                                            width: 1,
+                                          ),
+                                          bottom: BorderSide(
+                                            color: Colors.grey.shade300,
+                                            width: 1,
+                                          ),
                                         ),
-                                        borderRadius: const BorderRadius.vertical(bottom: Radius.circular(4)),
+                                        borderRadius:
+                                            const BorderRadius.vertical(
+                                              bottom: Radius.circular(4),
+                                            ),
                                       ),
                                       child: Row(
-                                        mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                                        mainAxisAlignment:
+                                            MainAxisAlignment.spaceBetween,
                                         children: [
                                           Text(
                                             "Hiển thị ${startIndex + 1} - ${endIndex} trên tổng số ${totalItems} ca trực",
-                                            style: TextStyle(fontSize: 12, color: Colors.grey.shade700, fontWeight: FontWeight.w500),
+                                            style: TextStyle(
+                                              fontSize: 12,
+                                              color: Colors.grey.shade700,
+                                              fontWeight: FontWeight.w500,
+                                            ),
                                           ),
                                           Row(
                                             children: [
-                                              const Text("Số dòng/trang: ", style: TextStyle(fontSize: 12, color: Colors.black87)),
+                                              const Text(
+                                                "Số dòng/trang: ",
+                                                style: TextStyle(
+                                                  fontSize: 12,
+                                                  color: Colors.black87,
+                                                ),
+                                              ),
                                               const SizedBox(width: 4),
                                               DropdownButton<int>(
                                                 value: shiftPageSize,
                                                 underline: const SizedBox(),
                                                 isDense: true,
-                                                style: const TextStyle(fontSize: 12, color: Colors.blueGrey, fontWeight: FontWeight.bold),
+                                                style: const TextStyle(
+                                                  fontSize: 12,
+                                                  color: Colors.blueGrey,
+                                                  fontWeight: FontWeight.bold,
+                                                ),
                                                 items: const [
-                                                  DropdownMenuItem(value: 5, child: Text("5")),
-                                                  DropdownMenuItem(value: 10, child: Text("10")),
-                                                  DropdownMenuItem(value: 20, child: Text("20")),
-                                                  DropdownMenuItem(value: 50, child: Text("50")),
+                                                  DropdownMenuItem(
+                                                    value: 5,
+                                                    child: Text("5"),
+                                                  ),
+                                                  DropdownMenuItem(
+                                                    value: 10,
+                                                    child: Text("10"),
+                                                  ),
+                                                  DropdownMenuItem(
+                                                    value: 20,
+                                                    child: Text("20"),
+                                                  ),
+                                                  DropdownMenuItem(
+                                                    value: 50,
+                                                    child: Text("50"),
+                                                  ),
                                                 ],
                                                 onChanged: (val) {
                                                   if (val != null) {
@@ -2685,50 +3997,111 @@ class _DispatchSupervisorScreenState extends State<DispatchSupervisorScreen> {
                                               ),
                                               const SizedBox(width: 12),
                                               IconButton(
-                                                icon: const Icon(Icons.first_page, size: 18),
+                                                icon: const Icon(
+                                                  Icons.first_page,
+                                                  size: 18,
+                                                ),
                                                 tooltip: "Trang đầu",
                                                 padding: EdgeInsets.zero,
-                                                constraints: const BoxConstraints(minWidth: 28, minHeight: 28),
+                                                constraints:
+                                                    const BoxConstraints(
+                                                      minWidth: 28,
+                                                      minHeight: 28,
+                                                    ),
                                                 splashRadius: 16,
-                                                onPressed: validPage > 1 ? () => setDialogState(() => shiftCurrentPage = 1) : null,
+                                                onPressed: validPage > 1
+                                                    ? () => setDialogState(
+                                                        () => shiftCurrentPage =
+                                                            1,
+                                                      )
+                                                    : null,
                                               ),
                                               IconButton(
-                                                icon: const Icon(Icons.chevron_left, size: 18),
+                                                icon: const Icon(
+                                                  Icons.chevron_left,
+                                                  size: 18,
+                                                ),
                                                 tooltip: "Trang trước",
                                                 padding: EdgeInsets.zero,
-                                                constraints: const BoxConstraints(minWidth: 28, minHeight: 28),
+                                                constraints:
+                                                    const BoxConstraints(
+                                                      minWidth: 28,
+                                                      minHeight: 28,
+                                                    ),
                                                 splashRadius: 16,
-                                                onPressed: validPage > 1 ? () => setDialogState(() => shiftCurrentPage = validPage - 1) : null,
+                                                onPressed: validPage > 1
+                                                    ? () => setDialogState(
+                                                        () => shiftCurrentPage =
+                                                            validPage - 1,
+                                                      )
+                                                    : null,
                                               ),
                                               const SizedBox(width: 4),
                                               Container(
-                                                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+                                                padding:
+                                                    const EdgeInsets.symmetric(
+                                                      horizontal: 8,
+                                                      vertical: 3,
+                                                    ),
                                                 decoration: BoxDecoration(
                                                   color: Colors.blue.shade50,
-                                                  borderRadius: BorderRadius.circular(4),
-                                                  border: Border.all(color: Colors.blue.shade200),
+                                                  borderRadius:
+                                                      BorderRadius.circular(4),
+                                                  border: Border.all(
+                                                    color: Colors.blue.shade200,
+                                                  ),
                                                 ),
                                                 child: Text(
                                                   "Trang $validPage / $totalPages",
-                                                  style: TextStyle(fontSize: 11, fontWeight: FontWeight.bold, color: Colors.blue.shade800),
+                                                  style: TextStyle(
+                                                    fontSize: 11,
+                                                    fontWeight: FontWeight.bold,
+                                                    color: Colors.blue.shade800,
+                                                  ),
                                                 ),
                                               ),
                                               const SizedBox(width: 4),
                                               IconButton(
-                                                icon: const Icon(Icons.chevron_right, size: 18),
+                                                icon: const Icon(
+                                                  Icons.chevron_right,
+                                                  size: 18,
+                                                ),
                                                 tooltip: "Trang sau",
                                                 padding: EdgeInsets.zero,
-                                                constraints: const BoxConstraints(minWidth: 28, minHeight: 28),
+                                                constraints:
+                                                    const BoxConstraints(
+                                                      minWidth: 28,
+                                                      minHeight: 28,
+                                                    ),
                                                 splashRadius: 16,
-                                                onPressed: validPage < totalPages ? () => setDialogState(() => shiftCurrentPage = validPage + 1) : null,
+                                                onPressed:
+                                                    validPage < totalPages
+                                                    ? () => setDialogState(
+                                                        () => shiftCurrentPage =
+                                                            validPage + 1,
+                                                      )
+                                                    : null,
                                               ),
                                               IconButton(
-                                                icon: const Icon(Icons.last_page, size: 18),
+                                                icon: const Icon(
+                                                  Icons.last_page,
+                                                  size: 18,
+                                                ),
                                                 tooltip: "Trang cuối",
                                                 padding: EdgeInsets.zero,
-                                                constraints: const BoxConstraints(minWidth: 28, minHeight: 28),
+                                                constraints:
+                                                    const BoxConstraints(
+                                                      minWidth: 28,
+                                                      minHeight: 28,
+                                                    ),
                                                 splashRadius: 16,
-                                                onPressed: validPage < totalPages ? () => setDialogState(() => shiftCurrentPage = totalPages) : null,
+                                                onPressed:
+                                                    validPage < totalPages
+                                                    ? () => setDialogState(
+                                                        () => shiftCurrentPage =
+                                                            totalPages,
+                                                      )
+                                                    : null,
                                               ),
                                             ],
                                           ),
@@ -2746,7 +4119,9 @@ class _DispatchSupervisorScreenState extends State<DispatchSupervisorScreen> {
                           children: [
                             OutlinedButton(
                               style: OutlinedButton.styleFrom(
-                                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(4)),
+                                shape: RoundedRectangleBorder(
+                                  borderRadius: BorderRadius.circular(4),
+                                ),
                               ),
                               onPressed: () => Navigator.of(dialogCtx).pop(),
                               child: const Text("Đóng"),
@@ -2779,7 +4154,10 @@ class _DispatchSupervisorScreenState extends State<DispatchSupervisorScreen> {
       final selectedPath = res.stdout.toString().trim();
       if (selectedPath.isNotEmpty && File(selectedPath).existsSync()) {
         ScaffoldMessenger.of(ctx).showSnackBar(
-          const SnackBar(content: Text("Đang tải ảnh lên máy chủ..."), duration: Duration(seconds: 1)),
+          const SnackBar(
+            content: Text("Đang tải ảnh lên máy chủ..."),
+            duration: Duration(seconds: 1),
+          ),
         );
         final uploadRes = await AdminService.uploadImage(selectedPath);
         if (uploadRes['success'] == true) {
@@ -2788,13 +4166,19 @@ class _DispatchSupervisorScreenState extends State<DispatchSupervisorScreen> {
           });
           if (mounted) {
             ScaffoldMessenger.of(ctx).showSnackBar(
-              SnackBar(backgroundColor: Colors.green, content: Text("Tải ảnh thành công: ${uploadRes['filename']}")),
+              SnackBar(
+                backgroundColor: Colors.green,
+                content: Text("Tải ảnh thành công: ${uploadRes['filename']}"),
+              ),
             );
           }
         } else {
           if (mounted) {
             ScaffoldMessenger.of(ctx).showSnackBar(
-              SnackBar(backgroundColor: Colors.red, content: Text("Lỗi: ${uploadRes['message']}")),
+              SnackBar(
+                backgroundColor: Colors.red,
+                content: Text("Lỗi: ${uploadRes['message']}"),
+              ),
             );
           }
         }
@@ -2802,7 +4186,10 @@ class _DispatchSupervisorScreenState extends State<DispatchSupervisorScreen> {
     } catch (e) {
       if (mounted) {
         ScaffoldMessenger.of(ctx).showSnackBar(
-          SnackBar(backgroundColor: Colors.red, content: Text("Không thể mở trình chọn ảnh: $e")),
+          SnackBar(
+            backgroundColor: Colors.red,
+            content: Text("Không thể mở trình chọn ảnh: $e"),
+          ),
         );
       }
     }
@@ -2830,9 +4217,16 @@ class _DispatchSupervisorScreenState extends State<DispatchSupervisorScreen> {
                   decoration: InputDecoration(
                     labelText: label,
                     prefixIcon: Icon(icon, size: 18),
-                    prefixIconConstraints: const BoxConstraints(minWidth: 36, minHeight: 38, maxHeight: 38),
+                    prefixIconConstraints: const BoxConstraints(
+                      minWidth: 36,
+                      minHeight: 38,
+                      maxHeight: 38,
+                    ),
                     hintText: "Chọn tệp từ máy hoặc nhập URL",
-                    contentPadding: const EdgeInsets.symmetric(horizontal: 10, vertical: 0),
+                    contentPadding: const EdgeInsets.symmetric(
+                      horizontal: 10,
+                      vertical: 0,
+                    ),
                   ),
                 ),
               ),
@@ -2847,10 +4241,15 @@ class _DispatchSupervisorScreenState extends State<DispatchSupervisorScreen> {
                   minimumSize: Size.zero,
                   padding: const EdgeInsets.symmetric(horizontal: 12),
                   tapTargetSize: MaterialTapTargetSize.shrinkWrap,
-                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(4)),
+                  shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(4),
+                  ),
                 ),
                 icon: const Icon(Icons.cloud_upload_outlined, size: 16),
-                label: const Text("Chọn & Tải lên", style: TextStyle(fontSize: 12, fontWeight: FontWeight.w600)),
+                label: const Text(
+                  "Chọn & Tải lên",
+                  style: TextStyle(fontSize: 12, fontWeight: FontWeight.w600),
+                ),
                 onPressed: () => _pickAndUploadImage(
                   controller: controller,
                   setDialogState: setDialogState,
@@ -2876,7 +4275,11 @@ class _DispatchSupervisorScreenState extends State<DispatchSupervisorScreen> {
                 const SizedBox(width: 6),
                 Text(
                   "Đã lưu trên máy chủ: ${controller.text}",
-                  style: TextStyle(color: Colors.green.shade800, fontSize: 11, fontWeight: FontWeight.w600),
+                  style: TextStyle(
+                    color: Colors.green.shade800,
+                    fontSize: 11,
+                    fontWeight: FontWeight.w600,
+                  ),
                 ),
               ],
             ),
@@ -2912,7 +4315,10 @@ class _DispatchSupervisorScreenState extends State<DispatchSupervisorScreen> {
             children: [
               Icon(Icons.person_add, color: Colors.blue),
               SizedBox(width: 8),
-              Text("Thêm tài khoản mới", style: TextStyle(fontSize: 17, fontWeight: FontWeight.bold)),
+              Text(
+                "Thêm tài khoản mới",
+                style: TextStyle(fontSize: 17, fontWeight: FontWeight.bold),
+              ),
             ],
           ),
           content: SingleChildScrollView(
@@ -2924,61 +4330,107 @@ class _DispatchSupervisorScreenState extends State<DispatchSupervisorScreen> {
                 children: [
                   TextField(
                     controller: usernameCtrl,
-                    decoration: const InputDecoration(labelText: "Tên đăng nhập (username) *"),
+                    decoration: const InputDecoration(
+                      labelText: "Tên đăng nhập (username) *",
+                    ),
                   ),
                   const SizedBox(height: 12),
                   TextField(
                     controller: passwordCtrl,
                     obscureText: true,
-                    decoration: const InputDecoration(labelText: "Mật khẩu ban đầu *"),
+                    decoration: const InputDecoration(
+                      labelText: "Mật khẩu ban đầu *",
+                    ),
                   ),
                   const SizedBox(height: 12),
                   TextField(
                     controller: fullNameCtrl,
-                    decoration: const InputDecoration(labelText: "Họ và tên hiển thị *"),
+                    decoration: const InputDecoration(
+                      labelText: "Họ và tên hiển thị *",
+                    ),
                   ),
                   const SizedBox(height: 12),
                   TextField(
                     controller: phoneCtrl,
                     keyboardType: TextInputType.phone,
-                    decoration: const InputDecoration(labelText: "Số điện thoại liên hệ *"),
+                    decoration: const InputDecoration(
+                      labelText: "Số điện thoại liên hệ *",
+                    ),
                   ),
                   const SizedBox(height: 12),
                   DropdownButtonFormField<String>(
                     value: selectedRoleCode,
-                    decoration: const InputDecoration(labelText: "Vai trò phân quyền"),
+                    decoration: const InputDecoration(
+                      labelText: "Vai trò phân quyền",
+                    ),
                     items: const [
                       DropdownMenuItem(value: "driver", child: Text("Tài xế")),
-                      DropdownMenuItem(value: "dispatcher", child: Text("Điều phối")),
-                      DropdownMenuItem(value: "gas_station", child: Text("Cây dầu / Trạm cấp nhiên liệu")),
-                      DropdownMenuItem(value: "mechanic", child: Text("Kỹ thuật")),
-                      DropdownMenuItem(value: "director", child: Text("Ban Giám Đốc / Trưởng BP")),
+                      DropdownMenuItem(
+                        value: "dispatcher",
+                        child: Text("Điều phối"),
+                      ),
+                      DropdownMenuItem(
+                        value: "gas_station",
+                        child: Text("Cây dầu / Trạm cấp nhiên liệu"),
+                      ),
+                      DropdownMenuItem(
+                        value: "mechanic",
+                        child: Text("Kỹ thuật"),
+                      ),
+                      DropdownMenuItem(
+                        value: "director",
+                        child: Text("Ban Giám Đốc / Trưởng BP"),
+                      ),
                     ],
                     onChanged: (val) {
-                      if (val != null) setDialogState(() => selectedRoleCode = val);
+                      if (val != null)
+                        setDialogState(() => selectedRoleCode = val);
                     },
                   ),
                   if (selectedRoleCode == "driver") ...[
                     const SizedBox(height: 12),
                     DropdownButtonFormField<String>(
                       value: selectedDriverType,
-                      decoration: const InputDecoration(labelText: "Phân loại tài xế"),
+                      decoration: const InputDecoration(
+                        labelText: "Phân loại tài xế",
+                      ),
                       items: const [
-                        DropdownMenuItem(value: "INTERNAL", child: Text("Tài xế công ty (Nội bộ)")),
-                        DropdownMenuItem(value: "RENTAL", child: Text("Tài xế thuê ngoài")),
-                        DropdownMenuItem(value: "CUSTOMER_SELF", child: Text("Khách hàng tự chở")),
+                        DropdownMenuItem(
+                          value: "INTERNAL",
+                          child: Text("Tài xế công ty (Nội bộ)"),
+                        ),
+                        DropdownMenuItem(
+                          value: "RENTAL",
+                          child: Text("Tài xế thuê ngoài"),
+                        ),
+                        DropdownMenuItem(
+                          value: "CUSTOMER_SELF",
+                          child: Text("Khách hàng tự chở"),
+                        ),
                       ],
                       onChanged: (val) {
-                        if (val != null) setDialogState(() => selectedDriverType = val);
+                        if (val != null)
+                          setDialogState(() => selectedDriverType = val);
                       },
                     ),
                     const SizedBox(height: 16),
                     const Divider(),
                     Row(
                       children: const [
-                        Icon(Icons.badge_outlined, color: Colors.blueGrey, size: 18),
+                        Icon(
+                          Icons.badge_outlined,
+                          color: Colors.blueGrey,
+                          size: 18,
+                        ),
                         SizedBox(width: 6),
-                        Text("Hồ sơ tài xế vận chuyển", style: TextStyle(fontWeight: FontWeight.bold, fontSize: 13, color: Colors.blueGrey)),
+                        Text(
+                          "Hồ sơ tài xế vận chuyển",
+                          style: TextStyle(
+                            fontWeight: FontWeight.bold,
+                            fontSize: 13,
+                            color: Colors.blueGrey,
+                          ),
+                        ),
                       ],
                     ),
                     const SizedBox(height: 12),
@@ -3050,12 +4502,19 @@ class _DispatchSupervisorScreenState extends State<DispatchSupervisorScreen> {
                               prefixIcon: Icon(Icons.wc, size: 20),
                             ),
                             items: const [
-                              DropdownMenuItem(value: "Nam", child: Text("Nam")),
+                              DropdownMenuItem(
+                                value: "Nam",
+                                child: Text("Nam"),
+                              ),
                               DropdownMenuItem(value: "Nữ", child: Text("Nữ")),
-                              DropdownMenuItem(value: "Khác", child: Text("Khác")),
+                              DropdownMenuItem(
+                                value: "Khác",
+                                child: Text("Khác"),
+                              ),
                             ],
                             onChanged: (val) {
-                              if (val != null) setDialogState(() => gender = val);
+                              if (val != null)
+                                setDialogState(() => gender = val);
                             },
                           ),
                         ),
@@ -3090,7 +4549,11 @@ class _DispatchSupervisorScreenState extends State<DispatchSupervisorScreen> {
                     passwordCtrl.text.trim().isEmpty ||
                     fullNameCtrl.text.trim().isEmpty) {
                   ScaffoldMessenger.of(context).showSnackBar(
-                    const SnackBar(content: Text("Vui lòng điền đủ tên đăng nhập, mật khẩu và họ tên")),
+                    const SnackBar(
+                      content: Text(
+                        "Vui lòng điền đủ tên đăng nhập, mật khẩu và họ tên",
+                      ),
+                    ),
                   );
                   return;
                 }
@@ -3103,19 +4566,35 @@ class _DispatchSupervisorScreenState extends State<DispatchSupervisorScreen> {
                   "password": passwordCtrl.text.trim(),
                   "full_name": fullNameCtrl.text.trim(),
                   "phone": phoneCtrl.text.trim(),
-                  "driver_type": selectedRoleCode == "driver" ? selectedDriverType : null,
+                  "driver_type": selectedRoleCode == "driver"
+                      ? selectedDriverType
+                      : null,
                   "role_codes": [selectedRoleCode],
                 };
 
                 if (selectedRoleCode == "driver") {
-                  payload["avatar_url"] = avatarCtrl.text.trim().isNotEmpty ? avatarCtrl.text.trim() : null;
-                  payload["id_card_front_url"] = idCardFrontCtrl.text.trim().isNotEmpty ? idCardFrontCtrl.text.trim() : null;
-                  payload["id_card_back_url"] = idCardBackCtrl.text.trim().isNotEmpty ? idCardBackCtrl.text.trim() : null;
-                  payload["address"] = addressCtrl.text.trim().isNotEmpty ? addressCtrl.text.trim() : null;
-                  payload["email"] = emailCtrl.text.trim().isNotEmpty ? emailCtrl.text.trim() : null;
+                  payload["avatar_url"] = avatarCtrl.text.trim().isNotEmpty
+                      ? avatarCtrl.text.trim()
+                      : null;
+                  payload["id_card_front_url"] =
+                      idCardFrontCtrl.text.trim().isNotEmpty
+                      ? idCardFrontCtrl.text.trim()
+                      : null;
+                  payload["id_card_back_url"] =
+                      idCardBackCtrl.text.trim().isNotEmpty
+                      ? idCardBackCtrl.text.trim()
+                      : null;
+                  payload["address"] = addressCtrl.text.trim().isNotEmpty
+                      ? addressCtrl.text.trim()
+                      : null;
+                  payload["email"] = emailCtrl.text.trim().isNotEmpty
+                      ? emailCtrl.text.trim()
+                      : null;
                   payload["age"] = int.tryParse(ageCtrl.text.trim());
                   payload["gender"] = gender;
-                  payload["notes"] = notesCtrl.text.trim().isNotEmpty ? notesCtrl.text.trim() : null;
+                  payload["notes"] = notesCtrl.text.trim().isNotEmpty
+                      ? notesCtrl.text.trim()
+                      : null;
                 }
 
                 final res = await AdminService.createUser(payload);
@@ -3125,8 +4604,14 @@ class _DispatchSupervisorScreenState extends State<DispatchSupervisorScreen> {
                 if (!mounted) return;
                 ScaffoldMessenger.of(context).showSnackBar(
                   SnackBar(
-                    backgroundColor: res['success'] == true ? Colors.green : Colors.red,
-                    content: Text(res['success'] == true ? "Đã tạo tài khoản thành công!" : "Lỗi: ${res['message']}"),
+                    backgroundColor: res['success'] == true
+                        ? Colors.green
+                        : Colors.red,
+                    content: Text(
+                      res['success'] == true
+                          ? "Đã tạo tài khoản thành công!"
+                          : "Lỗi: ${res['message']}",
+                    ),
                   ),
                 );
               },
@@ -3142,8 +4627,12 @@ class _DispatchSupervisorScreenState extends State<DispatchSupervisorScreen> {
   void _showEditVehicleDialog(dynamic vehicleData) {
     final v = vehicleData is Map ? vehicleData : <String, dynamic>{};
     final plate = (v['plate_number'] ?? '').toString();
-    final vtypeCtrl = TextEditingController(text: (v['vehicle_type'] ?? '').toString());
-    final ownerCompanyCtrl = TextEditingController(text: (v['owner_company'] ?? 'Sao Mai Logistics').toString());
+    final vtypeCtrl = TextEditingController(
+      text: (v['vehicle_type'] ?? '').toString(),
+    );
+    final ownerCompanyCtrl = TextEditingController(
+      text: (v['owner_company'] ?? 'Sao Mai Logistics').toString(),
+    );
     String ownershipType = (v['ownership_type'] ?? 'INTERNAL').toString();
     if (!['INTERNAL', 'RENTAL', 'CUSTOMER_SELF'].contains(ownershipType)) {
       ownershipType = 'INTERNAL';
@@ -3153,7 +4642,11 @@ class _DispatchSupervisorScreenState extends State<DispatchSupervisorScreen> {
     // Lọc danh sách các tài khoản tài xế có thể gán
     final driverUsers = _users.where((u) {
       if (u is! Map) return false;
-      final roleCodes = (u['role_codes'] as List<dynamic>?)?.map((e) => e.toString()).toList() ?? [];
+      final roleCodes =
+          (u['role_codes'] as List<dynamic>?)
+              ?.map((e) => e.toString())
+              .toList() ??
+          [];
       return roleCodes.contains('driver') || u['driver_type'] != null;
     }).toList();
 
@@ -3170,10 +4663,20 @@ class _DispatchSupervisorScreenState extends State<DispatchSupervisorScreen> {
                   color: Colors.blue.shade50,
                   borderRadius: BorderRadius.circular(4),
                 ),
-                child: const Icon(Icons.local_shipping, size: 20, color: Colors.blue),
+                child: const Icon(
+                  Icons.local_shipping,
+                  size: 20,
+                  color: Colors.blue,
+                ),
               ),
               const SizedBox(width: 10),
-              Text("Chỉnh sửa phương tiện: $plate", style: const TextStyle(fontSize: 16, fontWeight: FontWeight.bold)),
+              Text(
+                "Chỉnh sửa phương tiện: $plate",
+                style: const TextStyle(
+                  fontSize: 16,
+                  fontWeight: FontWeight.bold,
+                ),
+              ),
             ],
           ),
           content: SingleChildScrollView(
@@ -3213,9 +4716,18 @@ class _DispatchSupervisorScreenState extends State<DispatchSupervisorScreen> {
                       prefixIcon: Icon(Icons.business_outlined),
                     ),
                     items: const [
-                      DropdownMenuItem(value: "INTERNAL", child: Text("Xe nội bộ")),
-                      DropdownMenuItem(value: "RENTAL", child: Text("Xe thuê ngoài")),
-                      DropdownMenuItem(value: "CUSTOMER_SELF", child: Text("Khách tự vận chuyển")),
+                      DropdownMenuItem(
+                        value: "INTERNAL",
+                        child: Text("Xe nội bộ"),
+                      ),
+                      DropdownMenuItem(
+                        value: "RENTAL",
+                        child: Text("Xe thuê ngoài"),
+                      ),
+                      DropdownMenuItem(
+                        value: "CUSTOMER_SELF",
+                        child: Text("Khách tự vận chuyển"),
+                      ),
                     ],
                     onChanged: (val) {
                       if (val != null) {
@@ -3234,13 +4746,22 @@ class _DispatchSupervisorScreenState extends State<DispatchSupervisorScreen> {
                     items: [
                       const DropdownMenuItem<int?>(
                         value: null,
-                        child: Text("Chưa phân bổ tài xế", style: TextStyle(fontStyle: FontStyle.italic, color: Colors.grey)),
+                        child: Text(
+                          "Chưa phân bổ tài xế",
+                          style: TextStyle(
+                            fontStyle: FontStyle.italic,
+                            color: Colors.grey,
+                          ),
+                        ),
                       ),
                       ...driverUsers.map((u) {
                         final id = u['id'] as int;
-                        final name = (u['full_name'] ?? u['username'] ?? '').toString();
+                        final name = (u['full_name'] ?? u['username'] ?? '')
+                            .toString();
                         final phone = (u['phone'] ?? '').toString();
-                        final label = phone.isNotEmpty ? "$name ($phone)" : name;
+                        final label = phone.isNotEmpty
+                            ? "$name ($phone)"
+                            : name;
                         return DropdownMenuItem<int?>(
                           value: id,
                           child: Text(label),
@@ -3274,14 +4795,18 @@ class _DispatchSupervisorScreenState extends State<DispatchSupervisorScreen> {
               style: ElevatedButton.styleFrom(
                 backgroundColor: Colors.blue.shade800,
                 foregroundColor: Colors.white,
-                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(4)),
+                shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(4),
+                ),
                 minimumSize: const Size(100, 44),
               ),
               onPressed: () async {
                 final vtype = vtypeCtrl.text.trim();
                 if (vtype.isEmpty) {
                   ScaffoldMessenger.of(context).showSnackBar(
-                    const SnackBar(content: Text("Vui lòng nhập loại phương tiện")),
+                    const SnackBar(
+                      content: Text("Vui lòng nhập loại phương tiện"),
+                    ),
                   );
                   return;
                 }
@@ -3293,7 +4818,9 @@ class _DispatchSupervisorScreenState extends State<DispatchSupervisorScreen> {
                   "vehicle_type": vtype,
                   "ownership_type": ownershipType,
                   "default_driver_id": selectedDriverId ?? -1,
-                  "owner_company": ownerCompanyCtrl.text.trim().isNotEmpty ? ownerCompanyCtrl.text.trim() : "Sao Mai Logistics",
+                  "owner_company": ownerCompanyCtrl.text.trim().isNotEmpty
+                      ? ownerCompanyCtrl.text.trim()
+                      : "Sao Mai Logistics",
                 };
 
                 final res = await AdminService.updateVehicle(plate, payload);
@@ -3302,12 +4829,21 @@ class _DispatchSupervisorScreenState extends State<DispatchSupervisorScreen> {
                 if (!mounted) return;
                 ScaffoldMessenger.of(context).showSnackBar(
                   SnackBar(
-                    backgroundColor: res['success'] == true ? Colors.green : Colors.red,
-                    content: Text(res['success'] == true ? "Đã cập nhật thông tin phương tiện $plate thành công!" : "Lỗi: ${res['message']}"),
+                    backgroundColor: res['success'] == true
+                        ? Colors.green
+                        : Colors.red,
+                    content: Text(
+                      res['success'] == true
+                          ? "Đã cập nhật thông tin phương tiện $plate thành công!"
+                          : "Lỗi: ${res['message']}",
+                    ),
                   ),
                 );
               },
-              child: const Text("Lưu thay đổi", style: TextStyle(fontWeight: FontWeight.bold)),
+              child: const Text(
+                "Lưu thay đổi",
+                style: TextStyle(fontWeight: FontWeight.bold),
+              ),
             ),
           ],
         ),
@@ -3321,15 +4857,25 @@ class _DispatchSupervisorScreenState extends State<DispatchSupervisorScreen> {
     final phoneCtrl = TextEditingController(text: user['phone'] ?? '');
     final addressCtrl = TextEditingController(text: user['address'] ?? '');
     final emailCtrl = TextEditingController(text: user['email'] ?? '');
-    final ageCtrl = TextEditingController(text: user['age'] != null ? user['age'].toString() : '');
+    final ageCtrl = TextEditingController(
+      text: user['age'] != null ? user['age'].toString() : '',
+    );
     final notesCtrl = TextEditingController(text: user['notes'] ?? '');
     final avatarCtrl = TextEditingController(text: user['avatar_url'] ?? '');
-    final idCardFrontCtrl = TextEditingController(text: user['id_card_front_url'] ?? '');
-    final idCardBackCtrl = TextEditingController(text: user['id_card_back_url'] ?? '');
+    final idCardFrontCtrl = TextEditingController(
+      text: user['id_card_front_url'] ?? '',
+    );
+    final idCardBackCtrl = TextEditingController(
+      text: user['id_card_back_url'] ?? '',
+    );
     String gender = user['gender'] ?? "Nam";
     String selectedDriverType = user['driver_type'] ?? "INTERNAL";
     bool isActive = user['is_active'] ?? true;
-    final userRoles = (user['role_codes'] as List<dynamic>?)?.map((e) => e.toString()).toList() ?? [];
+    final userRoles =
+        (user['role_codes'] as List<dynamic>?)
+            ?.map((e) => e.toString())
+            .toList() ??
+        [];
     String selectedRoleCode = userRoles.isNotEmpty ? userRoles.first : "driver";
 
     final isSystemAdmin = user['username'] == 'admin';
@@ -3343,7 +4889,13 @@ class _DispatchSupervisorScreenState extends State<DispatchSupervisorScreen> {
             children: [
               const Icon(Icons.edit, color: Colors.indigo),
               const SizedBox(width: 8),
-              Text("Chỉnh sửa: @${user['username']}", style: const TextStyle(fontSize: 16, fontWeight: FontWeight.bold)),
+              Text(
+                "Chỉnh sửa: @${user['username']}",
+                style: const TextStyle(
+                  fontSize: 16,
+                  fontWeight: FontWeight.bold,
+                ),
+              ),
             ],
           ),
           content: SingleChildScrollView(
@@ -3355,51 +4907,96 @@ class _DispatchSupervisorScreenState extends State<DispatchSupervisorScreen> {
                 children: [
                   TextField(
                     controller: fullNameCtrl,
-                    decoration: const InputDecoration(labelText: "Họ và tên hiển thị *"),
+                    decoration: const InputDecoration(
+                      labelText: "Họ và tên hiển thị *",
+                    ),
                   ),
                   const SizedBox(height: 12),
                   TextField(
                     controller: phoneCtrl,
                     keyboardType: TextInputType.phone,
-                    decoration: const InputDecoration(labelText: "Số điện thoại *"),
+                    decoration: const InputDecoration(
+                      labelText: "Số điện thoại *",
+                    ),
                   ),
                   if (!isSystemAdmin) ...[
                     const SizedBox(height: 12),
                     DropdownButtonFormField<String>(
                       value: selectedRoleCode,
-                      decoration: const InputDecoration(labelText: "Vai trò phân quyền"),
+                      decoration: const InputDecoration(
+                        labelText: "Vai trò phân quyền",
+                      ),
                       items: const [
-                        DropdownMenuItem(value: "driver", child: Text("Tài xế")),
-                        DropdownMenuItem(value: "dispatcher", child: Text("Điều phối")),
-                        DropdownMenuItem(value: "gas_station", child: Text("Cây dầu / Trạm cấp nhiên liệu")),
-                        DropdownMenuItem(value: "mechanic", child: Text("Kỹ thuật")),
-                        DropdownMenuItem(value: "director", child: Text("Ban Giám Đốc / Trưởng BP")),
+                        DropdownMenuItem(
+                          value: "driver",
+                          child: Text("Tài xế"),
+                        ),
+                        DropdownMenuItem(
+                          value: "dispatcher",
+                          child: Text("Điều phối"),
+                        ),
+                        DropdownMenuItem(
+                          value: "gas_station",
+                          child: Text("Cây dầu / Trạm cấp nhiên liệu"),
+                        ),
+                        DropdownMenuItem(
+                          value: "mechanic",
+                          child: Text("Kỹ thuật"),
+                        ),
+                        DropdownMenuItem(
+                          value: "director",
+                          child: Text("Ban Giám Đốc / Trưởng BP"),
+                        ),
                       ],
                       onChanged: (val) {
-                        if (val != null) setDialogState(() => selectedRoleCode = val);
+                        if (val != null)
+                          setDialogState(() => selectedRoleCode = val);
                       },
                     ),
                     if (selectedRoleCode == "driver") ...[
                       const SizedBox(height: 12),
                       DropdownButtonFormField<String>(
                         value: selectedDriverType,
-                        decoration: const InputDecoration(labelText: "Phân loại tài xế"),
+                        decoration: const InputDecoration(
+                          labelText: "Phân loại tài xế",
+                        ),
                         items: const [
-                          DropdownMenuItem(value: "INTERNAL", child: Text("Tài xế công ty (Nội bộ)")),
-                          DropdownMenuItem(value: "RENTAL", child: Text("Tài xế thuê ngoài")),
-                          DropdownMenuItem(value: "CUSTOMER_SELF", child: Text("Khách hàng tự chở")),
+                          DropdownMenuItem(
+                            value: "INTERNAL",
+                            child: Text("Tài xế công ty (Nội bộ)"),
+                          ),
+                          DropdownMenuItem(
+                            value: "RENTAL",
+                            child: Text("Tài xế thuê ngoài"),
+                          ),
+                          DropdownMenuItem(
+                            value: "CUSTOMER_SELF",
+                            child: Text("Khách hàng tự chở"),
+                          ),
                         ],
                         onChanged: (val) {
-                          if (val != null) setDialogState(() => selectedDriverType = val);
+                          if (val != null)
+                            setDialogState(() => selectedDriverType = val);
                         },
                       ),
                       const SizedBox(height: 16),
                       const Divider(),
                       Row(
                         children: const [
-                          Icon(Icons.badge_outlined, color: Colors.blueGrey, size: 18),
+                          Icon(
+                            Icons.badge_outlined,
+                            color: Colors.blueGrey,
+                            size: 18,
+                          ),
                           SizedBox(width: 6),
-                          Text("Hồ sơ tài xế vận chuyển", style: TextStyle(fontWeight: FontWeight.bold, fontSize: 13, color: Colors.blueGrey)),
+                          Text(
+                            "Hồ sơ tài xế vận chuyển",
+                            style: TextStyle(
+                              fontWeight: FontWeight.bold,
+                              fontSize: 13,
+                              color: Colors.blueGrey,
+                            ),
+                          ),
                         ],
                       ),
                       const SizedBox(height: 12),
@@ -3445,7 +5042,10 @@ class _DispatchSupervisorScreenState extends State<DispatchSupervisorScreen> {
                               keyboardType: TextInputType.emailAddress,
                               decoration: const InputDecoration(
                                 labelText: "E-mail (nếu có)",
-                                prefixIcon: Icon(Icons.email_outlined, size: 20),
+                                prefixIcon: Icon(
+                                  Icons.email_outlined,
+                                  size: 20,
+                                ),
                               ),
                             ),
                           ),
@@ -3471,12 +5071,22 @@ class _DispatchSupervisorScreenState extends State<DispatchSupervisorScreen> {
                                 prefixIcon: Icon(Icons.wc, size: 20),
                               ),
                               items: const [
-                                DropdownMenuItem(value: "Nam", child: Text("Nam")),
-                                DropdownMenuItem(value: "Nữ", child: Text("Nữ")),
-                                DropdownMenuItem(value: "Khác", child: Text("Khác")),
+                                DropdownMenuItem(
+                                  value: "Nam",
+                                  child: Text("Nam"),
+                                ),
+                                DropdownMenuItem(
+                                  value: "Nữ",
+                                  child: Text("Nữ"),
+                                ),
+                                DropdownMenuItem(
+                                  value: "Khác",
+                                  child: Text("Khác"),
+                                ),
                               ],
                               onChanged: (val) {
-                                if (val != null) setDialogState(() => gender = val);
+                                if (val != null)
+                                  setDialogState(() => gender = val);
                               },
                             ),
                           ),
@@ -3497,11 +5107,23 @@ class _DispatchSupervisorScreenState extends State<DispatchSupervisorScreen> {
                   SwitchListTile(
                     contentPadding: EdgeInsets.zero,
                     hoverColor: Colors.transparent,
-                    title: const Text("Trạng thái hoạt động", style: TextStyle(fontWeight: FontWeight.w600, fontSize: 14)),
-                    subtitle: Text(isActive ? "Tài khoản đang được phép đăng nhập" : "Đã khóa tài khoản này"),
+                    title: const Text(
+                      "Trạng thái hoạt động",
+                      style: TextStyle(
+                        fontWeight: FontWeight.w600,
+                        fontSize: 14,
+                      ),
+                    ),
+                    subtitle: Text(
+                      isActive
+                          ? "Tài khoản đang được phép đăng nhập"
+                          : "Đã khóa tài khoản này",
+                    ),
                     value: isActive,
                     activeColor: Colors.green,
-                    onChanged: isSystemAdmin ? null : (val) => setDialogState(() => isActive = val),
+                    onChanged: isSystemAdmin
+                        ? null
+                        : (val) => setDialogState(() => isActive = val),
                   ),
                 ],
               ),
@@ -3527,17 +5149,33 @@ class _DispatchSupervisorScreenState extends State<DispatchSupervisorScreen> {
                   "is_active": isActive,
                 };
                 if (!isSystemAdmin) {
-                  payload["driver_type"] = selectedRoleCode == "driver" ? selectedDriverType : null;
+                  payload["driver_type"] = selectedRoleCode == "driver"
+                      ? selectedDriverType
+                      : null;
                   payload["role_codes"] = [selectedRoleCode];
                   if (selectedRoleCode == "driver") {
-                    payload["avatar_url"] = avatarCtrl.text.trim().isNotEmpty ? avatarCtrl.text.trim() : null;
-                    payload["id_card_front_url"] = idCardFrontCtrl.text.trim().isNotEmpty ? idCardFrontCtrl.text.trim() : null;
-                    payload["id_card_back_url"] = idCardBackCtrl.text.trim().isNotEmpty ? idCardBackCtrl.text.trim() : null;
-                    payload["address"] = addressCtrl.text.trim().isNotEmpty ? addressCtrl.text.trim() : null;
-                    payload["email"] = emailCtrl.text.trim().isNotEmpty ? emailCtrl.text.trim() : null;
+                    payload["avatar_url"] = avatarCtrl.text.trim().isNotEmpty
+                        ? avatarCtrl.text.trim()
+                        : null;
+                    payload["id_card_front_url"] =
+                        idCardFrontCtrl.text.trim().isNotEmpty
+                        ? idCardFrontCtrl.text.trim()
+                        : null;
+                    payload["id_card_back_url"] =
+                        idCardBackCtrl.text.trim().isNotEmpty
+                        ? idCardBackCtrl.text.trim()
+                        : null;
+                    payload["address"] = addressCtrl.text.trim().isNotEmpty
+                        ? addressCtrl.text.trim()
+                        : null;
+                    payload["email"] = emailCtrl.text.trim().isNotEmpty
+                        ? emailCtrl.text.trim()
+                        : null;
                     payload["age"] = int.tryParse(ageCtrl.text.trim());
                     payload["gender"] = gender;
-                    payload["notes"] = notesCtrl.text.trim().isNotEmpty ? notesCtrl.text.trim() : null;
+                    payload["notes"] = notesCtrl.text.trim().isNotEmpty
+                        ? notesCtrl.text.trim()
+                        : null;
                   }
                 } else {
                   payload["driver_type"] = null;
@@ -3551,8 +5189,14 @@ class _DispatchSupervisorScreenState extends State<DispatchSupervisorScreen> {
                 if (!mounted) return;
                 ScaffoldMessenger.of(context).showSnackBar(
                   SnackBar(
-                    backgroundColor: res['success'] == true ? Colors.green : Colors.red,
-                    content: Text(res['success'] == true ? "Đã cập nhật thông tin thành công!" : "Lỗi: ${res['message']}"),
+                    backgroundColor: res['success'] == true
+                        ? Colors.green
+                        : Colors.red,
+                    content: Text(
+                      res['success'] == true
+                          ? "Đã cập nhật thông tin thành công!"
+                          : "Lỗi: ${res['message']}",
+                    ),
                   ),
                 );
               },
@@ -3577,7 +5221,10 @@ class _DispatchSupervisorScreenState extends State<DispatchSupervisorScreen> {
           children: [
             const Icon(Icons.key, color: Colors.amber),
             const SizedBox(width: 8),
-            Text("Đổi mật khẩu: @${user['username']}", style: const TextStyle(fontSize: 16, fontWeight: FontWeight.bold)),
+            Text(
+              "Đổi mật khẩu: @${user['username']}",
+              style: const TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
+            ),
           ],
         ),
         content: SizedBox(
@@ -3594,7 +5241,9 @@ class _DispatchSupervisorScreenState extends State<DispatchSupervisorScreen> {
               TextField(
                 controller: confirmPasswordCtrl,
                 obscureText: true,
-                decoration: const InputDecoration(labelText: "Xác nhận mật khẩu mới *"),
+                decoration: const InputDecoration(
+                  labelText: "Xác nhận mật khẩu mới *",
+                ),
               ),
             ],
           ),
@@ -3615,7 +5264,9 @@ class _DispatchSupervisorScreenState extends State<DispatchSupervisorScreen> {
 
               if (newPwd.isEmpty || newPwd.length < 4) {
                 ScaffoldMessenger.of(context).showSnackBar(
-                  const SnackBar(content: Text("Mật khẩu mới phải có ít nhất 4 ký tự")),
+                  const SnackBar(
+                    content: Text("Mật khẩu mới phải có ít nhất 4 ký tự"),
+                  ),
                 );
                 return;
               }
@@ -3635,8 +5286,14 @@ class _DispatchSupervisorScreenState extends State<DispatchSupervisorScreen> {
               if (!mounted) return;
               ScaffoldMessenger.of(context).showSnackBar(
                 SnackBar(
-                  backgroundColor: res['success'] == true ? Colors.green : Colors.red,
-                  content: Text(res['success'] == true ? "Đã đổi mật khẩu cho @${user['username']} thành công!" : "Lỗi: ${res['message']}"),
+                  backgroundColor: res['success'] == true
+                      ? Colors.green
+                      : Colors.red,
+                  content: Text(
+                    res['success'] == true
+                        ? "Đã đổi mật khẩu cho @${user['username']} thành công!"
+                        : "Lỗi: ${res['message']}",
+                  ),
                 ),
               );
             },
@@ -3657,7 +5314,10 @@ class _DispatchSupervisorScreenState extends State<DispatchSupervisorScreen> {
           children: [
             Icon(Icons.warning_amber_rounded, color: Colors.red),
             SizedBox(width: 8),
-            Text("Xác nhận xóa tài khoản", style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold)),
+            Text(
+              "Xác nhận xóa tài khoản",
+              style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
+            ),
           ],
         ),
         content: Text(
@@ -3684,8 +5344,14 @@ class _DispatchSupervisorScreenState extends State<DispatchSupervisorScreen> {
               if (!mounted) return;
               ScaffoldMessenger.of(context).showSnackBar(
                 SnackBar(
-                  backgroundColor: res['success'] == true ? Colors.green : Colors.red,
-                  content: Text(res['success'] == true ? "Đã xóa tài khoản thành công!" : "Lỗi: ${res['message']}"),
+                  backgroundColor: res['success'] == true
+                      ? Colors.green
+                      : Colors.red,
+                  content: Text(
+                    res['success'] == true
+                        ? "Đã xóa tài khoản thành công!"
+                        : "Lỗi: ${res['message']}",
+                  ),
                 ),
               );
             },
@@ -3762,7 +5428,10 @@ class _DispatchSupervisorScreenState extends State<DispatchSupervisorScreen> {
             children: [
               Icon(Icons.add_moderator, color: Colors.indigo),
               SizedBox(width: 8),
-              Text("Thêm vai trò phân quyền mới", style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold)),
+              Text(
+                "Thêm vai trò phân quyền mới",
+                style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
+              ),
             ],
           ),
           content: SingleChildScrollView(
@@ -3793,7 +5462,8 @@ class _DispatchSupervisorScreenState extends State<DispatchSupervisorScreen> {
                     maxLines: 2,
                     decoration: const InputDecoration(
                       labelText: "Mô tả vai trò",
-                      hintText: "Mô tả trách nhiệm và nhiệm vụ của vai trò này...",
+                      hintText:
+                          "Mô tả trách nhiệm và nhiệm vụ của vai trò này...",
                     ),
                   ),
                   const SizedBox(height: 16),
@@ -3803,7 +5473,11 @@ class _DispatchSupervisorScreenState extends State<DispatchSupervisorScreen> {
                     children: [
                       const Text(
                         "Cấp quyền hành động chức năng:",
-                        style: TextStyle(fontWeight: FontWeight.bold, fontSize: 13, color: Colors.blueGrey),
+                        style: TextStyle(
+                          fontWeight: FontWeight.bold,
+                          fontSize: 13,
+                          color: Colors.blueGrey,
+                        ),
                       ),
                       TextButton(
                         onPressed: () {
@@ -3811,12 +5485,16 @@ class _DispatchSupervisorScreenState extends State<DispatchSupervisorScreen> {
                             if (selectedPerms.length == _permissions.length) {
                               selectedPerms.clear();
                             } else {
-                              selectedPerms.addAll(_permissions.map((p) => p['code'].toString()));
+                              selectedPerms.addAll(
+                                _permissions.map((p) => p['code'].toString()),
+                              );
                             }
                           });
                         },
                         child: Text(
-                          selectedPerms.length == _permissions.length ? "Bỏ chọn tất cả" : "Chọn tất cả",
+                          selectedPerms.length == _permissions.length
+                              ? "Bỏ chọn tất cả"
+                              : "Chọn tất cả",
                           style: const TextStyle(fontSize: 12),
                         ),
                       ),
@@ -3848,24 +5526,45 @@ class _DispatchSupervisorScreenState extends State<DispatchSupervisorScreen> {
                               crossAxisAlignment: CrossAxisAlignment.start,
                               children: [
                                 Container(
-                                  padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                                  padding: const EdgeInsets.symmetric(
+                                    horizontal: 12,
+                                    vertical: 8,
+                                  ),
                                   decoration: BoxDecoration(
                                     color: Colors.grey.shade100,
-                                    borderRadius: const BorderRadius.vertical(top: Radius.circular(3)),
-                                    border: Border(bottom: BorderSide(color: Colors.grey.shade400)),
+                                    borderRadius: const BorderRadius.vertical(
+                                      top: Radius.circular(3),
+                                    ),
+                                    border: Border(
+                                      bottom: BorderSide(
+                                        color: Colors.grey.shade400,
+                                      ),
+                                    ),
                                   ),
                                   child: Row(
                                     children: [
-                                      Icon(_getModuleIcon(modKey), size: 16, color: Colors.indigo.shade800),
+                                      Icon(
+                                        _getModuleIcon(modKey),
+                                        size: 16,
+                                        color: Colors.indigo.shade800,
+                                      ),
                                       const SizedBox(width: 8),
                                       Text(
                                         _getModuleLabel(modKey),
-                                        style: TextStyle(fontWeight: FontWeight.bold, fontSize: 13, color: Colors.indigo.shade900),
+                                        style: TextStyle(
+                                          fontWeight: FontWeight.bold,
+                                          fontSize: 13,
+                                          color: Colors.indigo.shade900,
+                                        ),
                                       ),
                                       const Spacer(),
                                       Text(
                                         "(${permsInMod.where((p) => selectedPerms.contains(p['code'])).length}/${permsInMod.length})",
-                                        style: TextStyle(fontSize: 11, fontWeight: FontWeight.bold, color: Colors.grey.shade700),
+                                        style: TextStyle(
+                                          fontSize: 11,
+                                          fontWeight: FontWeight.bold,
+                                          color: Colors.grey.shade700,
+                                        ),
                                       ),
                                     ],
                                   ),
@@ -3873,11 +5572,16 @@ class _DispatchSupervisorScreenState extends State<DispatchSupervisorScreen> {
                                 ...permsInMod.map((p) {
                                   final pCode = p['code'].toString();
                                   final pName = p['name'] ?? pCode;
-                                  final isChecked = selectedPerms.contains(pCode);
+                                  final isChecked = selectedPerms.contains(
+                                    pCode,
+                                  );
 
                                   final isUserManage = pCode == 'user:manage';
                                   return CheckboxListTile(
-                                    contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 0),
+                                    contentPadding: const EdgeInsets.symmetric(
+                                      horizontal: 12,
+                                      vertical: 0,
+                                    ),
                                     dense: true,
                                     hoverColor: Colors.transparent,
                                     value: isChecked,
@@ -3889,38 +5593,55 @@ class _DispatchSupervisorScreenState extends State<DispatchSupervisorScreen> {
                                             style: TextStyle(
                                               fontSize: 13,
                                               fontWeight: FontWeight.w600,
-                                              color: isUserManage ? Colors.grey.shade600 : Colors.black87,
+                                              color: isUserManage
+                                                  ? Colors.grey.shade600
+                                                  : Colors.black87,
                                             ),
                                           ),
                                         ),
                                         if (isUserManage)
                                           Container(
-                                            padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                                            padding: const EdgeInsets.symmetric(
+                                              horizontal: 6,
+                                              vertical: 2,
+                                            ),
                                             decoration: BoxDecoration(
                                               color: Colors.red.shade50,
-                                              borderRadius: BorderRadius.circular(4),
-                                              border: Border.all(color: Colors.red.shade200),
+                                              borderRadius:
+                                                  BorderRadius.circular(4),
+                                              border: Border.all(
+                                                color: Colors.red.shade200,
+                                              ),
                                             ),
                                             child: Text(
                                               "Chỉ Admin tối cao",
-                                              style: TextStyle(fontSize: 10, fontWeight: FontWeight.bold, color: Colors.red.shade700),
+                                              style: TextStyle(
+                                                fontSize: 10,
+                                                fontWeight: FontWeight.bold,
+                                                color: Colors.red.shade700,
+                                              ),
                                             ),
                                           ),
                                       ],
                                     ),
                                     subtitle: Text(
                                       "Mã: $pCode",
-                                      style: TextStyle(fontSize: 11, color: Colors.grey.shade600),
+                                      style: TextStyle(
+                                        fontSize: 11,
+                                        color: Colors.grey.shade600,
+                                      ),
                                     ),
-                                    onChanged: isUserManage ? null : (val) {
-                                      setDialogState(() {
-                                        if (val == true) {
-                                          selectedPerms.add(pCode);
-                                        } else {
-                                          selectedPerms.remove(pCode);
-                                        }
-                                      });
-                                    },
+                                    onChanged: isUserManage
+                                        ? null
+                                        : (val) {
+                                            setDialogState(() {
+                                              if (val == true) {
+                                                selectedPerms.add(pCode);
+                                              } else {
+                                                selectedPerms.remove(pCode);
+                                              }
+                                            });
+                                          },
                                   );
                                 }),
                               ],
@@ -3949,7 +5670,9 @@ class _DispatchSupervisorScreenState extends State<DispatchSupervisorScreen> {
                 final name = nameCtrl.text.trim();
                 if (code.isEmpty || name.isEmpty) {
                   ScaffoldMessenger.of(context).showSnackBar(
-                    const SnackBar(content: Text("Vui lòng điền đầy đủ mã và tên vai trò")),
+                    const SnackBar(
+                      content: Text("Vui lòng điền đầy đủ mã và tên vai trò"),
+                    ),
                   );
                   return;
                 }
@@ -3960,7 +5683,9 @@ class _DispatchSupervisorScreenState extends State<DispatchSupervisorScreen> {
                 final res = await AdminService.createRole({
                   "code": code,
                   "name": name,
-                  "description": descCtrl.text.trim().isNotEmpty ? descCtrl.text.trim() : null,
+                  "description": descCtrl.text.trim().isNotEmpty
+                      ? descCtrl.text.trim()
+                      : null,
                   "permission_codes": selectedPerms.toList(),
                 });
 
@@ -3969,8 +5694,14 @@ class _DispatchSupervisorScreenState extends State<DispatchSupervisorScreen> {
                 if (!mounted) return;
                 ScaffoldMessenger.of(context).showSnackBar(
                   SnackBar(
-                    backgroundColor: res['success'] == true ? Colors.green : Colors.red,
-                    content: Text(res['success'] == true ? "Đã tạo vai trò mới thành công!" : "Lỗi: ${res['message']}"),
+                    backgroundColor: res['success'] == true
+                        ? Colors.green
+                        : Colors.red,
+                    content: Text(
+                      res['success'] == true
+                          ? "Đã tạo vai trò mới thành công!"
+                          : "Lỗi: ${res['message']}",
+                    ),
                   ),
                 );
               },
@@ -3986,9 +5717,22 @@ class _DispatchSupervisorScreenState extends State<DispatchSupervisorScreen> {
   void _showEditRoleDialog(Map<String, dynamic> role) {
     final nameCtrl = TextEditingController(text: role['name'] ?? '');
     final descCtrl = TextEditingController(text: role['description'] ?? '');
-    final existingPerms = (role['permission_codes'] as List<dynamic>?)?.map((e) => e.toString()).toList() ?? [];
+    final existingPerms =
+        (role['permission_codes'] as List<dynamic>?)
+            ?.map((e) => e.toString())
+            .toList() ??
+        [];
     final selectedPerms = Set<String>.from(existingPerms);
-    final isSystemCore = role['is_system'] == true || ['admin', 'driver', 'dispatcher', 'gas_station', 'mechanic', 'manager'].contains(role['code']);
+    final isSystemCore =
+        role['is_system'] == true ||
+        [
+          'admin',
+          'driver',
+          'dispatcher',
+          'gas_station',
+          'mechanic',
+          'manager',
+        ].contains(role['code']);
 
     showDialog(
       context: context,
@@ -3999,7 +5743,13 @@ class _DispatchSupervisorScreenState extends State<DispatchSupervisorScreen> {
             children: [
               const Icon(Icons.tune, color: Colors.indigo),
               const SizedBox(width: 8),
-              Text("Cấu hình vai trò & quyền: ${role['name']}", style: const TextStyle(fontSize: 16, fontWeight: FontWeight.bold)),
+              Text(
+                "Cấu hình vai trò & quyền: ${role['name']}",
+                style: const TextStyle(
+                  fontSize: 16,
+                  fontWeight: FontWeight.bold,
+                ),
+              ),
             ],
           ),
           content: SingleChildScrollView(
@@ -4010,7 +5760,10 @@ class _DispatchSupervisorScreenState extends State<DispatchSupervisorScreen> {
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
                   Container(
-                    padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 10,
+                      vertical: 6,
+                    ),
                     decoration: BoxDecoration(
                       color: Colors.blue.shade50,
                       borderRadius: BorderRadius.circular(4),
@@ -4018,11 +5771,19 @@ class _DispatchSupervisorScreenState extends State<DispatchSupervisorScreen> {
                     ),
                     child: Row(
                       children: [
-                        const Icon(Icons.info_outline, size: 16, color: Colors.blue),
+                        const Icon(
+                          Icons.info_outline,
+                          size: 16,
+                          color: Colors.blue,
+                        ),
                         const SizedBox(width: 8),
                         Text(
                           "Mã định danh hệ thống: ${role['code']}${isSystemCore ? ' (Vai trò cốt lõi)' : ''}",
-                          style: TextStyle(fontWeight: FontWeight.bold, fontSize: 12, color: Colors.blue.shade900),
+                          style: TextStyle(
+                            fontWeight: FontWeight.bold,
+                            fontSize: 12,
+                            color: Colors.blue.shade900,
+                          ),
                         ),
                       ],
                     ),
@@ -4030,13 +5791,17 @@ class _DispatchSupervisorScreenState extends State<DispatchSupervisorScreen> {
                   const SizedBox(height: 12),
                   TextField(
                     controller: nameCtrl,
-                    decoration: const InputDecoration(labelText: "Tên vai trò hiển thị *"),
+                    decoration: const InputDecoration(
+                      labelText: "Tên vai trò hiển thị *",
+                    ),
                   ),
                   const SizedBox(height: 12),
                   TextField(
                     controller: descCtrl,
                     maxLines: 2,
-                    decoration: const InputDecoration(labelText: "Mô tả vai trò"),
+                    decoration: const InputDecoration(
+                      labelText: "Mô tả vai trò",
+                    ),
                   ),
                   const SizedBox(height: 16),
                   const Divider(),
@@ -4045,7 +5810,11 @@ class _DispatchSupervisorScreenState extends State<DispatchSupervisorScreen> {
                     children: [
                       Text(
                         "Danh sách hành động chức năng (${selectedPerms.length}/${_permissions.length}):",
-                        style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 13, color: Colors.blueGrey),
+                        style: const TextStyle(
+                          fontWeight: FontWeight.bold,
+                          fontSize: 13,
+                          color: Colors.blueGrey,
+                        ),
                       ),
                       TextButton(
                         onPressed: () {
@@ -4053,12 +5822,16 @@ class _DispatchSupervisorScreenState extends State<DispatchSupervisorScreen> {
                             if (selectedPerms.length == _permissions.length) {
                               selectedPerms.clear();
                             } else {
-                              selectedPerms.addAll(_permissions.map((p) => p['code'].toString()));
+                              selectedPerms.addAll(
+                                _permissions.map((p) => p['code'].toString()),
+                              );
                             }
                           });
                         },
                         child: Text(
-                          selectedPerms.length == _permissions.length ? "Bỏ chọn tất cả" : "Chọn tất cả",
+                          selectedPerms.length == _permissions.length
+                              ? "Bỏ chọn tất cả"
+                              : "Chọn tất cả",
                           style: const TextStyle(fontSize: 12),
                         ),
                       ),
@@ -4090,24 +5863,45 @@ class _DispatchSupervisorScreenState extends State<DispatchSupervisorScreen> {
                               crossAxisAlignment: CrossAxisAlignment.start,
                               children: [
                                 Container(
-                                  padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                                  padding: const EdgeInsets.symmetric(
+                                    horizontal: 12,
+                                    vertical: 8,
+                                  ),
                                   decoration: BoxDecoration(
                                     color: Colors.grey.shade100,
-                                    borderRadius: const BorderRadius.vertical(top: Radius.circular(3)),
-                                    border: Border(bottom: BorderSide(color: Colors.grey.shade400)),
+                                    borderRadius: const BorderRadius.vertical(
+                                      top: Radius.circular(3),
+                                    ),
+                                    border: Border(
+                                      bottom: BorderSide(
+                                        color: Colors.grey.shade400,
+                                      ),
+                                    ),
                                   ),
                                   child: Row(
                                     children: [
-                                      Icon(_getModuleIcon(modKey), size: 16, color: Colors.indigo.shade800),
+                                      Icon(
+                                        _getModuleIcon(modKey),
+                                        size: 16,
+                                        color: Colors.indigo.shade800,
+                                      ),
                                       const SizedBox(width: 8),
                                       Text(
                                         _getModuleLabel(modKey),
-                                        style: TextStyle(fontWeight: FontWeight.bold, fontSize: 13, color: Colors.indigo.shade900),
+                                        style: TextStyle(
+                                          fontWeight: FontWeight.bold,
+                                          fontSize: 13,
+                                          color: Colors.indigo.shade900,
+                                        ),
                                       ),
                                       const Spacer(),
                                       Text(
                                         "(${permsInMod.where((p) => selectedPerms.contains(p['code'])).length}/${permsInMod.length})",
-                                        style: TextStyle(fontSize: 11, fontWeight: FontWeight.bold, color: Colors.grey.shade700),
+                                        style: TextStyle(
+                                          fontSize: 11,
+                                          fontWeight: FontWeight.bold,
+                                          color: Colors.grey.shade700,
+                                        ),
                                       ),
                                     ],
                                   ),
@@ -4115,12 +5909,18 @@ class _DispatchSupervisorScreenState extends State<DispatchSupervisorScreen> {
                                 ...permsInMod.map((p) {
                                   final pCode = p['code'].toString();
                                   final pName = p['name'] ?? pCode;
-                                  final isChecked = selectedPerms.contains(pCode);
+                                  final isChecked = selectedPerms.contains(
+                                    pCode,
+                                  );
 
                                   final isUserManage = pCode == 'user:manage';
-                                  final isLocked = isUserManage && role['code'] != 'admin';
+                                  final isLocked =
+                                      isUserManage && role['code'] != 'admin';
                                   return CheckboxListTile(
-                                    contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 0),
+                                    contentPadding: const EdgeInsets.symmetric(
+                                      horizontal: 12,
+                                      vertical: 0,
+                                    ),
                                     dense: true,
                                     hoverColor: Colors.transparent,
                                     value: isChecked,
@@ -4132,38 +5932,55 @@ class _DispatchSupervisorScreenState extends State<DispatchSupervisorScreen> {
                                             style: TextStyle(
                                               fontSize: 13,
                                               fontWeight: FontWeight.w600,
-                                              color: isLocked ? Colors.grey.shade600 : Colors.black87,
+                                              color: isLocked
+                                                  ? Colors.grey.shade600
+                                                  : Colors.black87,
                                             ),
                                           ),
                                         ),
                                         if (isUserManage)
                                           Container(
-                                            padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                                            padding: const EdgeInsets.symmetric(
+                                              horizontal: 6,
+                                              vertical: 2,
+                                            ),
                                             decoration: BoxDecoration(
                                               color: Colors.red.shade50,
-                                              borderRadius: BorderRadius.circular(4),
-                                              border: Border.all(color: Colors.red.shade200),
+                                              borderRadius:
+                                                  BorderRadius.circular(4),
+                                              border: Border.all(
+                                                color: Colors.red.shade200,
+                                              ),
                                             ),
                                             child: Text(
                                               "Chỉ Admin tối cao",
-                                              style: TextStyle(fontSize: 10, fontWeight: FontWeight.bold, color: Colors.red.shade700),
+                                              style: TextStyle(
+                                                fontSize: 10,
+                                                fontWeight: FontWeight.bold,
+                                                color: Colors.red.shade700,
+                                              ),
                                             ),
                                           ),
                                       ],
                                     ),
                                     subtitle: Text(
                                       "Mã: $pCode",
-                                      style: TextStyle(fontSize: 11, color: Colors.grey.shade600),
+                                      style: TextStyle(
+                                        fontSize: 11,
+                                        color: Colors.grey.shade600,
+                                      ),
                                     ),
-                                    onChanged: isLocked ? null : (val) {
-                                      setDialogState(() {
-                                        if (val == true) {
-                                          selectedPerms.add(pCode);
-                                        } else {
-                                          selectedPerms.remove(pCode);
-                                        }
-                                      });
-                                    },
+                                    onChanged: isLocked
+                                        ? null
+                                        : (val) {
+                                            setDialogState(() {
+                                              if (val == true) {
+                                                selectedPerms.add(pCode);
+                                              } else {
+                                                selectedPerms.remove(pCode);
+                                              }
+                                            });
+                                          },
                                   );
                                 }),
                               ],
@@ -4191,7 +6008,9 @@ class _DispatchSupervisorScreenState extends State<DispatchSupervisorScreen> {
                 final name = nameCtrl.text.trim();
                 if (name.isEmpty) {
                   ScaffoldMessenger.of(context).showSnackBar(
-                    const SnackBar(content: Text("Tên vai trò không được để trống")),
+                    const SnackBar(
+                      content: Text("Tên vai trò không được để trống"),
+                    ),
                   );
                   return;
                 }
@@ -4201,7 +6020,9 @@ class _DispatchSupervisorScreenState extends State<DispatchSupervisorScreen> {
 
                 final res = await AdminService.updateRole(role['id'], {
                   "name": name,
-                  "description": descCtrl.text.trim().isNotEmpty ? descCtrl.text.trim() : null,
+                  "description": descCtrl.text.trim().isNotEmpty
+                      ? descCtrl.text.trim()
+                      : null,
                   "permission_codes": selectedPerms.toList(),
                 });
 
@@ -4210,8 +6031,14 @@ class _DispatchSupervisorScreenState extends State<DispatchSupervisorScreen> {
                 if (!mounted) return;
                 ScaffoldMessenger.of(context).showSnackBar(
                   SnackBar(
-                    backgroundColor: res['success'] == true ? Colors.green : Colors.red,
-                    content: Text(res['success'] == true ? "Đã cập nhật vai trò & quyền thành công!" : "Lỗi: ${res['message']}"),
+                    backgroundColor: res['success'] == true
+                        ? Colors.green
+                        : Colors.red,
+                    content: Text(
+                      res['success'] == true
+                          ? "Đã cập nhật vai trò & quyền thành công!"
+                          : "Lỗi: ${res['message']}",
+                    ),
                   ),
                 );
               },
@@ -4233,7 +6060,10 @@ class _DispatchSupervisorScreenState extends State<DispatchSupervisorScreen> {
           children: [
             Icon(Icons.warning_amber_rounded, color: Colors.red),
             SizedBox(width: 8),
-            Text("Xác nhận xóa vai trò", style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16)),
+            Text(
+              "Xác nhận xóa vai trò",
+              style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16),
+            ),
           ],
         ),
         content: Text(
@@ -4260,8 +6090,14 @@ class _DispatchSupervisorScreenState extends State<DispatchSupervisorScreen> {
               if (!mounted) return;
               ScaffoldMessenger.of(context).showSnackBar(
                 SnackBar(
-                  backgroundColor: res['success'] == true ? Colors.green : Colors.red,
-                  content: Text(res['success'] == true ? "Đã xóa vai trò thành công!" : "Lỗi: ${res['message']}"),
+                  backgroundColor: res['success'] == true
+                      ? Colors.green
+                      : Colors.red,
+                  content: Text(
+                    res['success'] == true
+                        ? "Đã xóa vai trò thành công!"
+                        : "Lỗi: ${res['message']}",
+                  ),
                 ),
               );
             },
@@ -4272,9 +6108,14 @@ class _DispatchSupervisorScreenState extends State<DispatchSupervisorScreen> {
     );
   }
 
-  static Widget _buildUserAvatarItem(Map<String, dynamic> u, {double size = 48.0}) {
+  static Widget _buildUserAvatarItem(
+    Map<String, dynamic> u, {
+    double size = 48.0,
+  }) {
     final avatarUrl = u['avatar_url']?.toString().trim();
-    final isDispatcher = u['role_codes'] != null && (u['role_codes'] as List<dynamic>).contains('dispatcher');
+    final isDispatcher =
+        u['role_codes'] != null &&
+        (u['role_codes'] as List<dynamic>).contains('dispatcher');
     final double avatarSize = size;
 
     Widget fallbackIcon = Container(
@@ -4306,7 +6147,8 @@ class _DispatchSupervisorScreenState extends State<DispatchSupervisorScreen> {
         alignment: Alignment.topCenter,
         errorBuilder: (context, error, stackTrace) => fallbackIcon,
       );
-    } else if (avatarUrl.startsWith('/uploads/') || avatarUrl.startsWith('uploads/')) {
+    } else if (avatarUrl.startsWith('/uploads/') ||
+        avatarUrl.startsWith('uploads/')) {
       final cleanPath = avatarUrl.startsWith('/') ? avatarUrl : '/$avatarUrl';
       imageWidget = Image.network(
         'https://saomai-api.type.vn$cleanPath',
@@ -4344,20 +6186,17 @@ class _DispatchSupervisorScreenState extends State<DispatchSupervisorScreen> {
       child: SizedBox(
         width: avatarSize,
         height: avatarSize,
-        child: AspectRatio(
-          aspectRatio: 1.0,
-          child: imageWidget,
-        ),
+        child: AspectRatio(aspectRatio: 1.0, child: imageWidget),
       ),
     );
   }
-
 
   // TAB 8: Cấu hình Nhắc nhở & Kịch bản Nền (Chỉ Điều phối, Giám đốc, Quản lý)
   Widget _buildRemindersConfigTab(AppState state) {
     final roles = state.userRoles.map((r) => r.toLowerCase()).toList();
     final username = (state.currentUsername ?? '').trim().toLowerCase();
-    final bool hasPermission = username == 'admin' ||
+    final bool hasPermission =
+        username == 'admin' ||
         roles.contains('admin') ||
         roles.contains('manager') ||
         roles.contains('dispatcher');
@@ -4376,17 +6215,29 @@ class _DispatchSupervisorScreenState extends State<DispatchSupervisorScreen> {
           child: Column(
             mainAxisSize: MainAxisSize.min,
             children: [
-              Icon(Icons.gpp_bad_outlined, size: 48, color: Colors.red.shade700),
+              Icon(
+                Icons.gpp_bad_outlined,
+                size: 48,
+                color: Colors.red.shade700,
+              ),
               const SizedBox(height: 16),
               const Text(
                 "Từ Chối Quyền Truy Cập",
-                style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold, color: Colors.red),
+                style: TextStyle(
+                  fontSize: 18,
+                  fontWeight: FontWeight.bold,
+                  color: Colors.red,
+                ),
               ),
               const SizedBox(height: 8),
               const Text(
                 "Màn hình Cấu hình & Kịch bản Nhắc nhở Chạy Nền chỉ dành riêng cho các tài khoản có vai trò Điều phối, Giám đốc hoặc Quản lý hệ thống.",
                 textAlign: TextAlign.center,
-                style: TextStyle(fontSize: 13, color: Colors.black87, height: 1.4),
+                style: TextStyle(
+                  fontSize: 13,
+                  color: Colors.black87,
+                  height: 1.4,
+                ),
               ),
             ],
           ),
@@ -4410,7 +6261,11 @@ class _DispatchSupervisorScreenState extends State<DispatchSupervisorScreen> {
             child: Row(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Icon(Icons.admin_panel_settings_outlined, color: Colors.blue.shade800, size: 28),
+                Icon(
+                  Icons.admin_panel_settings_outlined,
+                  color: Colors.blue.shade800,
+                  size: 28,
+                ),
                 const SizedBox(width: 12),
                 Expanded(
                   child: Column(
@@ -4427,7 +6282,11 @@ class _DispatchSupervisorScreenState extends State<DispatchSupervisorScreen> {
                       const SizedBox(height: 6),
                       Text(
                         "Phân hệ này cho phép Điều phối, Giám đốc và Quản trị viên theo dõi các quy tắc kiểm tra tự động chạy nền, định cấu hình ngưỡng vi phạm GPS/thời gian chờ bồn, và chạy kiểm thử mô phỏng các kịch bản thực tế gửi về thiết bị tài xế.",
-                        style: TextStyle(fontSize: 13, color: Colors.blueGrey.shade800, height: 1.4),
+                        style: TextStyle(
+                          fontSize: 13,
+                          color: Colors.blueGrey.shade800,
+                          height: 1.4,
+                        ),
                       ),
                     ],
                   ),
@@ -4456,11 +6315,17 @@ class _DispatchSupervisorScreenState extends State<DispatchSupervisorScreen> {
                     const SizedBox(width: 8),
                     const Text(
                       "Quy Tắc & Ngưỡng Kích Hoạt Cảnh Báo Tự Động",
-                      style: TextStyle(fontSize: 14, fontWeight: FontWeight.bold),
+                      style: TextStyle(
+                        fontSize: 14,
+                        fontWeight: FontWeight.bold,
+                      ),
                     ),
                     const Spacer(),
                     Container(
-                      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 8,
+                        vertical: 4,
+                      ),
                       decoration: BoxDecoration(
                         color: Colors.green.shade50,
                         borderRadius: BorderRadius.circular(4),
@@ -4468,7 +6333,11 @@ class _DispatchSupervisorScreenState extends State<DispatchSupervisorScreen> {
                       ),
                       child: Text(
                         "Đang kích hoạt nền",
-                        style: TextStyle(fontSize: 11, fontWeight: FontWeight.bold, color: Colors.green.shade800),
+                        style: TextStyle(
+                          fontSize: 11,
+                          fontWeight: FontWeight.bold,
+                          color: Colors.green.shade800,
+                        ),
                       ),
                     ),
                   ],
@@ -4477,7 +6346,8 @@ class _DispatchSupervisorScreenState extends State<DispatchSupervisorScreen> {
                 _buildRuleItem(
                   icon: Icons.navigation_outlined,
                   title: "1. Vi phạm lăn bánh chưa kiểm tra xe 5 góc ảnh",
-                  desc: "Khi GPS xe di chuyển vượt quá 500m so với tọa độ bãi/điểm đỗ mà tài xế chưa hoàn thành đủ 5 ảnh kiểm tra nhận ca.",
+                  desc:
+                      "Khi GPS xe di chuyển vượt quá 500m so với tọa độ bãi/điểm đỗ mà tài xế chưa hoàn thành đủ 5 ảnh kiểm tra nhận ca.",
                   thresholdText: "> 500 mét di chuyển",
                   statusTag: "Bắt buộc 100%",
                   color: Colors.deepOrange,
@@ -4485,8 +6355,10 @@ class _DispatchSupervisorScreenState extends State<DispatchSupervisorScreen> {
                 const SizedBox(height: 12),
                 _buildRuleItem(
                   icon: Icons.timer_outlined,
-                  title: "2. Cảnh báo dừng tại vùng giao chưa xác nhận đến trạm",
-                  desc: "GPS phát hiện xe đứng yên trong bán kính trạm giao hàng quá 15 phút mà tài xế chưa ấn mốc 'ĐẾN ĐIỂM GIAO'.",
+                  title:
+                      "2. Cảnh báo dừng tại vùng giao chưa xác nhận đến trạm",
+                  desc:
+                      "GPS phát hiện xe đứng yên trong bán kính trạm giao hàng quá 15 phút mà tài xế chưa ấn mốc 'ĐẾN ĐIỂM GIAO'.",
                   thresholdText: "> 15 phút dừng trạm",
                   statusTag: "Cảnh báo cấp 1",
                   color: Colors.amber.shade900,
@@ -4495,7 +6367,8 @@ class _DispatchSupervisorScreenState extends State<DispatchSupervisorScreen> {
                 _buildRuleItem(
                   icon: Icons.hourglass_bottom_outlined,
                   title: "3. Cảnh báo thời gian xả bồn quá hạn mức",
-                  desc: "Thời gian từ lúc bấm ĐẾN vượt quá 120 phút nhưng chưa bấm 'BƠM XONG'. Bắt buộc tài xế giải trình lý do chờ.",
+                  desc:
+                      "Thời gian từ lúc bấm ĐẾN vượt quá 120 phút nhưng chưa bấm 'BƠM XONG'. Bắt buộc tài xế giải trình lý do chờ.",
                   thresholdText: "> 120 phút xả bồn",
                   statusTag: "Yêu cầu giải trình",
                   color: Colors.red.shade700,
@@ -4504,7 +6377,8 @@ class _DispatchSupervisorScreenState extends State<DispatchSupervisorScreen> {
                 _buildRuleItem(
                   icon: Icons.fact_check_outlined,
                   title: "4. Nhắc nộp phiếu cân & Chốt bàn giao hết ca trực",
-                  desc: "Tự động kích hoạt lúc 19:00 (hết ca ngày) và 07:00 (hết ca đêm), đối soát số phiếu giao hàng và số km với đồng hồ táp lô.",
+                  desc:
+                      "Tự động kích hoạt lúc 19:00 (hết ca ngày) và 07:00 (hết ca đêm), đối soát số phiếu giao hàng và số km với đồng hồ táp lô.",
                   thresholdText: "Mốc 19:00 & 07:00",
                   statusTag: "Định kỳ ca trực",
                   color: Colors.teal.shade700,
@@ -4530,7 +6404,11 @@ class _DispatchSupervisorScreenState extends State<DispatchSupervisorScreen> {
               children: [
                 Row(
                   children: [
-                    Icon(Icons.science_outlined, color: Colors.amber.shade900, size: 22),
+                    Icon(
+                      Icons.science_outlined,
+                      color: Colors.amber.shade900,
+                      size: 22,
+                    ),
                     const SizedBox(width: 8),
                     Text(
                       "Công Cụ Kích Hoạt Thử Nghiệm Kịch Bản (Dành Riêng Cho Quản Lý)",
@@ -4561,10 +6439,18 @@ class _DispatchSupervisorScreenState extends State<DispatchSupervisorScreen> {
                           side: BorderSide(color: Colors.red.shade300),
                           elevation: 0,
                           padding: const EdgeInsets.symmetric(horizontal: 14),
-                          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(4)),
+                          shape: RoundedRectangleBorder(
+                            borderRadius: BorderRadius.circular(4),
+                          ),
                         ),
                         icon: const Icon(Icons.fmd_bad_outlined, size: 16),
-                        label: const Text("Chạy >500m chưa chụp", style: TextStyle(fontSize: 12, fontWeight: FontWeight.bold)),
+                        label: const Text(
+                          "Chạy >500m chưa chụp",
+                          style: TextStyle(
+                            fontSize: 12,
+                            fontWeight: FontWeight.bold,
+                          ),
+                        ),
                         onPressed: () {
                           state.triggerReminder(
                             ReminderType.movingWithoutInspection,
@@ -4572,7 +6458,9 @@ class _DispatchSupervisorScreenState extends State<DispatchSupervisorScreen> {
                           );
                           ScaffoldMessenger.of(context).showSnackBar(
                             const SnackBar(
-                              content: Text("Đã kích hoạt cảnh báo: Di chuyển quá 500m chưa kiểm tra."),
+                              content: Text(
+                                "Đã kích hoạt cảnh báo: Di chuyển quá 500m chưa kiểm tra.",
+                              ),
                               backgroundColor: Colors.red,
                               duration: Duration(seconds: 2),
                             ),
@@ -4589,10 +6477,18 @@ class _DispatchSupervisorScreenState extends State<DispatchSupervisorScreen> {
                           side: BorderSide(color: Colors.amber.shade300),
                           elevation: 0,
                           padding: const EdgeInsets.symmetric(horizontal: 14),
-                          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(4)),
+                          shape: RoundedRectangleBorder(
+                            borderRadius: BorderRadius.circular(4),
+                          ),
                         ),
                         icon: const Icon(Icons.timer_outlined, size: 16),
-                        label: const Text("Dừng 15p chưa bấm ĐẾN", style: TextStyle(fontSize: 12, fontWeight: FontWeight.bold)),
+                        label: const Text(
+                          "Dừng 15p chưa bấm ĐẾN",
+                          style: TextStyle(
+                            fontSize: 12,
+                            fontWeight: FontWeight.bold,
+                          ),
+                        ),
                         onPressed: () {
                           state.triggerReminder(
                             ReminderType.arrivedZoneNotConfirmed,
@@ -4600,7 +6496,9 @@ class _DispatchSupervisorScreenState extends State<DispatchSupervisorScreen> {
                           );
                           ScaffoldMessenger.of(context).showSnackBar(
                             const SnackBar(
-                              content: Text("Đã kích hoạt cảnh báo: Dừng 15 phút chưa bấm ĐẾN."),
+                              content: Text(
+                                "Đã kích hoạt cảnh báo: Dừng 15 phút chưa bấm ĐẾN.",
+                              ),
                               backgroundColor: Colors.amber,
                               duration: Duration(seconds: 2),
                             ),
@@ -4617,10 +6515,21 @@ class _DispatchSupervisorScreenState extends State<DispatchSupervisorScreen> {
                           side: BorderSide(color: Colors.deepOrange.shade300),
                           elevation: 0,
                           padding: const EdgeInsets.symmetric(horizontal: 14),
-                          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(4)),
+                          shape: RoundedRectangleBorder(
+                            borderRadius: BorderRadius.circular(4),
+                          ),
                         ),
-                        icon: const Icon(Icons.hourglass_empty_outlined, size: 16),
-                        label: const Text("Đến >120p chưa bơm xong", style: TextStyle(fontSize: 12, fontWeight: FontWeight.bold)),
+                        icon: const Icon(
+                          Icons.hourglass_empty_outlined,
+                          size: 16,
+                        ),
+                        label: const Text(
+                          "Đến >120p chưa bơm xong",
+                          style: TextStyle(
+                            fontSize: 12,
+                            fontWeight: FontWeight.bold,
+                          ),
+                        ),
                         onPressed: () {
                           state.triggerReminder(
                             ReminderType.pumpingOverdue,
@@ -4628,7 +6537,9 @@ class _DispatchSupervisorScreenState extends State<DispatchSupervisorScreen> {
                           );
                           ScaffoldMessenger.of(context).showSnackBar(
                             const SnackBar(
-                              content: Text("Đã kích hoạt cảnh báo: Xả bồn quá 120 phút."),
+                              content: Text(
+                                "Đã kích hoạt cảnh báo: Xả bồn quá 120 phút.",
+                              ),
                               backgroundColor: Colors.deepOrange,
                               duration: Duration(seconds: 2),
                             ),
@@ -4645,10 +6556,18 @@ class _DispatchSupervisorScreenState extends State<DispatchSupervisorScreen> {
                           side: BorderSide(color: Colors.teal.shade300),
                           elevation: 0,
                           padding: const EdgeInsets.symmetric(horizontal: 14),
-                          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(4)),
+                          shape: RoundedRectangleBorder(
+                            borderRadius: BorderRadius.circular(4),
+                          ),
                         ),
                         icon: const Icon(Icons.alarm_outlined, size: 16),
-                        label: const Text("Tổng kết hết ca 19h / 07h", style: TextStyle(fontSize: 12, fontWeight: FontWeight.bold)),
+                        label: const Text(
+                          "Tổng kết hết ca 19h / 07h",
+                          style: TextStyle(
+                            fontSize: 12,
+                            fontWeight: FontWeight.bold,
+                          ),
+                        ),
                         onPressed: () {
                           state.triggerReminder(
                             ReminderType.shiftEndReminder,
@@ -4656,7 +6575,9 @@ class _DispatchSupervisorScreenState extends State<DispatchSupervisorScreen> {
                           );
                           ScaffoldMessenger.of(context).showSnackBar(
                             const SnackBar(
-                              content: Text("Đã kích hoạt nhắc nhở: Tổng kết kết thúc ca trực."),
+                              content: Text(
+                                "Đã kích hoạt nhắc nhở: Tổng kết kết thúc ca trực.",
+                              ),
                               backgroundColor: Colors.teal,
                               duration: Duration(seconds: 2),
                             ),
@@ -4689,11 +6610,18 @@ class _DispatchSupervisorScreenState extends State<DispatchSupervisorScreen> {
                   children: [
                     Row(
                       children: [
-                        Icon(Icons.history, size: 20, color: Colors.blueGrey.shade800),
+                        Icon(
+                          Icons.history,
+                          size: 20,
+                          color: Colors.blueGrey.shade800,
+                        ),
                         const SizedBox(width: 8),
                         Text(
                           "Nhật Ký Cảnh Báo Đã Gửi (${state.activeReminders.length} bản ghi)",
-                          style: const TextStyle(fontSize: 14, fontWeight: FontWeight.bold),
+                          style: const TextStyle(
+                            fontSize: 14,
+                            fontWeight: FontWeight.bold,
+                          ),
                         ),
                       ],
                     ),
@@ -4704,10 +6632,15 @@ class _DispatchSupervisorScreenState extends State<DispatchSupervisorScreen> {
                           style: OutlinedButton.styleFrom(
                             foregroundColor: Colors.grey.shade700,
                             padding: const EdgeInsets.symmetric(horizontal: 8),
-                            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(4)),
+                            shape: RoundedRectangleBorder(
+                              borderRadius: BorderRadius.circular(4),
+                            ),
                           ),
                           icon: const Icon(Icons.clear_all, size: 16),
-                          label: const Text("Xóa nhật ký", style: TextStyle(fontSize: 11)),
+                          label: const Text(
+                            "Xóa nhật ký",
+                            style: TextStyle(fontSize: 11),
+                          ),
                           onPressed: () {
                             state.activeReminders.clear();
                             (context as Element).markNeedsBuild();
@@ -4723,7 +6656,10 @@ class _DispatchSupervisorScreenState extends State<DispatchSupervisorScreen> {
                     child: Center(
                       child: Text(
                         "Chưa có bản ghi cảnh báo nào được gửi đi trong phiên làm việc hiện tại.",
-                        style: TextStyle(fontSize: 13, color: Colors.grey.shade600),
+                        style: TextStyle(
+                          fontSize: 13,
+                          color: Colors.grey.shade600,
+                        ),
                       ),
                     ),
                   )
@@ -4737,35 +6673,48 @@ class _DispatchSupervisorScreenState extends State<DispatchSupervisorScreen> {
                       final item = state.activeReminders[index];
                       return ListTile(
                         dense: true,
-                        contentPadding: const EdgeInsets.symmetric(horizontal: 4, vertical: 4),
+                        contentPadding: const EdgeInsets.symmetric(
+                          horizontal: 4,
+                          vertical: 4,
+                        ),
                         leading: CircleAvatar(
                           radius: 16,
                           backgroundColor: Colors.blue.shade50,
                           child: Icon(
                             item.type == ReminderType.movingWithoutInspection
                                 ? Icons.warning_amber_rounded
-                                : item.type == ReminderType.arrivedZoneNotConfirmed
-                                    ? Icons.timer_outlined
-                                    : item.type == ReminderType.pumpingOverdue
-                                        ? Icons.hourglass_bottom
-                                        : Icons.alarm,
+                                : item.type ==
+                                      ReminderType.arrivedZoneNotConfirmed
+                                ? Icons.timer_outlined
+                                : item.type == ReminderType.pumpingOverdue
+                                ? Icons.hourglass_bottom
+                                : Icons.alarm,
                             size: 18,
                             color: Colors.blue.shade800,
                           ),
                         ),
                         title: Text(
                           item.message,
-                          style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w600),
+                          style: const TextStyle(
+                            fontSize: 13,
+                            fontWeight: FontWeight.w600,
+                          ),
                         ),
                         subtitle: Padding(
                           padding: const EdgeInsets.only(top: 4),
                           child: Text(
                             "Phương tiện: ${item.vehiclePlate} | Mã: ${item.id} | Thời gian: ${item.sentTime.hour.toString().padLeft(2, '0')}:${item.sentTime.minute.toString().padLeft(2, '0')}:${item.sentTime.second.toString().padLeft(2, '0')}",
-                            style: TextStyle(fontSize: 11, color: Colors.grey.shade600),
+                            style: TextStyle(
+                              fontSize: 11,
+                              color: Colors.grey.shade600,
+                            ),
                           ),
                         ),
                         trailing: Container(
-                          padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                          padding: const EdgeInsets.symmetric(
+                            horizontal: 6,
+                            vertical: 2,
+                          ),
                           decoration: BoxDecoration(
                             color: Colors.green.shade50,
                             borderRadius: BorderRadius.circular(4),
@@ -4773,7 +6722,11 @@ class _DispatchSupervisorScreenState extends State<DispatchSupervisorScreen> {
                           ),
                           child: Text(
                             "Đã gửi",
-                            style: TextStyle(fontSize: 10, color: Colors.green.shade800, fontWeight: FontWeight.bold),
+                            style: TextStyle(
+                              fontSize: 10,
+                              color: Colors.green.shade800,
+                              fontWeight: FontWeight.bold,
+                            ),
                           ),
                         ),
                       );
@@ -4823,11 +6776,17 @@ class _DispatchSupervisorScreenState extends State<DispatchSupervisorScreen> {
                     Expanded(
                       child: Text(
                         title,
-                        style: const TextStyle(fontSize: 13, fontWeight: FontWeight.bold),
+                        style: const TextStyle(
+                          fontSize: 13,
+                          fontWeight: FontWeight.bold,
+                        ),
                       ),
                     ),
                     Container(
-                      padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 6,
+                        vertical: 2,
+                      ),
                       decoration: BoxDecoration(
                         color: color.withOpacity(0.1),
                         borderRadius: BorderRadius.circular(4),
@@ -4835,7 +6794,11 @@ class _DispatchSupervisorScreenState extends State<DispatchSupervisorScreen> {
                       ),
                       child: Text(
                         statusTag,
-                        style: TextStyle(fontSize: 11, fontWeight: FontWeight.bold, color: color),
+                        style: TextStyle(
+                          fontSize: 11,
+                          fontWeight: FontWeight.bold,
+                          color: color,
+                        ),
                       ),
                     ),
                   ],
@@ -4843,7 +6806,11 @@ class _DispatchSupervisorScreenState extends State<DispatchSupervisorScreen> {
                 const SizedBox(height: 4),
                 Text(
                   desc,
-                  style: TextStyle(fontSize: 12, color: Colors.grey.shade700, height: 1.3),
+                  style: TextStyle(
+                    fontSize: 12,
+                    color: Colors.grey.shade700,
+                    height: 1.3,
+                  ),
                 ),
                 const SizedBox(height: 6),
                 Row(
@@ -4852,11 +6819,18 @@ class _DispatchSupervisorScreenState extends State<DispatchSupervisorScreen> {
                     const SizedBox(width: 4),
                     Text(
                       "Ngưỡng cấu hình: ",
-                      style: TextStyle(fontSize: 11, color: Colors.grey.shade600),
+                      style: TextStyle(
+                        fontSize: 11,
+                        color: Colors.grey.shade600,
+                      ),
                     ),
                     Text(
                       thresholdText,
-                      style: TextStyle(fontSize: 11, fontWeight: FontWeight.bold, color: Colors.blueGrey.shade800),
+                      style: TextStyle(
+                        fontSize: 11,
+                        fontWeight: FontWeight.bold,
+                        color: Colors.blueGrey.shade800,
+                      ),
                     ),
                   ],
                 ),
@@ -4868,7 +6842,6 @@ class _DispatchSupervisorScreenState extends State<DispatchSupervisorScreen> {
     );
   }
 }
-
 
 // ============================================================================
 // MODAL KIỂM TRA TÌNH TRẠNG XE QUA 5 ẢNH CAMERA CỦA TÀI XẾ (ĐIỀU PHỐI VIÊN DUYỆT)
@@ -4885,7 +6858,8 @@ class _VehicleInspectionsModal extends StatefulWidget {
   });
 
   @override
-  State<_VehicleInspectionsModal> createState() => _VehicleInspectionsModalState();
+  State<_VehicleInspectionsModal> createState() =>
+      _VehicleInspectionsModalState();
 }
 
 class _VehicleInspectionsModalState extends State<_VehicleInspectionsModal> {
@@ -4895,6 +6869,8 @@ class _VehicleInspectionsModalState extends State<_VehicleInspectionsModal> {
   String _filterPlate = '';
   final TextEditingController _noteCtrl = TextEditingController();
   bool _isSubmitting = false;
+  bool _showTimeSlider = false;
+  int _sliderTimeIndex = 0;
 
   @override
   void initState() {
@@ -4945,13 +6921,17 @@ class _VehicleInspectionsModalState extends State<_VehicleInspectionsModal> {
       if (res['success'] == true) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
-            backgroundColor: status == 'approved' ? Colors.green.shade700 : (status == 'rejected' ? Colors.red.shade700 : Colors.amber.shade800),
+            backgroundColor: status == 'approved'
+                ? Colors.green.shade700
+                : (status == 'rejected'
+                      ? Colors.red.shade700
+                      : Colors.amber.shade800),
             content: Text(
               status == 'approved'
                   ? "Đã phê duyệt kiểm tra xe! Xe được phép nhận chuyến."
                   : (status == 'rejected'
-                      ? "Đã khóa chuyến / Yêu cầu tài xế chụp kiểm tra lại."
-                      : "Đã chuyển trạng thái theo dõi kỹ thuật."),
+                        ? "Đã khóa chuyến / Yêu cầu tài xế chụp kiểm tra lại."
+                        : "Đã chuyển trạng thái theo dõi kỹ thuật."),
             ),
           ),
         );
@@ -4959,7 +6939,10 @@ class _VehicleInspectionsModalState extends State<_VehicleInspectionsModal> {
         _loadInspections();
       } else {
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(backgroundColor: Colors.red, content: Text(res['message'] ?? 'Lỗi cập nhật')),
+          SnackBar(
+            backgroundColor: Colors.red,
+            content: Text(res['message'] ?? 'Lỗi cập nhật'),
+          ),
         );
       }
     }
@@ -4987,7 +6970,11 @@ class _VehicleInspectionsModalState extends State<_VehicleInspectionsModal> {
                 Expanded(
                   child: Text(
                     title,
-                    style: const TextStyle(fontSize: 12, fontWeight: FontWeight.bold, color: Colors.black87),
+                    style: const TextStyle(
+                      fontSize: 12,
+                      fontWeight: FontWeight.bold,
+                      color: Colors.black87,
+                    ),
                     maxLines: 1,
                     overflow: TextOverflow.ellipsis,
                   ),
@@ -5014,7 +7001,11 @@ class _VehicleInspectionsModalState extends State<_VehicleInspectionsModal> {
                               color: Colors.black54,
                               borderRadius: BorderRadius.circular(4),
                             ),
-                            child: const Icon(Icons.zoom_in, size: 16, color: Colors.white),
+                            child: const Icon(
+                              Icons.zoom_in,
+                              size: 16,
+                              color: Colors.white,
+                            ),
                           ),
                         ),
                       ],
@@ -5024,9 +7015,19 @@ class _VehicleInspectionsModalState extends State<_VehicleInspectionsModal> {
                     child: Column(
                       mainAxisAlignment: MainAxisAlignment.center,
                       children: [
-                        Icon(Icons.broken_image_outlined, size: 32, color: Colors.grey.shade400),
+                        Icon(
+                          Icons.broken_image_outlined,
+                          size: 32,
+                          color: Colors.grey.shade400,
+                        ),
                         const SizedBox(height: 4),
-                        Text("Chưa có ảnh", style: TextStyle(fontSize: 11, color: Colors.grey.shade600)),
+                        Text(
+                          "Chưa có ảnh",
+                          style: TextStyle(
+                            fontSize: 11,
+                            color: Colors.grey.shade600,
+                          ),
+                        ),
                       ],
                     ),
                   ),
@@ -5036,11 +7037,13 @@ class _VehicleInspectionsModalState extends State<_VehicleInspectionsModal> {
     );
   }
 
-  Widget _buildSafeImage(String url) {
+  Widget _buildSafeImage(String url) => _buildSafeImageFit(url, BoxFit.cover);
+
+  Widget _buildSafeImageFit(String url, BoxFit fit) {
     if (url.startsWith('http://') || url.startsWith('https://')) {
       return Image.network(
         url,
-        fit: BoxFit.cover,
+        fit: fit,
         errorBuilder: (ctx, err, stack) => _buildPlaceholderIcon(),
       );
     } else {
@@ -5048,13 +7051,15 @@ class _VehicleInspectionsModalState extends State<_VehicleInspectionsModal> {
       if (file.existsSync()) {
         return Image.file(
           file,
-          fit: BoxFit.cover,
+          fit: fit,
           errorBuilder: (ctx, err, stack) => _buildPlaceholderIcon(),
         );
       }
       return Image.network(
-        url.startsWith('http') ? url : 'https://saomai-api.type.vn/${url.startsWith('/') ? url.substring(1) : url}',
-        fit: BoxFit.cover,
+        url.startsWith('http')
+            ? url
+            : 'https://saomai-api.type.vn/${url.startsWith('/') ? url.substring(1) : url}',
+        fit: fit,
         errorBuilder: (ctx, err, stack) => _buildPlaceholderIcon(),
       );
     }
@@ -5065,6 +7070,400 @@ class _VehicleInspectionsModalState extends State<_VehicleInspectionsModal> {
       color: Colors.blueGrey.shade50,
       child: Center(
         child: Icon(Icons.image, size: 40, color: Colors.blueGrey.shade300),
+      ),
+    );
+  }
+
+  // ================= TIEN LUI THEO THOI GIAN (SLIDE VIEWER) =================
+  List<dynamic> get _sliderRecords {
+    final plate = _selectedRecord?['plate_number']?.toString();
+    if (plate == null || plate.isEmpty || plate == 'N/A') return _inspections;
+    final samePlate = _inspections
+        .where((r) => r['plate_number']?.toString() == plate)
+        .toList();
+    return samePlate.isNotEmpty ? samePlate : _inspections;
+  }
+
+  void _toggleTimeSlider() {
+    setState(() {
+      _showTimeSlider = !_showTimeSlider;
+      if (_showTimeSlider) {
+        final records = _sliderRecords;
+        int idx = -1;
+        if (_selectedRecord != null) {
+          idx = records.indexWhere((r) => r['id'] == _selectedRecord!['id']);
+        }
+        _sliderTimeIndex = idx >= 0 ? idx : 0;
+      }
+    });
+  }
+
+  String _formatRecDate(dynamic value) {
+    if (value == null) return 'N/A';
+    final s = value.toString();
+    if (s.length >= 10 && RegExp(r'^\d{4}-\d{2}-\d{2}').hasMatch(s)) {
+      final p = s.substring(0, 10).split('-');
+      return '${p[2]}/${p[1]}/${p[0]}';
+    }
+    return s;
+  }
+
+  Widget _sliderImageOrPlaceholder(dynamic url, {BoxFit fit = BoxFit.contain}) {
+    final u = (url ?? '').toString();
+    if (u.isEmpty) {
+      return Container(
+        color: Colors.blueGrey.shade50,
+        child: Center(
+          child: Icon(Icons.image, size: 36, color: Colors.blueGrey.shade300),
+        ),
+      );
+    }
+    return _buildSafeImageFit(u, fit);
+  }
+
+  static const List<List<String>> _sliderPhotoFields = [
+    ["1. Gầm trước xe", "img_front_underbody"],
+    ["2. Bầu vi sai & Gầm sau", "img_rear_underbody"],
+    ["3. Hông trái xe", "img_left_side"],
+    ["4. Hông phải xe", "img_right_side"],
+    ["5. Táp-lô & Đồng hồ ODO", "img_dashboard"],
+  ];
+
+  void _goToSliderTime(int i) {
+    final records = _sliderRecords;
+    if (records.isEmpty || i < 0 || i >= records.length) return;
+    setState(() {
+      _sliderTimeIndex = i;
+      _selectedRecord = records[i] as Map<String, dynamic>;
+    });
+  }
+
+  Widget _buildTimeSliderViewer(bool isDesktop) {
+    if (_selectedRecord == null) {
+      return const Center(
+        child: Column(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            Icon(Icons.history, size: 40, color: Colors.grey),
+            SizedBox(height: 8),
+            Text(
+              "Chưa có dữ liệu kiểm tra",
+              style: TextStyle(color: Colors.grey),
+            ),
+          ],
+        ),
+      );
+    }
+    final records = _sliderRecords;
+    if (records.isEmpty) {
+      return const Center(
+        child: Text(
+          "Chưa có dữ liệu kiểm tra",
+          style: TextStyle(color: Colors.grey),
+        ),
+      );
+    }
+    int safeIdx = _sliderTimeIndex;
+    if (safeIdx > records.length - 1) safeIdx = records.length - 1;
+    if (safeIdx < 0) safeIdx = 0;
+    final rec = records[safeIdx] as Map<String, dynamic>;
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        Container(
+          padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 4),
+          child: Row(
+            children: [
+              Icon(Icons.history, size: 18, color: Colors.teal.shade700),
+              const SizedBox(width: 6),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      "${rec['plate_number'] ?? 'N/A'} • ${_formatRecDate(rec['check_date'] ?? rec['created_at'])}",
+                      style: const TextStyle(
+                        fontSize: 13,
+                        fontWeight: FontWeight.bold,
+                      ),
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                    ),
+                    Text(
+                      "ODO: ${rec['km_confirmed'] ?? rec['km_ocr'] ?? 'N/A'} km • ${records.length} lần kiểm tra cùng biển số",
+                      style: const TextStyle(
+                        fontSize: 11,
+                        color: Colors.black54,
+                      ),
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                    ),
+                  ],
+                ),
+              ),
+              IconButton(
+                visualDensity: VisualDensity.compact,
+                icon: const Icon(Icons.chevron_left),
+                tooltip: "Trước (cũ hơn)",
+                onPressed: safeIdx > 0
+                    ? () => _goToSliderTime(safeIdx - 1)
+                    : null,
+              ),
+              Text(
+                "${safeIdx + 1}/${records.length}",
+                style: const TextStyle(
+                  fontSize: 11.5,
+                  fontWeight: FontWeight.bold,
+                ),
+              ),
+              IconButton(
+                visualDensity: VisualDensity.compact,
+                icon: const Icon(Icons.chevron_right),
+                tooltip: "Sau (mới hơn)",
+                onPressed: safeIdx < records.length - 1
+                    ? () => _goToSliderTime(safeIdx + 1)
+                    : null,
+              ),
+              TextButton.icon(
+                style: TextButton.styleFrom(
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 8,
+                    vertical: 2,
+                  ),
+                  minimumSize: Size.zero,
+                  tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                ),
+                onPressed: _showComparePairDialog,
+                icon: Icon(
+                  Icons.compare,
+                  size: 15,
+                  color: Colors.orange.shade800,
+                ),
+                label: Text(
+                  "So sánh đôi",
+                  style: TextStyle(
+                    fontSize: 11.5,
+                    fontWeight: FontWeight.bold,
+                    color: Colors.orange.shade800,
+                  ),
+                ),
+              ),
+            ],
+          ),
+        ),
+        Expanded(
+          child: ListView.separated(
+            padding: const EdgeInsets.symmetric(horizontal: 4),
+            itemCount: _sliderPhotoFields.length,
+            separatorBuilder: (_, __) => const SizedBox(height: 8),
+            itemBuilder: (ctx, i) {
+              final title = _sliderPhotoFields[i][0];
+              final url = rec[_sliderPhotoFields[i][1]];
+              return Container(
+                height: isDesktop ? 230 : 190,
+                decoration: BoxDecoration(
+                  color: Colors.white,
+                  borderRadius: BorderRadius.circular(4),
+                  border: Border.all(color: Colors.grey.shade300),
+                ),
+                clipBehavior: Clip.antiAlias,
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
+                  children: [
+                    Container(
+                      height: 26,
+                      color: Colors.grey.shade200,
+                      padding: const EdgeInsets.symmetric(horizontal: 8),
+                      alignment: Alignment.centerLeft,
+                      child: Text(
+                        title,
+                        style: const TextStyle(
+                          fontSize: 11.5,
+                          fontWeight: FontWeight.bold,
+                          color: Colors.black87,
+                        ),
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                      ),
+                    ),
+                    Expanded(child: _sliderImageOrPlaceholder(url)),
+                  ],
+                ),
+              );
+            },
+          ),
+        ),
+        Container(
+          padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              Slider(
+                value: safeIdx.toDouble(),
+                min: 0,
+                max: (records.length - 1).toDouble(),
+                divisions: records.length > 1 ? records.length - 1 : null,
+                label: "Lần ${safeIdx + 1}/${records.length}",
+                activeColor: Colors.teal,
+                onChanged: (v) => _goToSliderTime(v.round()),
+              ),
+              Row(
+                children: [
+                  Text(
+                    "Cũ nhất: ${_formatRecDate(records.last['check_date'] ?? records.last['created_at'])}",
+                    style: const TextStyle(fontSize: 10, color: Colors.black45),
+                  ),
+                  const Spacer(),
+                  Text(
+                    "Mới nhất: ${_formatRecDate(records.first['check_date'] ?? records.first['created_at'])}",
+                    style: const TextStyle(fontSize: 10, color: Colors.black45),
+                  ),
+                ],
+              ),
+            ],
+          ),
+        ),
+      ],
+    );
+  }
+
+  void _showComparePairDialog() {
+    final records = _sliderRecords;
+    if (records.isEmpty || _selectedRecord == null) return;
+    int currentIdx = _sliderTimeIndex;
+    if (currentIdx > records.length - 1) currentIdx = records.length - 1;
+    if (currentIdx < 0) currentIdx = 0;
+    int defaultCmp = currentIdx + 1 < records.length
+        ? currentIdx + 1
+        : currentIdx - 1;
+    if (defaultCmp < 0) defaultCmp = currentIdx;
+    final ValueNotifier<int> compareIdx = ValueNotifier<int>(defaultCmp);
+
+    showDialog(
+      context: context,
+      builder: (ctx) => Dialog(
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(4)),
+        child: Container(
+          width: 940,
+          padding: const EdgeInsets.all(16),
+          child: SingleChildScrollView(
+            child: ValueListenableBuilder<int>(
+              valueListenable: compareIdx,
+              builder: (ctx, cmpIdx, _) {
+                final recA = records[currentIdx] as Map<String, dynamic>;
+                final recB = records[cmpIdx] as Map<String, dynamic>;
+                final samePhoto = cmpIdx == currentIdx;
+                return Column(
+                  mainAxisSize: MainAxisSize.min,
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
+                  children: [
+                    Row(
+                      children: [
+                        Expanded(
+                          child: Text(
+                            "So sánh tiến lùi: ${recA['plate_number'] ?? 'N/A'}",
+                            style: const TextStyle(
+                              fontSize: 16,
+                              fontWeight: FontWeight.bold,
+                            ),
+                          ),
+                        ),
+                        IconButton(
+                          icon: const Icon(Icons.close),
+                          onPressed: () => Navigator.pop(ctx),
+                        ),
+                      ],
+                    ),
+                    const SizedBox(height: 4),
+                    Row(
+                      children: [
+                        Expanded(
+                          child: Text(
+                            "Lần ${currentIdx + 1} • ${_formatRecDate(recA['check_date'] ?? recA['created_at'])} • ODO: ${recA['km_confirmed'] ?? recA['km_ocr'] ?? 'N/A'} km",
+                            style: const TextStyle(
+                              fontSize: 11.5,
+                              fontWeight: FontWeight.bold,
+                              color: Colors.teal,
+                            ),
+                            textAlign: TextAlign.center,
+                          ),
+                        ),
+                        const SizedBox(width: 8),
+                        Expanded(
+                          child: Text(
+                            samePhoto
+                                ? "Trùng lần đang xem, kéo thanh trượt để chọn lần khác"
+                                : "Lần ${cmpIdx + 1} • ${_formatRecDate(recB['check_date'] ?? recB['created_at'])} • ODO: ${recB['km_confirmed'] ?? recB['km_ocr'] ?? 'N/A'} km",
+                            style: const TextStyle(
+                              fontSize: 11.5,
+                              fontWeight: FontWeight.bold,
+                              color: Colors.orange,
+                            ),
+                            textAlign: TextAlign.center,
+                          ),
+                        ),
+                      ],
+                    ),
+                    Slider(
+                      value: cmpIdx.toDouble(),
+                      min: 0,
+                      max: (records.length - 1).toDouble(),
+                      divisions: records.length > 1 ? records.length - 1 : null,
+                      label: "Lần ${cmpIdx + 1}/${records.length}",
+                      activeColor: Colors.orange,
+                      onChanged: (v) => compareIdx.value = v.round(),
+                    ),
+                    const SizedBox(height: 4),
+                    ..._sliderPhotoFields.map((f) {
+                      return Padding(
+                        padding: const EdgeInsets.only(bottom: 10),
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Text(
+                              f[0],
+                              style: const TextStyle(
+                                fontSize: 11,
+                                fontWeight: FontWeight.bold,
+                                color: Colors.blueGrey,
+                              ),
+                            ),
+                            const SizedBox(height: 4),
+                            SizedBox(
+                              height: 150,
+                              child: Row(
+                                children: [
+                                  Expanded(
+                                    child: ClipRRect(
+                                      borderRadius: BorderRadius.circular(4),
+                                      child: _sliderImageOrPlaceholder(
+                                        recA[f[1]],
+                                      ),
+                                    ),
+                                  ),
+                                  const SizedBox(width: 8),
+                                  Expanded(
+                                    child: ClipRRect(
+                                      borderRadius: BorderRadius.circular(4),
+                                      child: _sliderImageOrPlaceholder(
+                                        recB[f[1]],
+                                      ),
+                                    ),
+                                  ),
+                                ],
+                              ),
+                            ),
+                          ],
+                        ),
+                      );
+                    }),
+                  ],
+                );
+              },
+            ),
+          ),
+        ),
       ),
     );
   }
@@ -5084,8 +7483,17 @@ class _VehicleInspectionsModalState extends State<_VehicleInspectionsModal> {
               Row(
                 mainAxisAlignment: MainAxisAlignment.spaceBetween,
                 children: [
-                  Text(title, style: const TextStyle(fontSize: 16, fontWeight: FontWeight.bold)),
-                  IconButton(icon: const Icon(Icons.close), onPressed: () => Navigator.pop(ctx)),
+                  Text(
+                    title,
+                    style: const TextStyle(
+                      fontSize: 16,
+                      fontWeight: FontWeight.bold,
+                    ),
+                  ),
+                  IconButton(
+                    icon: const Icon(Icons.close),
+                    onPressed: () => Navigator.pop(ctx),
+                  ),
                 ],
               ),
               const SizedBox(height: 12),
@@ -5128,7 +7536,11 @@ class _VehicleInspectionsModalState extends State<_VehicleInspectionsModal> {
                     borderRadius: BorderRadius.circular(4),
                     border: Border.all(color: Colors.teal.shade200),
                   ),
-                  child: const Icon(Icons.verified_user, color: Colors.teal, size: 24),
+                  child: const Icon(
+                    Icons.verified_user,
+                    color: Colors.teal,
+                    size: 24,
+                  ),
                 ),
                 const SizedBox(width: 12),
                 Expanded(
@@ -5139,7 +7551,11 @@ class _VehicleInspectionsModalState extends State<_VehicleInspectionsModal> {
                         _filterPlate.isNotEmpty
                             ? "Kiểm Tra Xe Giao Nhận Ca (5 Ảnh) - Biển số: $_filterPlate"
                             : "Giám Sát Kiểm Tra Ngoại Quan Xe Đầu Ngày (5 Ảnh)",
-                        style: const TextStyle(fontSize: 17, fontWeight: FontWeight.bold, color: Colors.blueGrey),
+                        style: const TextStyle(
+                          fontSize: 17,
+                          fontWeight: FontWeight.bold,
+                          color: Colors.blueGrey,
+                        ),
                       ),
                       const SizedBox(height: 2),
                       const Text(
@@ -5171,19 +7587,31 @@ class _VehicleInspectionsModalState extends State<_VehicleInspectionsModal> {
                             crossAxisAlignment: CrossAxisAlignment.start,
                             children: [
                               Container(
-                                padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+                                padding: const EdgeInsets.symmetric(
+                                  horizontal: 10,
+                                  vertical: 8,
+                                ),
                                 decoration: BoxDecoration(
                                   color: Colors.grey.shade100,
                                   borderRadius: BorderRadius.circular(4),
-                                  border: Border.all(color: Colors.grey.shade300),
+                                  border: Border.all(
+                                    color: Colors.grey.shade300,
+                                  ),
                                 ),
                                 child: Row(
                                   children: [
-                                    const Icon(Icons.history, size: 16, color: Colors.blueGrey),
+                                    const Icon(
+                                      Icons.history,
+                                      size: 16,
+                                      color: Colors.blueGrey,
+                                    ),
                                     const SizedBox(width: 6),
                                     Text(
                                       "Danh sách kiểm tra (${_inspections.length})",
-                                      style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 13),
+                                      style: const TextStyle(
+                                        fontWeight: FontWeight.bold,
+                                        fontSize: 13,
+                                      ),
                                     ),
                                     const Spacer(),
                                     if (_filterPlate.isNotEmpty)
@@ -5192,7 +7620,15 @@ class _VehicleInspectionsModalState extends State<_VehicleInspectionsModal> {
                                           setState(() => _filterPlate = '');
                                           _loadInspections();
                                         },
-                                        child: const Text("Xem tất cả xe", style: TextStyle(fontSize: 11, color: Colors.blue, decoration: TextDecoration.underline)),
+                                        child: const Text(
+                                          "Xem tất cả xe",
+                                          style: TextStyle(
+                                            fontSize: 11,
+                                            color: Colors.blue,
+                                            decoration:
+                                                TextDecoration.underline,
+                                          ),
+                                        ),
                                       ),
                                   ],
                                 ),
@@ -5202,24 +7638,38 @@ class _VehicleInspectionsModalState extends State<_VehicleInspectionsModal> {
                                 child: _inspections.isEmpty
                                     ? Center(
                                         child: Column(
-                                          mainAxisAlignment: MainAxisAlignment.center,
+                                          mainAxisAlignment:
+                                              MainAxisAlignment.center,
                                           children: [
-                                            Icon(Icons.find_in_page_outlined, size: 40, color: Colors.grey.shade400),
+                                            Icon(
+                                              Icons.find_in_page_outlined,
+                                              size: 40,
+                                              color: Colors.grey.shade400,
+                                            ),
                                             const SizedBox(height: 8),
                                             Text(
                                               "Không có dữ liệu ảnh giao ca",
-                                              style: TextStyle(fontSize: 13, color: Colors.grey.shade600),
+                                              style: TextStyle(
+                                                fontSize: 13,
+                                                color: Colors.grey.shade600,
+                                              ),
                                             ),
                                           ],
                                         ),
                                       )
                                     : ListView.separated(
                                         itemCount: _inspections.length,
-                                        separatorBuilder: (ctx, i) => const SizedBox(height: 6),
+                                        separatorBuilder: (ctx, i) =>
+                                            const SizedBox(height: 6),
                                         itemBuilder: (ctx, idx) {
                                           final item = _inspections[idx];
-                                          final isSelected = _selectedRecord?['id'] == item['id'];
-                                          final flagStatus = (item['flag_status'] ?? 'none').toString().toLowerCase();
+                                          final isSelected =
+                                              _selectedRecord?['id'] ==
+                                              item['id'];
+                                          final flagStatus =
+                                              (item['flag_status'] ?? 'none')
+                                                  .toString()
+                                                  .toLowerCase();
 
                                           Color statusColor = Colors.grey;
                                           String statusLabel = "Chưa duyệt";
@@ -5228,54 +7678,104 @@ class _VehicleInspectionsModalState extends State<_VehicleInspectionsModal> {
                                             statusLabel = "Đã duyệt";
                                           } else if (flagStatus == 'rejected') {
                                             statusColor = Colors.red;
-                                            statusLabel = "Từ chối / Chờ chụp lại";
-                                          } else if (flagStatus == 'monitored') {
+                                            statusLabel =
+                                                "Từ chối / Chờ chụp lại";
+                                          } else if (flagStatus ==
+                                              'monitored') {
                                             statusColor = Colors.amber.shade900;
                                             statusLabel = "Đang theo dõi";
                                           }
 
-                                          final plate = item['plate_number'] ?? 'N/A';
-                                          final driver = item['driver_name'] ?? 'Tài xế';
+                                          final plate =
+                                              item['plate_number'] ?? 'N/A';
+                                          final driver =
+                                              item['driver_name'] ?? 'Tài xế';
                                           final date = item['check_date'] ?? '';
 
                                           return InkWell(
-                                            borderRadius: BorderRadius.circular(4),
+                                            borderRadius: BorderRadius.circular(
+                                              4,
+                                            ),
                                             onTap: () {
                                               setState(() {
                                                 _selectedRecord = item;
-                                                _noteCtrl.text = item['flag_reason'] ?? '';
+                                                _noteCtrl.text =
+                                                    item['flag_reason'] ?? '';
+                                                if (_showTimeSlider) {
+                                                  final records =
+                                                      _sliderRecords;
+                                                  final idx = records
+                                                      .indexWhere(
+                                                        (r) =>
+                                                            r['id'] ==
+                                                            item['id'],
+                                                      );
+                                                  _sliderTimeIndex = idx >= 0
+                                                      ? idx
+                                                      : 0;
+                                                }
                                               });
                                             },
                                             child: Container(
                                               padding: const EdgeInsets.all(10),
                                               decoration: BoxDecoration(
-                                                color: isSelected ? Colors.teal.shade50 : Colors.white,
-                                                borderRadius: BorderRadius.circular(4),
+                                                color: isSelected
+                                                    ? Colors.teal.shade50
+                                                    : Colors.white,
+                                                borderRadius:
+                                                    BorderRadius.circular(4),
                                                 border: Border.all(
-                                                  color: isSelected ? Colors.teal : Colors.grey.shade300,
+                                                  color: isSelected
+                                                      ? Colors.teal
+                                                      : Colors.grey.shade300,
                                                   width: isSelected ? 1.5 : 1,
                                                 ),
                                               ),
                                               child: Column(
-                                                crossAxisAlignment: CrossAxisAlignment.start,
+                                                crossAxisAlignment:
+                                                    CrossAxisAlignment.start,
                                                 children: [
                                                   Row(
-                                                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                                                    mainAxisAlignment:
+                                                        MainAxisAlignment
+                                                            .spaceBetween,
                                                     children: [
                                                       Text(
                                                         plate,
-                                                        style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 13.5),
+                                                        style: const TextStyle(
+                                                          fontWeight:
+                                                              FontWeight.bold,
+                                                          fontSize: 13.5,
+                                                        ),
                                                       ),
                                                       Container(
-                                                        padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                                                        padding:
+                                                            const EdgeInsets.symmetric(
+                                                              horizontal: 6,
+                                                              vertical: 2,
+                                                            ),
                                                         decoration: BoxDecoration(
-                                                          color: statusColor.withOpacity(0.1),
-                                                          borderRadius: BorderRadius.circular(3),
-                                                          border: Border.all(color: statusColor.withOpacity(0.4)),
+                                                          color: statusColor
+                                                              .withOpacity(0.1),
+                                                          borderRadius:
+                                                              BorderRadius.circular(
+                                                                3,
+                                                              ),
+                                                          border: Border.all(
+                                                            color: statusColor
+                                                                .withOpacity(
+                                                                  0.4,
+                                                                ),
+                                                          ),
                                                         ),
                                                         child: Text(
                                                           statusLabel,
-                                                          style: TextStyle(color: statusColor, fontSize: 10.5, fontWeight: FontWeight.bold),
+                                                          style: TextStyle(
+                                                            color: statusColor,
+                                                            fontSize: 10.5,
+                                                            fontWeight:
+                                                                FontWeight.bold,
+                                                          ),
                                                         ),
                                                       ),
                                                     ],
@@ -5283,13 +7783,23 @@ class _VehicleInspectionsModalState extends State<_VehicleInspectionsModal> {
                                                   const SizedBox(height: 4),
                                                   Row(
                                                     children: [
-                                                      const Icon(Icons.person, size: 13, color: Colors.teal),
+                                                      const Icon(
+                                                        Icons.person,
+                                                        size: 13,
+                                                        color: Colors.teal,
+                                                      ),
                                                       const SizedBox(width: 4),
                                                       Expanded(
                                                         child: Text(
                                                           driver,
-                                                          style: const TextStyle(fontSize: 12, color: Colors.black87),
-                                                          overflow: TextOverflow.ellipsis,
+                                                          style:
+                                                              const TextStyle(
+                                                                fontSize: 12,
+                                                                color: Colors
+                                                                    .black87,
+                                                              ),
+                                                          overflow: TextOverflow
+                                                              .ellipsis,
                                                         ),
                                                       ),
                                                     ],
@@ -5297,18 +7807,51 @@ class _VehicleInspectionsModalState extends State<_VehicleInspectionsModal> {
                                                   const SizedBox(height: 2),
                                                   Row(
                                                     children: [
-                                                      Icon(Icons.calendar_today, size: 12, color: Colors.grey.shade600),
+                                                      Icon(
+                                                        Icons.calendar_today,
+                                                        size: 12,
+                                                        color: Colors
+                                                            .grey
+                                                            .shade600,
+                                                      ),
                                                       const SizedBox(width: 4),
-                                                      Text(date, style: TextStyle(fontSize: 11, color: Colors.grey.shade600)),
+                                                      Text(
+                                                        date,
+                                                        style: TextStyle(
+                                                          fontSize: 11,
+                                                          color: Colors
+                                                              .grey
+                                                              .shade600,
+                                                        ),
+                                                      ),
                                                       const Spacer(),
-                                                      if (item['flag_deviation_km'] == true)
+                                                      if (item['flag_deviation_km'] ==
+                                                          true)
                                                         Container(
-                                                          padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 1),
+                                                          padding:
+                                                              const EdgeInsets.symmetric(
+                                                                horizontal: 4,
+                                                                vertical: 1,
+                                                              ),
                                                           decoration: BoxDecoration(
-                                                            color: Colors.red.shade100,
-                                                            borderRadius: BorderRadius.circular(2),
+                                                            color: Colors
+                                                                .red
+                                                                .shade100,
+                                                            borderRadius:
+                                                                BorderRadius.circular(
+                                                                  2,
+                                                                ),
                                                           ),
-                                                          child: const Text("Lệch km", style: TextStyle(color: Colors.red, fontSize: 10, fontWeight: FontWeight.bold)),
+                                                          child: const Text(
+                                                            "Lệch km",
+                                                            style: TextStyle(
+                                                              color: Colors.red,
+                                                              fontSize: 10,
+                                                              fontWeight:
+                                                                  FontWeight
+                                                                      .bold,
+                                                            ),
+                                                          ),
                                                         ),
                                                     ],
                                                   ),
@@ -5332,11 +7875,15 @@ class _VehicleInspectionsModalState extends State<_VehicleInspectionsModal> {
                               ? Center(
                                   child: Text(
                                     "Chọn một lượt kiểm tra xe từ danh sách bên trái để soi chi tiết 5 ảnh",
-                                    style: TextStyle(fontSize: 13, color: Colors.grey.shade600),
+                                    style: TextStyle(
+                                      fontSize: 13,
+                                      color: Colors.grey.shade600,
+                                    ),
                                   ),
                                 )
                               : Column(
-                                  crossAxisAlignment: CrossAxisAlignment.stretch,
+                                  crossAxisAlignment:
+                                      CrossAxisAlignment.stretch,
                                   children: [
                                     // Thông tin tóm tắt xe & tài xế
                                     Container(
@@ -5344,46 +7891,100 @@ class _VehicleInspectionsModalState extends State<_VehicleInspectionsModal> {
                                       decoration: BoxDecoration(
                                         color: Colors.blueGrey.shade50,
                                         borderRadius: BorderRadius.circular(4),
-                                        border: Border.all(color: Colors.blueGrey.shade200),
+                                        border: Border.all(
+                                          color: Colors.blueGrey.shade200,
+                                        ),
                                       ),
                                       child: Row(
                                         children: [
                                           Expanded(
                                             child: Column(
-                                              crossAxisAlignment: CrossAxisAlignment.start,
+                                              crossAxisAlignment:
+                                                  CrossAxisAlignment.start,
                                               children: [
                                                 Row(
                                                   children: [
                                                     Text(
                                                       "Xe: ${_selectedRecord!['plate_number']}",
-                                                      style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 14, color: Colors.blueGrey),
+                                                      style: const TextStyle(
+                                                        fontWeight:
+                                                            FontWeight.bold,
+                                                        fontSize: 14,
+                                                        color: Colors.blueGrey,
+                                                      ),
                                                     ),
                                                     const SizedBox(width: 8),
                                                     Text(
                                                       "(${_selectedRecord!['vehicle_type'] ?? 'Xe đầu kéo'})",
-                                                      style: const TextStyle(fontSize: 12, color: Colors.black54),
+                                                      style: const TextStyle(
+                                                        fontSize: 12,
+                                                        color: Colors.black54,
+                                                      ),
                                                     ),
                                                   ],
                                                 ),
                                                 const SizedBox(height: 3),
                                                 Text(
                                                   "Tài xế giao ca: ${_selectedRecord!['driver_name']} • SĐT: ${_selectedRecord!['driver_phone'] ?? 'N/A'}",
-                                                  style: const TextStyle(fontSize: 12, color: Colors.black87),
+                                                  style: const TextStyle(
+                                                    fontSize: 12,
+                                                    color: Colors.black87,
+                                                  ),
                                                 ),
                                               ],
                                             ),
                                           ),
                                           Column(
-                                            crossAxisAlignment: CrossAxisAlignment.end,
+                                            crossAxisAlignment:
+                                                CrossAxisAlignment.end,
                                             children: [
                                               Text(
                                                 "Km Táp-lô: ${_selectedRecord!['km_confirmed'] ?? _selectedRecord!['km_ocr'] ?? 'N/A'} km",
-                                                style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 13, color: Colors.indigo),
+                                                style: const TextStyle(
+                                                  fontWeight: FontWeight.bold,
+                                                  fontSize: 13,
+                                                  color: Colors.indigo,
+                                                ),
                                               ),
                                               const SizedBox(height: 3),
                                               Text(
                                                 "Thời gian nộp: ${_selectedRecord!['completed_at'] ?? _selectedRecord!['created_at'] ?? 'Hôm nay'}",
-                                                style: const TextStyle(fontSize: 11, color: Colors.black54),
+                                                style: const TextStyle(
+                                                  fontSize: 11,
+                                                  color: Colors.black54,
+                                                ),
+                                              ),
+                                              const SizedBox(height: 4),
+                                              TextButton.icon(
+                                                style: TextButton.styleFrom(
+                                                  padding:
+                                                      const EdgeInsets.symmetric(
+                                                        horizontal: 8,
+                                                        vertical: 2,
+                                                      ),
+                                                  minimumSize: Size.zero,
+                                                  tapTargetSize:
+                                                      MaterialTapTargetSize
+                                                          .shrinkWrap,
+                                                ),
+                                                onPressed: _toggleTimeSlider,
+                                                icon: Icon(
+                                                  _showTimeSlider
+                                                      ? Icons.grid_view_outlined
+                                                      : Icons.history,
+                                                  size: 15,
+                                                  color: Colors.teal.shade700,
+                                                ),
+                                                label: Text(
+                                                  _showTimeSlider
+                                                      ? "Về lưới 5 ảnh"
+                                                      : "Xem tiến lùi",
+                                                  style: TextStyle(
+                                                    fontSize: 11.5,
+                                                    fontWeight: FontWeight.bold,
+                                                    color: Colors.teal.shade700,
+                                                  ),
+                                                ),
                                               ),
                                             ],
                                           ),
@@ -5392,21 +7993,44 @@ class _VehicleInspectionsModalState extends State<_VehicleInspectionsModal> {
                                     ),
                                     const SizedBox(height: 12),
 
-                                    // Lưới 5 ảnh
+                                    // Lưới 5 ảnh hoặc trình chiếu Tiến Lùi theo thời gian
                                     Expanded(
-                                      child: GridView.count(
-                                        crossAxisCount: isDesktop ? 3 : 2,
-                                        crossAxisSpacing: 10,
-                                        mainAxisSpacing: 10,
-                                        childAspectRatio: 1.25,
-                                        children: [
-                                          _buildPhotoThumbnail("1. Gầm trước xe", _selectedRecord!['img_front_underbody'], Icons.front_hand_outlined),
-                                          _buildPhotoThumbnail("2. Bầu vi sai & Gầm sau", _selectedRecord!['img_rear_underbody'], Icons.settings_suggest_outlined),
-                                          _buildPhotoThumbnail("3. Hông trái xe", _selectedRecord!['img_left_side'], Icons.compare_arrows_outlined),
-                                          _buildPhotoThumbnail("4. Hông phải xe", _selectedRecord!['img_right_side'], Icons.swap_horiz_outlined),
-                                          _buildPhotoThumbnail("5. Táp-lô & Đồng hồ ODO", _selectedRecord!['img_dashboard'], Icons.speed_outlined),
-                                        ],
-                                      ),
+                                      child: _showTimeSlider
+                                          ? _buildTimeSliderViewer(isDesktop)
+                                          : GridView.count(
+                                              crossAxisCount: isDesktop ? 3 : 2,
+                                              crossAxisSpacing: 10,
+                                              mainAxisSpacing: 10,
+                                              childAspectRatio: 1.25,
+                                              children: [
+                                                _buildPhotoThumbnail(
+                                                  "1. Gầm trước xe",
+                                                  _selectedRecord!['img_front_underbody'],
+                                                  Icons.front_hand_outlined,
+                                                ),
+                                                _buildPhotoThumbnail(
+                                                  "2. Bầu vi sai & Gầm sau",
+                                                  _selectedRecord!['img_rear_underbody'],
+                                                  Icons
+                                                      .settings_suggest_outlined,
+                                                ),
+                                                _buildPhotoThumbnail(
+                                                  "3. Hông trái xe",
+                                                  _selectedRecord!['img_left_side'],
+                                                  Icons.compare_arrows_outlined,
+                                                ),
+                                                _buildPhotoThumbnail(
+                                                  "4. Hông phải xe",
+                                                  _selectedRecord!['img_right_side'],
+                                                  Icons.swap_horiz_outlined,
+                                                ),
+                                                _buildPhotoThumbnail(
+                                                  "5. Táp-lô & Đồng hồ ODO",
+                                                  _selectedRecord!['img_dashboard'],
+                                                  Icons.speed_outlined,
+                                                ),
+                                              ],
+                                            ),
                                     ),
                                     const SizedBox(height: 12),
 
@@ -5416,7 +8040,9 @@ class _VehicleInspectionsModalState extends State<_VehicleInspectionsModal> {
                                       decoration: BoxDecoration(
                                         color: Colors.grey.shade50,
                                         borderRadius: BorderRadius.circular(4),
-                                        border: Border.all(color: Colors.grey.shade300),
+                                        border: Border.all(
+                                          color: Colors.grey.shade300,
+                                        ),
                                       ),
                                       child: Row(
                                         children: [
@@ -5424,54 +8050,127 @@ class _VehicleInspectionsModalState extends State<_VehicleInspectionsModal> {
                                             child: TextField(
                                               controller: _noteCtrl,
                                               decoration: const InputDecoration(
-                                                labelText: "Ghi chú kiểm tra của Điều phối (nếu xe xước vỡ hoặc lệch km)",
+                                                labelText:
+                                                    "Ghi chú kiểm tra của Điều phối (nếu xe xước vỡ hoặc lệch km)",
                                                 border: OutlineInputBorder(),
                                                 isDense: true,
-                                                contentPadding: EdgeInsets.symmetric(horizontal: 10, vertical: 10),
+                                                contentPadding:
+                                                    EdgeInsets.symmetric(
+                                                      horizontal: 10,
+                                                      vertical: 10,
+                                                    ),
                                               ),
                                             ),
                                           ),
                                           const SizedBox(width: 12),
                                           if (_isSubmitting)
-                                            const SizedBox(width: 32, height: 32, child: CircularProgressIndicator())
+                                            const SizedBox(
+                                              width: 32,
+                                              height: 32,
+                                              child:
+                                                  CircularProgressIndicator(),
+                                            )
                                           else
                                             Row(
                                               mainAxisSize: MainAxisSize.min,
                                               children: [
                                                 ElevatedButton.icon(
                                                   style: ElevatedButton.styleFrom(
-                                                    backgroundColor: Colors.green.shade700,
-                                                    foregroundColor: Colors.white,
-                                                    padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
-                                                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(4)),
+                                                    backgroundColor:
+                                                        Colors.green.shade700,
+                                                    foregroundColor:
+                                                        Colors.white,
+                                                    padding:
+                                                        const EdgeInsets.symmetric(
+                                                          horizontal: 14,
+                                                          vertical: 12,
+                                                        ),
+                                                    shape: RoundedRectangleBorder(
+                                                      borderRadius:
+                                                          BorderRadius.circular(
+                                                            4,
+                                                          ),
+                                                    ),
                                                   ),
-                                                  icon: const Icon(Icons.check_circle_outline, size: 16),
-                                                  label: const Text("Duyệt Nhận Chuyến", style: TextStyle(fontWeight: FontWeight.bold)),
-                                                  onPressed: () => _updateReviewStatus('approved'),
+                                                  icon: const Icon(
+                                                    Icons.check_circle_outline,
+                                                    size: 16,
+                                                  ),
+                                                  label: const Text(
+                                                    "Duyệt Nhận Chuyến",
+                                                    style: TextStyle(
+                                                      fontWeight:
+                                                          FontWeight.bold,
+                                                    ),
+                                                  ),
+                                                  onPressed: () =>
+                                                      _updateReviewStatus(
+                                                        'approved',
+                                                      ),
                                                 ),
                                                 const SizedBox(width: 8),
                                                 OutlinedButton.icon(
                                                   style: OutlinedButton.styleFrom(
-                                                    foregroundColor: Colors.amber.shade900,
-                                                    side: BorderSide(color: Colors.amber.shade700),
-                                                    padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 12),
-                                                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(4)),
+                                                    foregroundColor:
+                                                        Colors.amber.shade900,
+                                                    side: BorderSide(
+                                                      color:
+                                                          Colors.amber.shade700,
+                                                    ),
+                                                    padding:
+                                                        const EdgeInsets.symmetric(
+                                                          horizontal: 12,
+                                                          vertical: 12,
+                                                        ),
+                                                    shape: RoundedRectangleBorder(
+                                                      borderRadius:
+                                                          BorderRadius.circular(
+                                                            4,
+                                                          ),
+                                                    ),
                                                   ),
-                                                  icon: const Icon(Icons.visibility_outlined, size: 16),
+                                                  icon: const Icon(
+                                                    Icons.visibility_outlined,
+                                                    size: 16,
+                                                  ),
                                                   label: const Text("Theo Dõi"),
-                                                  onPressed: () => _updateReviewStatus('monitored'),
+                                                  onPressed: () =>
+                                                      _updateReviewStatus(
+                                                        'monitored',
+                                                      ),
                                                 ),
                                                 const SizedBox(width: 8),
                                                 OutlinedButton.icon(
                                                   style: OutlinedButton.styleFrom(
-                                                    foregroundColor: Colors.red.shade700,
-                                                    side: BorderSide(color: Colors.red.shade400),
-                                                    padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 12),
-                                                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(4)),
+                                                    foregroundColor:
+                                                        Colors.red.shade700,
+                                                    side: BorderSide(
+                                                      color:
+                                                          Colors.red.shade400,
+                                                    ),
+                                                    padding:
+                                                        const EdgeInsets.symmetric(
+                                                          horizontal: 12,
+                                                          vertical: 12,
+                                                        ),
+                                                    shape: RoundedRectangleBorder(
+                                                      borderRadius:
+                                                          BorderRadius.circular(
+                                                            4,
+                                                          ),
+                                                    ),
                                                   ),
-                                                  icon: const Icon(Icons.cancel_outlined, size: 16),
-                                                  label: const Text("Yêu Cầu Chụp Lại"),
-                                                  onPressed: () => _updateReviewStatus('rejected'),
+                                                  icon: const Icon(
+                                                    Icons.cancel_outlined,
+                                                    size: 16,
+                                                  ),
+                                                  label: const Text(
+                                                    "Yêu Cầu Chụp Lại",
+                                                  ),
+                                                  onPressed: () =>
+                                                      _updateReviewStatus(
+                                                        'rejected',
+                                                      ),
                                                 ),
                                               ],
                                             ),

@@ -6,7 +6,7 @@ plugins {
 
 android {
     namespace = "com.taxilogistics.driver.app_tai_xe"
-    compileSdk = flutter.compileSdkVersion
+    compileSdk = 37
     ndkVersion = flutter.ndkVersion
 
     compileOptions {

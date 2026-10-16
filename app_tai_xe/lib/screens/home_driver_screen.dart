@@ -14,7 +14,9 @@ class HomeDriverScreen extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final state = context.watch<AppState>();
-    final isLocked = !state.isInspectionCompleted || state.isVehicleLockedByBreakdown();
+    // Khóa nhận chuyến cho đến khi Điều phối bấm "Duyệt Nhận Chuyến"
+    final isLocked =
+        !state.isApprovedByDispatcher || state.isVehicleLockedByBreakdown();
 
     final content = SingleChildScrollView(
       padding: const EdgeInsets.all(16.0),
@@ -161,6 +163,8 @@ class HomeDriverScreen extends StatelessWidget {
 
   Widget _buildDailyInspectionCard(BuildContext context, AppState state) {
     final bool completed = state.isInspectionCompleted;
+    // Xe chỉ "Đủ điều kiện chạy" khi Điều phối viên đã bấm "Duyệt Nhận Chuyến"
+    final bool approved = state.isApprovedByDispatcher;
     final bool hasBreakdownLock = state.isVehicleLockedByBreakdown();
 
     return Card(
@@ -193,13 +197,19 @@ class HomeDriverScreen extends StatelessWidget {
                 Container(
                   padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
                   decoration: BoxDecoration(
-                    color: completed ? Colors.green.shade100 : Colors.orange.shade100,
+                    color: approved
+                        ? Colors.green.shade100
+                        : (completed ? Colors.blue.shade100 : Colors.orange.shade100),
                     borderRadius: BorderRadius.circular(4),
                   ),
                   child: Text(
-                    completed ? "Đã kiểm tra" : "Chưa kiểm tra",
+                    approved
+                        ? "Đủ điều kiện chạy"
+                        : (completed ? "Chờ Điều phối duyệt" : "Chưa kiểm tra"),
                     style: TextStyle(
-                      color: completed ? Colors.green.shade800 : Colors.orange.shade800,
+                      color: approved
+                          ? Colors.green.shade800
+                          : (completed ? Colors.blue.shade800 : Colors.orange.shade800),
                       fontWeight: FontWeight.bold,
                       fontSize: 12,
                     ),
@@ -209,9 +219,11 @@ class HomeDriverScreen extends StatelessWidget {
             ),
             const SizedBox(height: 10),
             Text(
-              completed
-                  ? "• Đã chụp đủ 5 ảnh (gầm trước, gầm sau, hông trái, hông phải, táp lô)\n• Số km táp lô: ${state.todayInspection?.confirmedKm.toStringAsFixed(0)} km\n• Trạng thái cờ: ${state.todayInspection?.flagStatus}"
-                  : "Xe CHỈ ĐƯỢC NHẬN CHUYẾN khi đã có đủ bộ 5 ảnh kiểm tra đầu ngày.",
+              approved
+                  ? "• Đã chụp đủ 5 ảnh (gầm trước, gầm sau, hông trái, hông phải, táp lô)\n• Số km táp lô: ${state.todayInspection?.confirmedKm.toStringAsFixed(0)} km\n• Điều phối đã Duyệt Nhận Chuyến: xe ĐỦ ĐIỀU KIỆN CHẠY"
+                  : (completed
+                      ? "• Đã gửi đủ 5 ảnh lên hệ thống, đang chờ Điều phối viên kiểm tra\n• Xe CHƯA đủ điều kiện chạy cho đến khi Điều phối bấm \"Duyệt Nhận Chuyến\""
+                      : "Xe CHỈ ĐƯỢC NHẬN CHUYẾN khi Điều phối đã bấm \"Duyệt Nhận Chuyến\" sau khi kiểm tra bộ 5 ảnh đầu ngày."),
               style: TextStyle(fontSize: 13, color: completed ? Colors.black87 : Colors.grey.shade700),
             ),
             if (hasBreakdownLock) ...[
@@ -430,12 +442,12 @@ class HomeDriverScreen extends StatelessWidget {
     showDialog(
       context: context,
       builder: (ctx) => AlertDialog(
-        title: const Text("Xác nhận khoảng cách GPS", style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold)),
+        title: const Text("Xác nhận khoảng cách GPS", style: TextStyle(fontWeight: FontWeight.bold)),
         content: const Text(
           "Tọa độ GPS hiện tại đang cách điểm giao hơn 2.0 km (khoảng 3.5 km). Bạn có chắc chắn đã đến đúng trạm không?",
         ),
         actions: [
-          TextButton(onPressed: () => Navigator.of(ctx).pop(), child: const Text("Kiểm tra lại")),
+          TextButton(onPressed: () => Navigator.of(ctx).pop(), child: const Text("Kiểm tra lại", style: TextStyle(fontSize: 14, fontWeight: FontWeight.w600))),
           ElevatedButton(
             onPressed: () {
               state.recordArrival(lat: mockLat, lng: mockLng, forceConfirm: true);
@@ -444,7 +456,7 @@ class HomeDriverScreen extends StatelessWidget {
                 const SnackBar(content: Text("Đã lưu mốc ĐẾN điểm giao thành công!")),
               );
             },
-            child: const Text("Xác nhận đã đến"),
+            child: const Text("Xác nhận đã đến", style: TextStyle(fontSize: 14, fontWeight: FontWeight.bold)),
           ),
         ],
       ),
@@ -465,7 +477,7 @@ class HomeDriverScreen extends StatelessWidget {
                 children: const [
                   Icon(Icons.hourglass_bottom, color: Colors.amber),
                   SizedBox(width: 8),
-                  Text("Bơm xong (>120 phút)", style: TextStyle(fontSize: 17, fontWeight: FontWeight.bold)),
+                  Text("Bơm xong (>120 phút)", style: TextStyle(fontWeight: FontWeight.bold)),
                 ],
               ),
               content: SingleChildScrollView(
@@ -475,7 +487,6 @@ class HomeDriverScreen extends StatelessWidget {
                   children: [
                     const Text(
                       "Thời gian từ lúc ĐẾN đến BƠM XONG vượt quá 120 phút (135 phút). Vui lòng chọn nguyên nhân chờ:",
-                      style: TextStyle(fontSize: 13),
                     ),
                     const SizedBox(height: 12),
                     DropdownButtonFormField<String>(
@@ -485,7 +496,7 @@ class HomeDriverScreen extends StatelessWidget {
                       items: AppState.waitingReasons.map((r) {
                         return DropdownMenuItem(
                           value: r,
-                          child: Text(r, style: const TextStyle(fontSize: 12)),
+                          child: Text(r, style: const TextStyle(fontSize: 14)),
                         );
                       }).toList(),
                       onChanged: (val) {
@@ -504,7 +515,7 @@ class HomeDriverScreen extends StatelessWidget {
                       const SnackBar(content: Text("Đã ghi nhận mốc BƠM XONG và nguyên nhân chờ!")),
                     );
                   },
-                  child: const Text("Xác nhận BƠM XONG"),
+                  child: const Text("Xác nhận BƠM XONG", style: TextStyle(fontSize: 14, fontWeight: FontWeight.bold)),
                 ),
               ],
             );

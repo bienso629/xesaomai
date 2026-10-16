@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import '../services/app_state.dart';
@@ -6,6 +8,7 @@ import 'map_screen.dart';
 import 'dispatch_supervisor_screen.dart';
 import 'vehicle_inspection_screen.dart';
 import 'driver_inspection_history_screen.dart';
+import 'driver_schedule_screen.dart';
 import 'login_screen.dart';
 
 class MainNavigationScreen extends StatefulWidget {
@@ -17,9 +20,17 @@ class MainNavigationScreen extends StatefulWidget {
 
 class _MainNavigationScreenState extends State<MainNavigationScreen> {
   final GlobalKey<ScaffoldState> _scaffoldKey = GlobalKey<ScaffoldState>();
-  int _currentRoot = 2; // 0: GPS, 1: Driver, 2: Management
+  int _currentRoot = 2; // 0: GPS (Dispatcher/Manager), 1: Inspection Review, 2: Management, 3: Driver Photo History, 4: Driver Schedule
   int _activeManagementTab = 0;
   bool _isDesktopSidebarVisible = true;
+  // Đồng bộ trạng thái duyệt của Điều phối định kỳ: xe chỉ "Đủ điều kiện chạy" khi server trả approved
+  Timer? _approvalSyncTimer;
+
+  @override
+  void dispose() {
+    _approvalSyncTimer?.cancel();
+    super.dispose();
+  }
 
   @override
   void initState() {
@@ -30,8 +41,8 @@ class _MainNavigationScreenState extends State<MainNavigationScreen> {
         !state.userRoles.any((r) => ['admin', 'manager', 'dispatcher'].contains(r.toLowerCase()));
 
     if (isDriver) {
-      // Tài xế đăng nhập thành công thì vào thẳng màn hình Lịch sử hình chụp xe
-      _currentRoot = 3;
+      // Tài xế đăng nhập thành công thì vào thẳng màn hình Lịch trình xe quản lý của riêng tài xế
+      _currentRoot = 4;
     } else {
       // Quản lý / Điều phối / Admin vào Tổng quan & Báo cáo
       _currentRoot = 2;
@@ -45,6 +56,15 @@ class _MainNavigationScreenState extends State<MainNavigationScreen> {
         } else {
           state.setRole(UserRole.manager);
         }
+        // Đồng bộ ngay 1 lần khi mở app
+        state.refreshInspectionApprovalStatus();
+      }
+    });
+
+    // Đồng bộ định kỳ 30 giây/lần để bắt kịp lúc Điều phối bấm "Duyệt Nhận Chuyến"
+    _approvalSyncTimer = Timer.periodic(const Duration(seconds: 30), (_) {
+      if (mounted) {
+        context.read<AppState>().refreshInspectionApprovalStatus();
       }
     });
   }
@@ -64,6 +84,7 @@ class _MainNavigationScreenState extends State<MainNavigationScreen> {
     if (_currentRoot == 0) return "Bản Đồ Giám Sát GPS";
     if (_currentRoot == 1) return "Kiểm Tra Xe";
     if (_currentRoot == 3) return "Lịch Sử Hình Chụp Kiểm Tra Xe";
+    if (_currentRoot == 4) return "Theo Dõi Lịch Trình Xe Quản Lý";
     return _managementTitles[_activeManagementTab];
   }
 
@@ -71,7 +92,7 @@ class _MainNavigationScreenState extends State<MainNavigationScreen> {
     final state = context.read<AppState>();
     setState(() {
       _currentRoot = rootIndex;
-      if (rootIndex == 1 || rootIndex == 3) {
+      if (rootIndex == 1 || rootIndex == 3 || rootIndex == 4) {
         state.setRole(UserRole.driver);
       } else if (rootIndex == 2) {
         state.setRole(UserRole.manager);
@@ -165,7 +186,11 @@ class _MainNavigationScreenState extends State<MainNavigationScreen> {
                           ),
                         ),
                       ),
-                body: _buildCurrentBody(isMobile: false),
+                body: SafeArea(
+                  top: _currentRoot == 0,
+                  bottom: false,
+                  child: _buildCurrentBody(isMobile: false),
+                ),
               ),
             ),
           ],
@@ -209,15 +234,22 @@ class _MainNavigationScreenState extends State<MainNavigationScreen> {
         elevation: 0,
         child: sidebarContent,
       ),
-      body: _buildCurrentBody(isMobile: true),
+      body: SafeArea(
+        top: _currentRoot == 0,
+        bottom: false,
+        child: _buildCurrentBody(isMobile: true),
+      ),
     );
   }
 
   Widget _buildSidebarContent(AppState state, {bool isMobile = false}) {
     return Container(
       color: const Color(0xFF0F172A), // Nền Sidebar tối đậm Slate 900 (đậm hơn Header 0xFF1E293B)
-      child: Column(
-        children: [
+      child: SafeArea(
+        top: isMobile,
+        bottom: isMobile,
+        child: Column(
+          children: [
           Container(
             width: double.infinity,
             padding: const EdgeInsets.fromLTRB(16, 20, 12, 16),
@@ -321,6 +353,14 @@ class _MainNavigationScreenState extends State<MainNavigationScreen> {
                     state.currentUsername != 'admin' &&
                     !state.userRoles.any((r) => ['admin', 'manager', 'dispatcher'].contains(r.toLowerCase()))) ...[
                   _buildSectionHeader("DÀNH CHO TÀI XẾ"),
+                  _buildDrawerItem(
+                    isSelected: _currentRoot == 4,
+                    icon: Icons.event_note_outlined,
+                    activeIcon: Icons.event_note,
+                    title: "Lịch trình xe quản lý",
+                    subtitle: "Theo dõi chuyến đi & mốc giờ xe mình",
+                    onTap: () => _onSelectRoot(4),
+                  ),
                   _buildDrawerItem(
                     isSelected: _currentRoot == 3,
                     icon: Icons.photo_library_outlined,
@@ -455,11 +495,52 @@ class _MainNavigationScreenState extends State<MainNavigationScreen> {
           ),
         ],
       ),
+      ),
     );
   }
 
   Widget _buildCurrentBody({bool isMobile = false}) {
     if (_currentRoot == 0) {
+      final state = context.watch<AppState>();
+      final roles = state.userRoles.map((r) => r.toLowerCase()).toList();
+      final username = (state.currentUsername ?? '').trim().toLowerCase();
+      final hasPermission = username == 'admin' ||
+          roles.contains('admin') ||
+          roles.contains('manager') ||
+          roles.contains('dispatcher');
+
+      if (!hasPermission) {
+        return Center(
+          child: Container(
+            constraints: const BoxConstraints(maxWidth: 480),
+            margin: const EdgeInsets.all(24),
+            padding: const EdgeInsets.all(24),
+            decoration: BoxDecoration(
+              color: Colors.white,
+              borderRadius: BorderRadius.circular(4),
+              border: Border.all(color: Colors.red.shade200, width: 1),
+            ),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Icon(Icons.gpp_bad_outlined, size: 48, color: Colors.red.shade700),
+                const SizedBox(height: 16),
+                const Text(
+                  "Từ Chối Quyền Truy Cập",
+                  style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold, color: Colors.red),
+                ),
+                const SizedBox(height: 8),
+                const Text(
+                  "Bản đồ Giám sát GPS toàn đội xe chỉ dành cho Điều phối viên và Quản lý hệ thống.",
+                  textAlign: TextAlign.center,
+                  style: TextStyle(fontSize: 13, color: Colors.black87, height: 1.4),
+                ),
+              ],
+            ),
+          ),
+        );
+      }
+
       return MapScreen(
         onOpenDrawer: isMobile ? () => _scaffoldKey.currentState?.openDrawer() : null,
         onToggleDesktopSidebar: !isMobile
@@ -550,6 +631,8 @@ class _MainNavigationScreenState extends State<MainNavigationScreen> {
         );
       }
       return const DriverInspectionHistoryScreen();
+    } else if (_currentRoot == 4) {
+      return const DriverScheduleScreen();
     } else {
       return DispatchSupervisorScreen(
         activeTab: _activeManagementTab,

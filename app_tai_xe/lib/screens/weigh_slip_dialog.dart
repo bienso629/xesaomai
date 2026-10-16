@@ -21,7 +21,7 @@ class _WeighSlipDialogState extends State<WeighSlipDialog> {
         children: const [
           Icon(Icons.scale, color: Colors.indigo),
           SizedBox(width: 8),
-          Text("Gửi Phiếu Cân Nhà Máy", style: TextStyle(fontWeight: FontWeight.bold, fontSize: 17)),
+          Text("Gửi Phiếu Cân Nhà Máy", style: TextStyle(fontWeight: FontWeight.bold)),
         ],
       ),
       content: SingleChildScrollView(
@@ -30,7 +30,7 @@ class _WeighSlipDialogState extends State<WeighSlipDialog> {
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
             const Text("Kết quả OCR tự động trích xuất phiếu cân:",
-                style: TextStyle(fontSize: 12, color: Colors.grey, fontWeight: FontWeight.bold)),
+                style: TextStyle(fontSize: 13.5, color: Colors.grey, fontWeight: FontWeight.bold)),
             const SizedBox(height: 10),
             TextField(
               controller: _codeController,
@@ -55,7 +55,7 @@ class _WeighSlipDialogState extends State<WeighSlipDialog> {
             ListTile(
               contentPadding: EdgeInsets.zero,
               leading: const Icon(Icons.access_time, color: Colors.indigo),
-              title: const Text("Giờ cân trên phiếu", style: TextStyle(fontSize: 13)),
+              title: const Text("Giờ cân trên phiếu", style: TextStyle(fontSize: 15)),
               subtitle: Text("${_weighTime.hour}:${_weighTime.minute.toString().padLeft(2, '0')} - ${_weighTime.day}/${_weighTime.month}/${_weighTime.year}",
                   style: const TextStyle(fontWeight: FontWeight.bold, color: Colors.black87)),
               trailing: IconButton(
@@ -87,7 +87,7 @@ class _WeighSlipDialogState extends State<WeighSlipDialog> {
                   Expanded(
                     child: Text(
                       "Sau khi lưu, app lưu vào Ma_so_nha_may và tự động gửi vào nhóm Zalo OA khách hàng khi đủ điều kiện.",
-                      style: TextStyle(fontSize: 11, color: Colors.blueGrey),
+                      style: TextStyle(fontSize: 12.5, color: Colors.blueGrey),
                     ),
                   ),
                 ],
@@ -99,7 +99,7 @@ class _WeighSlipDialogState extends State<WeighSlipDialog> {
       actions: [
         TextButton(
           onPressed: () => Navigator.of(context).pop(),
-          child: const Text("Hủy"),
+          child: const Text("Hủy", style: TextStyle(fontSize: 14, fontWeight: FontWeight.w600)),
         ),
         ElevatedButton(
           style: ElevatedButton.styleFrom(backgroundColor: Colors.indigo),
@@ -118,7 +118,7 @@ class _WeighSlipDialogState extends State<WeighSlipDialog> {
               ),
             );
           },
-          child: const Text("Xác nhận & Gửi", style: TextStyle(color: Colors.white)),
+          child: const Text("Xác nhận & Gửi", style: TextStyle(color: Colors.white, fontSize: 14, fontWeight: FontWeight.bold)),
         ),
       ],
     );

@@ -6,6 +6,7 @@ import '../models/breakdown_model.dart';
 import '../models/reminder_model.dart';
 import '../models/quanlyxe_model.dart';
 import 'quanlyxe_service.dart';
+import 'admin_service.dart';
 
 enum UserRole {
   driver,
@@ -82,6 +83,10 @@ class AppState extends ChangeNotifier {
   // Trạng thái kiểm tra đầu ngày
   DailyInspectionRecord? todayInspection;
   bool isInspectionCompleted = false;
+
+  // Xe chỉ ĐỦ ĐIỀU KIỆN CHẠY khi Điều phối viên bấm "Duyệt Nhận Chuyến" trên server.
+  // Tài xế gửi đủ 5 ảnh KHÔNG tự động kích hoạt trạng thái này.
+  bool isApprovedByDispatcher = false;
 
   // Danh sách báo hỏng
   final List<BreakdownReport> breakdownReports = [];
@@ -185,6 +190,7 @@ class AppState extends ChangeNotifier {
     }
     // Đổi xe thì reset kiểm tra đầu ngày của xe đó
     isInspectionCompleted = false;
+    isApprovedByDispatcher = false;
     todayInspection = null;
     refreshCurrentVehicleGps();
     notifyListeners();
@@ -211,7 +217,45 @@ class AppState extends ChangeNotifier {
       flagStatus: isKmFlagged ? 'Theo doi' : 'None',
     );
     isInspectionCompleted = true;
+    // Tài xế mới chỉ gửi đủ 5 ảnh: reset cờ duyệt, chờ Điều phối bấm "Duyệt Nhận Chuyến"
+    isApprovedByDispatcher = false;
     notifyListeners();
+  }
+
+  /// Đồng bộ trạng thái duyệt của Điều phối từ server về cho lần kiểm tra hôm nay.
+  /// Xe chỉ đủ điều kiện chạy khi server trả flag_status == 'approved'
+  /// (tức Điều phối viên đã bấm "Duyệt Nhận Chuyến").
+  Future<void> refreshInspectionApprovalStatus() async {
+    try {
+      final String todayStr = DateTime.now().toIso8601String().substring(0, 10);
+      final data = await AdminService.fetchInspections(
+        date: todayStr,
+        plateNumber: selectedPlate,
+      );
+      bool approved = false;
+      if (data.isNotEmpty) {
+        // Chọn bản ghi kiểm tra có id lớn nhất (mới nhất) của biển số đang chọn
+        Map<String, dynamic>? latest;
+        int maxId = -1;
+        for (final item in data) {
+          if (item is! Map) continue;
+          final rawId = item['id'];
+          final int id = rawId is int ? rawId : (int.tryParse('$rawId') ?? -1);
+          if (id > maxId) {
+            maxId = id;
+            latest = item as Map<String, dynamic>;
+          }
+        }
+        final status = (latest?['flag_status'] ?? '').toString().trim().toLowerCase();
+        approved = status == 'approved';
+      }
+      if (isApprovedByDispatcher != approved) {
+        isApprovedByDispatcher = approved;
+        notifyListeners();
+      }
+    } catch (_) {
+      // Lỗi mạng: giữ nguyên trạng thái hiện tại, không tự ý kích hoạt
+    }
   }
 
   // Báo hỏng xe
