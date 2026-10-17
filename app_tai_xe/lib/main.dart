@@ -84,10 +84,11 @@ class TaxiDriverApp extends StatelessWidget {
             width: 420, // Độ rộng gọn gàng trên Desktop, tự căn giữa
           ),
 
-          // Quy chuẩn rounded-sm và đồng bộ chiều cao cho Input và Select (DropdownFormField)
+          // Quy chuẩn rounded-sm và đồng bộ chiều cao 40px cho Input và Select (DropdownFormField)
           inputDecorationTheme: const InputDecorationTheme(
             isDense: true,
-            contentPadding: EdgeInsets.symmetric(horizontal: 12, vertical: 12),
+            constraints: BoxConstraints(minHeight: 40, maxHeight: 40),
+            contentPadding: EdgeInsets.symmetric(horizontal: 12, vertical: 10),
             border: OutlineInputBorder(
               borderRadius: BorderRadius.all(Radius.circular(4)),
             ),
@@ -101,13 +102,16 @@ class TaxiDriverApp extends StatelessWidget {
             ),
           ),
 
-          // Quy chuẩn rounded-sm và đồng bộ chiều cao 44px cho ElevatedButton
+          // Quy chuẩn rounded-sm và đồng bộ chiều cao 40px cho ElevatedButton
           elevatedButtonTheme: ElevatedButtonThemeData(
             style: ElevatedButton.styleFrom(
               elevation: 0,
               shadowColor: Colors.transparent,
               textStyle: const TextStyle(fontSize: 14, fontWeight: FontWeight.bold),
-              minimumSize: const Size(64, 44),
+              minimumSize: const Size(64, 40),
+              fixedSize: const Size.fromHeight(40),
+              tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+              visualDensity: VisualDensity.standard,
               shape: const RoundedRectangleBorder(
                 borderRadius: BorderRadius.all(Radius.circular(4)),
               ),
@@ -115,20 +119,26 @@ class TaxiDriverApp extends StatelessWidget {
             ),
           ),
 
-          // Quy chuẩn rounded-sm và đồng bộ chiều cao 44px cho OutlinedButton
+          // Quy chuẩn rounded-sm và đồng bộ chiều cao 40px cho OutlinedButton
           outlinedButtonTheme: OutlinedButtonThemeData(
             style: OutlinedButton.styleFrom(
-              minimumSize: const Size(64, 44),
+              minimumSize: const Size(64, 40),
+              fixedSize: const Size.fromHeight(40),
+              tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+              visualDensity: VisualDensity.standard,
               shape: const RoundedRectangleBorder(
                 borderRadius: BorderRadius.all(Radius.circular(4)),
               ),
               padding: const EdgeInsets.symmetric(horizontal: 16),
             ),
           ),
-          // Quy chuẩn nút văn bản (TextButton) trong Dialog: chiều cao 44px, chữ 14px đậm
+          // Quy chuẩn nút văn bản (TextButton) trong Dialog: chiều cao 40px, chữ 14px đậm
           textButtonTheme: TextButtonThemeData(
             style: TextButton.styleFrom(
-              minimumSize: const Size(64, 44),
+              minimumSize: const Size(64, 40),
+              fixedSize: const Size.fromHeight(40),
+              tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+              visualDensity: VisualDensity.standard,
               textStyle: const TextStyle(fontSize: 14, fontWeight: FontWeight.w600),
               shape: const RoundedRectangleBorder(
                 borderRadius: BorderRadius.all(Radius.circular(4)),
@@ -137,10 +147,13 @@ class TaxiDriverApp extends StatelessWidget {
             ),
           ),
 
-          // Quy chuẩn rounded-sm và đồng bộ chiều cao 44px cho FilledButton
+          // Quy chuẩn rounded-sm và đồng bộ chiều cao 40px cho FilledButton
           filledButtonTheme: FilledButtonThemeData(
             style: FilledButton.styleFrom(
-              minimumSize: const Size(64, 44),
+              minimumSize: const Size(64, 40),
+              fixedSize: const Size.fromHeight(40),
+              tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+              visualDensity: VisualDensity.standard,
               shape: const RoundedRectangleBorder(
                 borderRadius: BorderRadius.all(Radius.circular(4)),
               ),

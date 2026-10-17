@@ -56,6 +56,25 @@ class _DispatchSupervisorScreenState extends State<DispatchSupervisorScreen> {
   int _vehicleCurrentPage = 1;
   int _vehiclePageSize = 10;
 
+  // Tìm kiếm, Lọc và Phân trang Đơn hàng vận tải
+  String _orderSearchQuery = '';
+  String _orderCodeFilter = '';
+  String _orderPickupFilter = '';
+  String _orderDeliveryFilter = '';
+  String _selectedOrderProductFilter = 'ALL';
+  String _selectedOrderVehicleFilter = 'ALL';
+  String _selectedOrderDriverFilter = 'ALL';
+  String _selectedOrderTransportTypeFilter = 'ALL';
+  DateTime? _orderStartDate;
+  DateTime? _orderEndDate;
+  bool _showAdvancedOrderFilters = true;
+  final TextEditingController _orderSearchCtrl = TextEditingController();
+  final TextEditingController _orderCodeFilterCtrl = TextEditingController();
+  final TextEditingController _orderPickupFilterCtrl = TextEditingController();
+  final TextEditingController _orderDeliveryFilterCtrl = TextEditingController();
+  int _orderCurrentPage = 1;
+  int _orderPageSize = 10;
+
   @override
   void initState() {
     super.initState();
@@ -66,6 +85,10 @@ class _DispatchSupervisorScreenState extends State<DispatchSupervisorScreen> {
   void dispose() {
     _userSearchCtrl.dispose();
     _vehicleSearchCtrl.dispose();
+    _orderSearchCtrl.dispose();
+    _orderCodeFilterCtrl.dispose();
+    _orderPickupFilterCtrl.dispose();
+    _orderDeliveryFilterCtrl.dispose();
     super.dispose();
   }
 
@@ -136,91 +159,55 @@ class _DispatchSupervisorScreenState extends State<DispatchSupervisorScreen> {
       child: ListView(
         padding: const EdgeInsets.all(16),
         children: [
-          Card(
-            elevation: 0,
-            shape: RoundedRectangleBorder(
-              borderRadius: BorderRadius.circular(4),
-              side: BorderSide(color: Colors.grey.shade400, width: 1),
-            ),
-            child: Padding(
-              padding: const EdgeInsets.all(14.0),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: const [
-                  Row(
-                    children: [
-                      Icon(Icons.hub_outlined, color: Colors.blue),
-                      SizedBox(width: 8),
-                      Expanded(
-                        child: Text(
-                          "Tích hợp Zalo OA & GPS Vietmap / Bình Anh",
-                          style: TextStyle(
-                            fontWeight: FontWeight.bold,
-                            fontSize: 14,
-                          ),
-                        ),
-                      ),
-                    ],
+          IntrinsicHeight(
+            child: Row(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                Expanded(
+                  child: _buildMetricCard(
+                    "Tổng người dùng",
+                    "${_users.length} tài khoản",
+                    Icons.people,
+                    Colors.indigo,
                   ),
-                  Divider(),
-                  Text(
-                    "• Zalo OA (Group KH Nhơn Trạch): Nhận yêu cầu 55 tấn xi măng lúc 07:15.\n"
-                    "• Đề xuất 3 xe gần nhất từ Vietmap/Bình Anh: 51D-928.45 (cách 1.2km) - 51D-772.19 (cách 3.4km) - 60C-441.82 (cách 5.1km).",
-                    style: TextStyle(
-                      fontSize: 12,
-                      color: Colors.black87,
-                      height: 1.4,
-                    ),
+                ),
+                const SizedBox(width: 12),
+                Expanded(
+                  child: _buildMetricCard(
+                    "Tổng phương tiện",
+                    "${_summary['total_vehicles'] ?? _vehicles.length} xe",
+                    Icons.directions_car,
+                    Colors.blue,
                   ),
-                ],
-              ),
+                ),
+              ],
             ),
-          ),
-          const SizedBox(height: 16),
-
-          Row(
-            children: [
-              Expanded(
-                child: _buildMetricCard(
-                  "Tổng người dùng",
-                  "${_users.length} tài khoản",
-                  Icons.people,
-                  Colors.indigo,
-                ),
-              ),
-              const SizedBox(width: 12),
-              Expanded(
-                child: _buildMetricCard(
-                  "Tổng phương tiện",
-                  "${_summary['total_vehicles'] ?? _vehicles.length} xe",
-                  Icons.directions_car,
-                  Colors.blue,
-                ),
-              ),
-            ],
           ),
           const SizedBox(height: 12),
-          Row(
-            children: [
-              Expanded(
-                child: _buildMetricCard(
-                  "Đơn hàng hôm nay",
-                  "${_summary['total_orders'] ?? _orders.length} đơn",
-                  Icons.receipt_long,
-                  Colors.teal,
+          IntrinsicHeight(
+            child: Row(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                Expanded(
+                  child: _buildMetricCard(
+                    "Đơn hàng hôm nay",
+                    "${_summary['total_orders'] ?? _orders.length} đơn",
+                    Icons.receipt_long,
+                    Colors.teal,
+                  ),
                 ),
-              ),
-              const SizedBox(width: 12),
-              Expanded(
-                child: _buildMetricCard(
-                  "Tỷ lệ tuân thủ 5 ảnh",
-                  _summary['compliance_rate'] ?? "96.4%",
-                  Icons.verified_user,
-                  Colors.purple,
-                  onTap: () => _showVehicleInspectionsDialog(null, null),
+                const SizedBox(width: 12),
+                Expanded(
+                  child: _buildMetricCard(
+                    "Tỷ lệ tuân thủ 5 ảnh",
+                    _summary['compliance_rate'] ?? "96.4%",
+                    Icons.verified_user,
+                    Colors.purple,
+                    onTap: () => _showVehicleInspectionsDialog(null, null),
+                  ),
                 ),
-              ),
-            ],
+              ],
+            ),
           ),
           const SizedBox(height: 16),
 
@@ -231,94 +218,1293 @@ class _DispatchSupervisorScreenState extends State<DispatchSupervisorScreen> {
     );
   }
 
-  // TAB 2: Đơn hàng vận tải
+  // Hỗ trợ trích xuất ngày tháng từ đơn hàng (created_at hoặc từ mã đơn hàng dạng YYYYMMDD)
+  DateTime? _extractOrderDate(dynamic o) {
+    if (o is! Map) return null;
+    final rawDate = o['created_at'] ?? o['order_date'];
+    if (rawDate != null) {
+      final parsed = DateTime.tryParse(rawDate.toString());
+      if (parsed != null) return parsed.toLocal();
+    }
+    final code = (o['order_code'] ?? '').toString();
+    final match = RegExp(r'(20\d{2})(\d{2})(\d{2})').firstMatch(code);
+    if (match != null) {
+      final y = int.tryParse(match.group(1)!);
+      final m = int.tryParse(match.group(2)!);
+      final d = int.tryParse(match.group(3)!);
+      if (y != null && m != null && d != null) {
+        return DateTime(y, m, d);
+      }
+    }
+    return null;
+  }
+
+  String _formatOrderDateLabel(DateTime? dt) {
+    if (dt == null) return 'Chưa rõ ngày';
+    final d = dt.day.toString().padLeft(2, '0');
+    final m = dt.month.toString().padLeft(2, '0');
+    final y = dt.year.toString();
+    return '$d/$m/$y';
+  }
+
+  void _resetOrderFilters() {
+    _orderSearchCtrl.clear();
+    _orderCodeFilterCtrl.clear();
+    _orderPickupFilterCtrl.clear();
+    _orderDeliveryFilterCtrl.clear();
+    setState(() {
+      _orderSearchQuery = '';
+      _orderCodeFilter = '';
+      _orderPickupFilter = '';
+      _orderDeliveryFilter = '';
+      _selectedOrderProductFilter = 'ALL';
+      _selectedOrderVehicleFilter = 'ALL';
+      _selectedOrderDriverFilter = 'ALL';
+      _selectedOrderTransportTypeFilter = 'ALL';
+      _orderStartDate = null;
+      _orderEndDate = null;
+      _orderCurrentPage = 1;
+    });
+  }
+
+  bool get _hasActiveOrderFilters {
+    return _orderSearchQuery.trim().isNotEmpty ||
+        _orderCodeFilter.trim().isNotEmpty ||
+        _orderPickupFilter.trim().isNotEmpty ||
+        _orderDeliveryFilter.trim().isNotEmpty ||
+        _selectedOrderProductFilter != 'ALL' ||
+        _selectedOrderVehicleFilter != 'ALL' ||
+        _selectedOrderDriverFilter != 'ALL' ||
+        _selectedOrderTransportTypeFilter != 'ALL' ||
+        _orderStartDate != null ||
+        _orderEndDate != null;
+  }
+
+  Future<void> _pickOrderDate({required bool isStart}) async {
+    final now = DateTime.now();
+    final initial = isStart
+        ? (_orderStartDate ?? _orderEndDate ?? now)
+        : (_orderEndDate ?? _orderStartDate ?? now);
+    final picked = await showDatePicker(
+      context: context,
+      initialDate: initial,
+      firstDate: DateTime(2020, 1, 1),
+      lastDate: DateTime(2035, 12, 31),
+      helpText: isStart ? 'CHỌN TỪ NGÀY' : 'CHỌN ĐẾN NGÀY',
+      cancelText: 'Hủy',
+      confirmText: 'Áp dụng',
+    );
+    if (picked != null) {
+      setState(() {
+        if (isStart) {
+          _orderStartDate = DateTime(picked.year, picked.month, picked.day);
+          if (_orderEndDate != null && _orderEndDate!.isBefore(_orderStartDate!)) {
+            _orderEndDate = _orderStartDate;
+          }
+        } else {
+          _orderEndDate = DateTime(picked.year, picked.month, picked.day);
+          if (_orderStartDate != null && _orderStartDate!.isAfter(_orderEndDate!)) {
+            _orderStartDate = _orderEndDate;
+          }
+        }
+        _orderCurrentPage = 1;
+      });
+    }
+  }
+
+  // TAB 2: Đơn hàng vận tải (Tích hợp Bộ lọc đa tiêu chí & Phân trang)
   Widget _buildOrdersTab() {
-    return ListView.builder(
-      padding: const EdgeInsets.all(16),
-      itemCount: _orders.length,
-      itemBuilder: (context, index) {
-        final o = _orders[index];
-        return Card(
-          elevation: 0,
-          margin: const EdgeInsets.only(bottom: 12),
-          shape: RoundedRectangleBorder(
-            borderRadius: BorderRadius.circular(4),
-            side: BorderSide(color: Colors.grey.shade400, width: 1),
-          ),
-          child: Padding(
-            padding: const EdgeInsets.all(14),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Row(
-                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                  children: [
-                    Text(
-                      o['order_code'] ?? 'MÃ ĐƠN HÀNG',
-                      style: const TextStyle(
-                        fontWeight: FontWeight.bold,
-                        fontSize: 15,
-                        color: Colors.blueAccent,
-                      ),
-                    ),
-                    Container(
-                      padding: const EdgeInsets.symmetric(
-                        horizontal: 8,
-                        vertical: 3,
-                      ),
-                      decoration: BoxDecoration(
-                        color: Colors.blue.shade50,
-                        borderRadius: BorderRadius.circular(4),
-                      ),
-                      child: Text(
-                        _translateTransportType(o['transport_type']),
-                        style: TextStyle(
-                          color: Colors.blue.shade800,
-                          fontSize: 11,
-                          fontWeight: FontWeight.bold,
+    return Builder(
+      builder: (context) {
+        // Tổng hợp danh sách tùy chọn động cho Dropdown từ dữ liệu đơn hàng, sản phẩm, xe, tài xế
+        final productOptions = <String>{};
+        for (final p in _products) {
+          final name = (p['name'] ?? '').toString().trim();
+          if (name.isNotEmpty) productOptions.add(name);
+        }
+        final vehicleOptions = <String>{};
+        for (final v in _vehicles) {
+          final plate = (v['plate_number'] ?? '').toString().trim();
+          if (plate.isNotEmpty) vehicleOptions.add(plate);
+        }
+        final driverOptions = <String>{};
+        for (final o in _orders) {
+          final pName = (o['product_name'] ?? '').toString().trim();
+          if (pName.isNotEmpty) productOptions.add(pName);
+          final vPlate = (o['assigned_vehicle_plate'] ?? '').toString().trim();
+          if (vPlate.isNotEmpty) vehicleOptions.add(vPlate);
+          final dName = (o['driver_name'] ?? '').toString().trim();
+          if (dName.isNotEmpty) driverOptions.add(dName);
+        }
+
+        final sortedProducts = productOptions.toList()..sort();
+        final sortedVehicles = vehicleOptions.toList()..sort();
+        final sortedDrivers = driverOptions.toList()..sort();
+
+        final safeProductVal = (_selectedOrderProductFilter == 'ALL' ||
+                sortedProducts.contains(_selectedOrderProductFilter))
+            ? _selectedOrderProductFilter
+            : 'ALL';
+        final safeVehicleVal = (_selectedOrderVehicleFilter == 'ALL' ||
+                sortedVehicles.contains(_selectedOrderVehicleFilter))
+            ? _selectedOrderVehicleFilter
+            : 'ALL';
+        final safeDriverVal = (_selectedOrderDriverFilter == 'ALL' ||
+                sortedDrivers.contains(_selectedOrderDriverFilter))
+            ? _selectedOrderDriverFilter
+            : 'ALL';
+
+        final qGeneral = _orderSearchQuery.toLowerCase().trim();
+        final qCode = _orderCodeFilter.toLowerCase().trim();
+        final qPickup = _orderPickupFilter.toLowerCase().trim();
+        final qDelivery = _orderDeliveryFilter.toLowerCase().trim();
+
+        final filteredOrders = _orders.where((o) {
+          final orderCode = (o['order_code'] ?? '').toString();
+          final productName = (o['product_name'] ?? 'Vật liệu').toString();
+          final pickupAddr = (o['pickup_address'] ?? '').toString();
+          final deliveryAddr = (o['delivery_address'] ?? '').toString();
+          final vehiclePlate = (o['assigned_vehicle_plate'] ?? '').toString();
+          final driverName = (o['driver_name'] ?? 'Nguyễn Văn A').toString();
+          final transportType = (o['transport_type'] ?? '').toString();
+          final orderDate = _extractOrderDate(o);
+          final dateLabel = _formatOrderDateLabel(orderDate);
+
+          // 1. Lọc theo khoảng ngày tháng (Từ ngày - Đến ngày)
+          if (_orderStartDate != null || _orderEndDate != null) {
+            if (orderDate == null) return false;
+            final normalizedDate = DateTime(
+              orderDate.year,
+              orderDate.month,
+              orderDate.day,
+            );
+            if (_orderStartDate != null &&
+                normalizedDate.isBefore(_orderStartDate!)) {
+              return false;
+            }
+            if (_orderEndDate != null &&
+                normalizedDate.isAfter(_orderEndDate!)) {
+              return false;
+            }
+          }
+
+          // 2. Lọc theo Mã đơn hàng
+          if (qCode.isNotEmpty &&
+              !orderCode.toLowerCase().contains(qCode)) {
+            return false;
+          }
+
+          // 3. Lọc theo Sản phẩm
+          if (safeProductVal != 'ALL' && productName.trim() != safeProductVal) {
+            return false;
+          }
+
+          // 4. Lọc theo Xe (Biển số)
+          if (safeVehicleVal != 'ALL' && vehiclePlate.trim() != safeVehicleVal) {
+            return false;
+          }
+
+          // 5. Lọc theo Tài xế
+          if (safeDriverVal != 'ALL' && driverName.trim() != safeDriverVal) {
+            return false;
+          }
+
+          // 6. Lọc theo Loại hình vận chuyển
+          if (_selectedOrderTransportTypeFilter != 'ALL' &&
+              transportType != _selectedOrderTransportTypeFilter) {
+            return false;
+          }
+
+          // 7. Lọc theo Nơi nhận
+          if (qPickup.isNotEmpty &&
+              !pickupAddr.toLowerCase().contains(qPickup)) {
+            return false;
+          }
+
+          // 8. Lọc theo Điểm giao
+          if (qDelivery.isNotEmpty &&
+              !deliveryAddr.toLowerCase().contains(qDelivery)) {
+            return false;
+          }
+
+          // 9. Tìm kiếm tổng hợp nhanh
+          if (qGeneral.isNotEmpty) {
+            final matchAny = orderCode.toLowerCase().contains(qGeneral) ||
+                productName.toLowerCase().contains(qGeneral) ||
+                pickupAddr.toLowerCase().contains(qGeneral) ||
+                deliveryAddr.toLowerCase().contains(qGeneral) ||
+                vehiclePlate.toLowerCase().contains(qGeneral) ||
+                driverName.toLowerCase().contains(qGeneral) ||
+                dateLabel.toLowerCase().contains(qGeneral);
+            if (!matchAny) return false;
+          }
+
+          return true;
+        }).toList();
+
+        final totalItems = filteredOrders.length;
+        final totalPages = (totalItems / _orderPageSize).ceil().clamp(1, 99999);
+        final validPage = _orderCurrentPage.clamp(1, totalPages);
+        final startIndex =
+            totalItems == 0 ? 0 : (validPage - 1) * _orderPageSize;
+        final endIndex = (startIndex + _orderPageSize > totalItems)
+            ? totalItems
+            : startIndex + _orderPageSize;
+        final paginatedOrders = totalItems == 0
+            ? []
+            : filteredOrders.sublist(startIndex, endIndex);
+
+        return Column(
+          children: [
+            // KHỐI CÔNG CỤ TÌM KIẾM & BỘ LỌC ĐA TIÊU CHÍ
+            Container(
+              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+              color: Colors.white,
+              child: LayoutBuilder(
+                builder: (context, constraints) {
+                  final isMobile = constraints.maxWidth < 720;
+                  final isTablet = constraints.maxWidth >= 720 &&
+                      constraints.maxWidth < 1100;
+
+                  // Chiều cao đồng bộ chuẩn xác 40px cho toàn bộ Button, Input, Select và DatePicker
+                  const double kControlHeight = 40.0;
+                  const BoxConstraints kControlConstraints = BoxConstraints(
+                    minHeight: kControlHeight,
+                    maxHeight: kControlHeight,
+                  );
+                  const BoxConstraints kPrefixIconConstraints = BoxConstraints(
+                    minWidth: 38,
+                    minHeight: kControlHeight,
+                    maxHeight: kControlHeight,
+                  );
+                  const EdgeInsets kFilterPadding = EdgeInsets.symmetric(
+                    horizontal: 10,
+                    vertical: 0,
+                  );
+
+                  // Widget chọn Từ ngày
+                  Widget buildStartDatePicker() {
+                    final hasVal = _orderStartDate != null;
+                    return InkWell(
+                      onTap: () => _pickOrderDate(isStart: true),
+                      borderRadius: BorderRadius.circular(4),
+                      child: Container(
+                        height: kControlHeight,
+                        padding: const EdgeInsets.symmetric(horizontal: 10),
+                        decoration: BoxDecoration(
+                          color: hasVal ? Colors.blue.shade50 : Colors.white,
+                          borderRadius: BorderRadius.circular(4),
+                          border: Border.all(
+                            color: hasVal
+                                ? Colors.blue.shade400
+                                : Colors.black26,
+                          ),
+                        ),
+                        child: Row(
+                          children: [
+                            Icon(
+                              Icons.calendar_today_outlined,
+                              size: 16,
+                              color: hasVal
+                                  ? Colors.blue.shade800
+                                  : Colors.grey.shade700,
+                            ),
+                            const SizedBox(width: 10),
+                            Expanded(
+                              child: Text(
+                                hasVal
+                                    ? "Từ: ${_formatOrderDateLabel(_orderStartDate)}"
+                                    : "Từ ngày...",
+                                style: TextStyle(
+                                  fontSize: 12.5,
+                                  fontWeight: hasVal
+                                      ? FontWeight.w600
+                                      : FontWeight.normal,
+                                  color: hasVal
+                                      ? Colors.blue.shade900
+                                      : Colors.grey.shade700,
+                                ),
+                                overflow: TextOverflow.ellipsis,
+                              ),
+                            ),
+                            if (hasVal)
+                              InkWell(
+                                onTap: () {
+                                  setState(() {
+                                    _orderStartDate = null;
+                                    _orderCurrentPage = 1;
+                                  });
+                                },
+                                child: Icon(
+                                  Icons.close,
+                                  size: 16,
+                                  color: Colors.blue.shade800,
+                                ),
+                              ),
+                          ],
                         ),
                       ),
+                    );
+                  }
+
+                  // Widget chọn Đến ngày
+                  Widget buildEndDatePicker() {
+                    final hasVal = _orderEndDate != null;
+                    return InkWell(
+                      onTap: () => _pickOrderDate(isStart: false),
+                      borderRadius: BorderRadius.circular(4),
+                      child: Container(
+                        height: kControlHeight,
+                        padding: const EdgeInsets.symmetric(horizontal: 10),
+                        decoration: BoxDecoration(
+                          color: hasVal ? Colors.blue.shade50 : Colors.white,
+                          borderRadius: BorderRadius.circular(4),
+                          border: Border.all(
+                            color: hasVal
+                                ? Colors.blue.shade400
+                                : Colors.black26,
+                          ),
+                        ),
+                        child: Row(
+                          children: [
+                            Icon(
+                              Icons.event_available_outlined,
+                              size: 16,
+                              color: hasVal
+                                  ? Colors.blue.shade800
+                                  : Colors.grey.shade700,
+                            ),
+                            const SizedBox(width: 10),
+                            Expanded(
+                              child: Text(
+                                hasVal
+                                    ? "Đến: ${_formatOrderDateLabel(_orderEndDate)}"
+                                    : "Đến ngày...",
+                                style: TextStyle(
+                                  fontSize: 12.5,
+                                  fontWeight: hasVal
+                                      ? FontWeight.w600
+                                      : FontWeight.normal,
+                                  color: hasVal
+                                      ? Colors.blue.shade900
+                                      : Colors.grey.shade700,
+                                ),
+                                overflow: TextOverflow.ellipsis,
+                              ),
+                            ),
+                            if (hasVal)
+                              InkWell(
+                                onTap: () {
+                                  setState(() {
+                                    _orderEndDate = null;
+                                    _orderCurrentPage = 1;
+                                  });
+                                },
+                                child: Icon(
+                                  Icons.close,
+                                  size: 16,
+                                  color: Colors.blue.shade800,
+                                ),
+                              ),
+                          ],
+                        ),
+                      ),
+                    );
+                  }
+
+                  // Các ô lọc chi tiết (Đồng bộ chiều cao 40px cho Input, Select, DatePicker và Button)
+                  Widget buildOrderCodeInput() {
+                    return SizedBox(
+                      height: kControlHeight,
+                      child: TextField(
+                        controller: _orderCodeFilterCtrl,
+                        style: const TextStyle(fontSize: 12.5),
+                        textAlignVertical: TextAlignVertical.center,
+                        onChanged: (val) {
+                          setState(() {
+                            _orderCodeFilter = val;
+                            _orderCurrentPage = 1;
+                          });
+                        },
+                        decoration: InputDecoration(
+                          isDense: true,
+                          constraints: kControlConstraints,
+                          hintText: "Lọc mã đơn hàng...",
+                          hintStyle: const TextStyle(fontSize: 12.5),
+                          contentPadding: kFilterPadding,
+                          prefixIcon:
+                              const Icon(Icons.qr_code_2_outlined, size: 17),
+                          prefixIconConstraints: kPrefixIconConstraints,
+                          suffixIcon: _orderCodeFilter.isNotEmpty
+                              ? IconButton(
+                                  padding: EdgeInsets.zero,
+                                  constraints: kPrefixIconConstraints,
+                                  icon: const Icon(Icons.clear, size: 16),
+                                  onPressed: () {
+                                    _orderCodeFilterCtrl.clear();
+                                    setState(() {
+                                      _orderCodeFilter = "";
+                                      _orderCurrentPage = 1;
+                                    });
+                                  },
+                                )
+                              : null,
+                        ),
+                      ),
+                    );
+                  }
+
+                  Widget buildProductDropdown() {
+                    return SizedBox(
+                      height: kControlHeight,
+                      child: DropdownButtonFormField<String>(
+                        value: safeProductVal,
+                        isExpanded: true,
+                        isDense: true,
+                        iconSize: 18,
+                        style: const TextStyle(
+                          fontSize: 12.5,
+                          color: Colors.black87,
+                          fontFamily: 'Nunito',
+                        ),
+                        decoration: const InputDecoration(
+                          isDense: true,
+                          constraints: kControlConstraints,
+                          contentPadding: kFilterPadding,
+                          prefixIcon: Icon(Icons.category_outlined, size: 17),
+                          prefixIconConstraints: kPrefixIconConstraints,
+                        ),
+                        items: [
+                          const DropdownMenuItem(
+                            value: "ALL",
+                            child: Text(
+                              "Tất cả sản phẩm",
+                              style: TextStyle(fontSize: 12.5),
+                              overflow: TextOverflow.ellipsis,
+                            ),
+                          ),
+                          ...sortedProducts.map(
+                            (p) => DropdownMenuItem(
+                              value: p,
+                              child: Text(
+                                p,
+                                style: const TextStyle(fontSize: 12.5),
+                                overflow: TextOverflow.ellipsis,
+                              ),
+                            ),
+                          ),
+                        ],
+                        onChanged: (val) {
+                          if (val != null) {
+                            setState(() {
+                              _selectedOrderProductFilter = val;
+                              _orderCurrentPage = 1;
+                            });
+                          }
+                        },
+                      ),
+                    );
+                  }
+
+                  Widget buildVehicleDropdown() {
+                    return SizedBox(
+                      height: kControlHeight,
+                      child: DropdownButtonFormField<String>(
+                        value: safeVehicleVal,
+                        isExpanded: true,
+                        isDense: true,
+                        iconSize: 18,
+                        style: const TextStyle(
+                          fontSize: 12.5,
+                          color: Colors.black87,
+                          fontFamily: 'Nunito',
+                        ),
+                        decoration: const InputDecoration(
+                          isDense: true,
+                          constraints: kControlConstraints,
+                          contentPadding: kFilterPadding,
+                          prefixIcon:
+                              Icon(Icons.local_shipping_outlined, size: 17),
+                          prefixIconConstraints: kPrefixIconConstraints,
+                        ),
+                        items: [
+                          const DropdownMenuItem(
+                            value: "ALL",
+                            child: Text(
+                              "Tất cả xe",
+                              style: TextStyle(fontSize: 12.5),
+                              overflow: TextOverflow.ellipsis,
+                            ),
+                          ),
+                          ...sortedVehicles.map(
+                            (v) => DropdownMenuItem(
+                              value: v,
+                              child: Text(
+                                v,
+                                style: const TextStyle(fontSize: 12.5),
+                                overflow: TextOverflow.ellipsis,
+                              ),
+                            ),
+                          ),
+                        ],
+                        onChanged: (val) {
+                          if (val != null) {
+                            setState(() {
+                              _selectedOrderVehicleFilter = val;
+                              _orderCurrentPage = 1;
+                            });
+                          }
+                        },
+                      ),
+                    );
+                  }
+
+                  Widget buildDriverDropdown() {
+                    return SizedBox(
+                      height: kControlHeight,
+                      child: DropdownButtonFormField<String>(
+                        value: safeDriverVal,
+                        isExpanded: true,
+                        isDense: true,
+                        iconSize: 18,
+                        style: const TextStyle(
+                          fontSize: 12.5,
+                          color: Colors.black87,
+                          fontFamily: 'Nunito',
+                        ),
+                        decoration: const InputDecoration(
+                          isDense: true,
+                          constraints: kControlConstraints,
+                          contentPadding: kFilterPadding,
+                          prefixIcon: Icon(Icons.person_outline, size: 17),
+                          prefixIconConstraints: kPrefixIconConstraints,
+                        ),
+                        items: [
+                          const DropdownMenuItem(
+                            value: "ALL",
+                            child: Text(
+                              "Tất cả tài xế",
+                              style: TextStyle(fontSize: 12.5),
+                              overflow: TextOverflow.ellipsis,
+                            ),
+                          ),
+                          ...sortedDrivers.map(
+                            (d) => DropdownMenuItem(
+                              value: d,
+                              child: Text(
+                                d,
+                                style: const TextStyle(fontSize: 12.5),
+                                overflow: TextOverflow.ellipsis,
+                              ),
+                            ),
+                          ),
+                        ],
+                        onChanged: (val) {
+                          if (val != null) {
+                            setState(() {
+                              _selectedOrderDriverFilter = val;
+                              _orderCurrentPage = 1;
+                            });
+                          }
+                        },
+                      ),
+                    );
+                  }
+
+                  Widget buildTransportTypeDropdown() {
+                    return SizedBox(
+                      height: kControlHeight,
+                      child: DropdownButtonFormField<String>(
+                        value: _selectedOrderTransportTypeFilter,
+                        isExpanded: true,
+                        isDense: true,
+                        iconSize: 18,
+                        style: const TextStyle(
+                          fontSize: 12.5,
+                          color: Colors.black87,
+                          fontFamily: 'Nunito',
+                        ),
+                        decoration: const InputDecoration(
+                          isDense: true,
+                          constraints: kControlConstraints,
+                          contentPadding: kFilterPadding,
+                          prefixIcon: Icon(Icons.business_outlined, size: 17),
+                          prefixIconConstraints: kPrefixIconConstraints,
+                        ),
+                        items: const [
+                          DropdownMenuItem(
+                            value: "ALL",
+                            child: Text(
+                              "Mọi loại xe",
+                              style: TextStyle(fontSize: 12.5),
+                              overflow: TextOverflow.ellipsis,
+                            ),
+                          ),
+                          DropdownMenuItem(
+                            value: "INTERNAL",
+                            child: Text(
+                              "Xe công ty",
+                              style: TextStyle(fontSize: 12.5),
+                              overflow: TextOverflow.ellipsis,
+                            ),
+                          ),
+                          DropdownMenuItem(
+                            value: "RENTAL",
+                            child: Text(
+                              "Xe thuê ngoài",
+                              style: TextStyle(fontSize: 12.5),
+                              overflow: TextOverflow.ellipsis,
+                            ),
+                          ),
+                          DropdownMenuItem(
+                            value: "CUSTOMER_SELF",
+                            child: Text(
+                              "Khách tự lấy",
+                              style: TextStyle(fontSize: 12.5),
+                              overflow: TextOverflow.ellipsis,
+                            ),
+                          ),
+                        ],
+                        onChanged: (val) {
+                          if (val != null) {
+                            setState(() {
+                              _selectedOrderTransportTypeFilter = val;
+                              _orderCurrentPage = 1;
+                            });
+                          }
+                        },
+                      ),
+                    );
+                  }
+
+                  Widget buildPickupInput() {
+                    return SizedBox(
+                      height: kControlHeight,
+                      child: TextField(
+                        controller: _orderPickupFilterCtrl,
+                        style: const TextStyle(fontSize: 12.5),
+                        textAlignVertical: TextAlignVertical.center,
+                        onChanged: (val) {
+                          setState(() {
+                            _orderPickupFilter = val;
+                            _orderCurrentPage = 1;
+                          });
+                        },
+                        decoration: InputDecoration(
+                          isDense: true,
+                          constraints: kControlConstraints,
+                          hintText: "Lọc theo nơi nhận...",
+                          hintStyle: const TextStyle(fontSize: 12.5),
+                          contentPadding: kFilterPadding,
+                          prefixIcon:
+                              const Icon(Icons.warehouse_outlined, size: 17),
+                          prefixIconConstraints: kPrefixIconConstraints,
+                          suffixIcon: _orderPickupFilter.isNotEmpty
+                              ? IconButton(
+                                  padding: EdgeInsets.zero,
+                                  constraints: kPrefixIconConstraints,
+                                  icon: const Icon(Icons.clear, size: 16),
+                                  onPressed: () {
+                                    _orderPickupFilterCtrl.clear();
+                                    setState(() {
+                                      _orderPickupFilter = "";
+                                      _orderCurrentPage = 1;
+                                    });
+                                  },
+                                )
+                              : null,
+                        ),
+                      ),
+                    );
+                  }
+
+                  Widget buildDeliveryInput() {
+                    return SizedBox(
+                      height: kControlHeight,
+                      child: TextField(
+                        controller: _orderDeliveryFilterCtrl,
+                        style: const TextStyle(fontSize: 12.5),
+                        textAlignVertical: TextAlignVertical.center,
+                        onChanged: (val) {
+                          setState(() {
+                            _orderDeliveryFilter = val;
+                            _orderCurrentPage = 1;
+                          });
+                        },
+                        decoration: InputDecoration(
+                          isDense: true,
+                          constraints: kControlConstraints,
+                          hintText: "Lọc theo điểm giao...",
+                          hintStyle: const TextStyle(fontSize: 12.5),
+                          contentPadding: kFilterPadding,
+                          prefixIcon:
+                              const Icon(Icons.location_on_outlined, size: 17),
+                          prefixIconConstraints: kPrefixIconConstraints,
+                          suffixIcon: _orderDeliveryFilter.isNotEmpty
+                              ? IconButton(
+                                  padding: EdgeInsets.zero,
+                                  constraints: kPrefixIconConstraints,
+                                  icon: const Icon(Icons.clear, size: 16),
+                                  onPressed: () {
+                                    _orderDeliveryFilterCtrl.clear();
+                                    setState(() {
+                                      _orderDeliveryFilter = "";
+                                      _orderCurrentPage = 1;
+                                    });
+                                  },
+                                )
+                              : null,
+                        ),
+                      ),
+                    );
+                  }
+
+                  final filterFields = <Widget>[
+                    buildStartDatePicker(),
+                    buildEndDatePicker(),
+                    buildOrderCodeInput(),
+                    buildProductDropdown(),
+                    buildVehicleDropdown(),
+                    buildDriverDropdown(),
+                    buildPickupInput(),
+                    buildDeliveryInput(),
+                    buildTransportTypeDropdown(),
+                  ];
+
+                  final int columnsCount = isMobile ? 1 : (isTablet ? 2 : 3);
+                  final double spacing = 10.0;
+                  final double itemWidth = (constraints.maxWidth -
+                          (columnsCount - 1) * spacing) /
+                      columnsCount;
+
+                  return Column(
+                    crossAxisAlignment: CrossAxisAlignment.stretch,
+                    children: [
+                      // Hàng 1: Tìm kiếm tổng hợp + Nút đóng/mở bộ lọc chi tiết + Xóa lọc + Tải lại (Đồng bộ height = 40px)
+                      Wrap(
+                        spacing: 10,
+                        runSpacing: 10,
+                        crossAxisAlignment: WrapCrossAlignment.center,
+                        children: [
+                          SizedBox(
+                            width: isMobile
+                                ? constraints.maxWidth
+                                : (constraints.maxWidth * 0.42).clamp(260.0, 520.0),
+                            height: kControlHeight,
+                            child: TextField(
+                              controller: _orderSearchCtrl,
+                              style: const TextStyle(fontSize: 12.5),
+                              textAlignVertical: TextAlignVertical.center,
+                              onChanged: (val) {
+                                setState(() {
+                                  _orderSearchQuery = val;
+                                  _orderCurrentPage = 1;
+                                });
+                              },
+                              decoration: InputDecoration(
+                                isDense: true,
+                                constraints: kControlConstraints,
+                                hintText:
+                                    "Tìm nhanh mã đơn, tài xế, biển số xe, nơi nhận, điểm giao, sản phẩm...",
+                                hintStyle: const TextStyle(fontSize: 12.5),
+                                contentPadding: kFilterPadding,
+                                prefixIcon: const Icon(Icons.search, size: 18),
+                                prefixIconConstraints: kPrefixIconConstraints,
+                                suffixIcon: _orderSearchQuery.isNotEmpty
+                                    ? IconButton(
+                                        padding: EdgeInsets.zero,
+                                        constraints: kPrefixIconConstraints,
+                                        icon: const Icon(Icons.clear, size: 16),
+                                        onPressed: () {
+                                          _orderSearchCtrl.clear();
+                                          setState(() {
+                                            _orderSearchQuery = "";
+                                            _orderCurrentPage = 1;
+                                          });
+                                        },
+                                      )
+                                    : null,
+                              ),
+                            ),
+                          ),
+                          // Nút bật/tắt bộ lọc chi tiết
+                          SizedBox(
+                            height: kControlHeight,
+                            child: OutlinedButton.icon(
+                              style: OutlinedButton.styleFrom(
+                                backgroundColor: _showAdvancedOrderFilters
+                                    ? Colors.blue.shade50
+                                    : Colors.white,
+                                foregroundColor: Colors.blue.shade800,
+                                side: BorderSide(color: Colors.blue.shade300),
+                                minimumSize: const Size(0, kControlHeight),
+                                fixedSize: const Size.fromHeight(kControlHeight),
+                                visualDensity: VisualDensity.standard,
+                                tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                                padding:
+                                    const EdgeInsets.symmetric(horizontal: 14),
+                                shape: RoundedRectangleBorder(
+                                  borderRadius: BorderRadius.circular(4),
+                                ),
+                              ),
+                              icon: Icon(
+                                _showAdvancedOrderFilters
+                                    ? Icons.filter_alt_off_outlined
+                                    : Icons.filter_alt_outlined,
+                                size: 16,
+                              ),
+                              label: Text(
+                                _showAdvancedOrderFilters
+                                    ? "Thu gọn bộ lọc"
+                                    : "Bộ lọc chi tiết",
+                                style: const TextStyle(
+                                  fontWeight: FontWeight.w600,
+                                  fontSize: 12.5,
+                                ),
+                              ),
+                              onPressed: () {
+                                setState(() {
+                                  _showAdvancedOrderFilters =
+                                      !_showAdvancedOrderFilters;
+                                });
+                              },
+                            ),
+                          ),
+                          if (_hasActiveOrderFilters)
+                            SizedBox(
+                              height: kControlHeight,
+                              child: OutlinedButton.icon(
+                                style: OutlinedButton.styleFrom(
+                                  foregroundColor: Colors.red.shade700,
+                                  side: BorderSide(color: Colors.red.shade300),
+                                  minimumSize: const Size(0, kControlHeight),
+                                  fixedSize: const Size.fromHeight(kControlHeight),
+                                  visualDensity: VisualDensity.standard,
+                                  tapTargetSize:
+                                      MaterialTapTargetSize.shrinkWrap,
+                                  padding: const EdgeInsets.symmetric(
+                                    horizontal: 14,
+                                  ),
+                                  shape: RoundedRectangleBorder(
+                                    borderRadius: BorderRadius.circular(4),
+                                  ),
+                                ),
+                                icon: const Icon(
+                                  Icons.restart_alt,
+                                  size: 16,
+                                ),
+                                label: const Text(
+                                  "Xóa bộ lọc",
+                                  style: TextStyle(
+                                    fontWeight: FontWeight.w600,
+                                    fontSize: 12.5,
+                                  ),
+                                ),
+                                onPressed: _resetOrderFilters,
+                              ),
+                            ),
+                          Text(
+                            "(${filteredOrders.length}/${_orders.length} đơn hàng)",
+                            style: const TextStyle(
+                              fontWeight: FontWeight.bold,
+                              fontSize: 13,
+                              color: Colors.blueGrey,
+                            ),
+                          ),
+                          SizedBox(
+                            height: kControlHeight,
+                            child: OutlinedButton.icon(
+                              style: OutlinedButton.styleFrom(
+                                foregroundColor: Colors.blue.shade800,
+                                side: BorderSide(color: Colors.blue.shade300),
+                                minimumSize: const Size(0, kControlHeight),
+                                fixedSize: const Size.fromHeight(kControlHeight),
+                                visualDensity: VisualDensity.standard,
+                                tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                                padding:
+                                    const EdgeInsets.symmetric(horizontal: 14),
+                                shape: RoundedRectangleBorder(
+                                  borderRadius: BorderRadius.circular(4),
+                                ),
+                              ),
+                              icon: const Icon(Icons.refresh, size: 16),
+                              label: const Text(
+                                "Tải lại",
+                                style: TextStyle(
+                                  fontWeight: FontWeight.w600,
+                                  fontSize: 12.5,
+                                ),
+                              ),
+                              onPressed: _loadAllManagementData,
+                            ),
+                          ),
+                        ],
+                      ),
+                      // Khối bộ lọc chi tiết (Ngày tháng, Mã đơn, Sản phẩm, Xe, Tài xế, Nơi nhận, Điểm giao, Loại xe)
+                      if (_showAdvancedOrderFilters) ...[
+                        const SizedBox(height: 10),
+                        Wrap(
+                          spacing: spacing,
+                          runSpacing: 10,
+                          children: filterFields
+                              .map(
+                                (w) => SizedBox(
+                                  width: itemWidth,
+                                  height: kControlHeight,
+                                  child: w,
+                                ),
+                              )
+                              .toList(),
+                        ),
+                      ],
+                    ],
+                  );
+                },
+              ),
+            ),
+            const Divider(height: 1),
+            Expanded(
+              child: paginatedOrders.isEmpty
+                  ? Center(
+                      child: Column(
+                        mainAxisAlignment: MainAxisAlignment.center,
+                        children: [
+                          Icon(
+                            Icons.receipt_long_outlined,
+                            size: 48,
+                            color: Colors.grey.shade400,
+                          ),
+                          const SizedBox(height: 12),
+                          Text(
+                            "Không tìm thấy đơn hàng nào phù hợp với điều kiện lọc",
+                            style: TextStyle(
+                              fontSize: 14,
+                              color: Colors.grey.shade600,
+                              fontWeight: FontWeight.w500,
+                            ),
+                          ),
+                          if (_hasActiveOrderFilters) ...[
+                            const SizedBox(height: 10),
+                            SizedBox(
+                              height: 44,
+                              child: OutlinedButton.icon(
+                                style: OutlinedButton.styleFrom(
+                                  foregroundColor: Colors.blue.shade800,
+                                  side: BorderSide(color: Colors.blue.shade300),
+                                  shape: RoundedRectangleBorder(
+                                    borderRadius: BorderRadius.circular(4),
+                                  ),
+                                ),
+                                icon: const Icon(Icons.clear_all, size: 16),
+                                label: const Text(
+                                  "Đặt lại bộ lọc",
+                                  style: TextStyle(fontSize: 12.5),
+                                ),
+                                onPressed: _resetOrderFilters,
+                              ),
+                            ),
+                          ],
+                        ],
+                      ),
+                    )
+                  : ListView.builder(
+                      padding: const EdgeInsets.all(16),
+                      itemCount: paginatedOrders.length,
+                      itemBuilder: (context, index) {
+                        final o = paginatedOrders[index];
+                        final orderDate = _extractOrderDate(o);
+                        final dateStr = _formatOrderDateLabel(orderDate);
+                        return Card(
+                          elevation: 0,
+                          margin: const EdgeInsets.only(bottom: 12),
+                          shape: RoundedRectangleBorder(
+                            borderRadius: BorderRadius.circular(4),
+                            side: BorderSide(
+                              color: Colors.grey.shade400,
+                              width: 1,
+                            ),
+                          ),
+                          child: Padding(
+                            padding: const EdgeInsets.all(14),
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                Row(
+                                  mainAxisAlignment:
+                                      MainAxisAlignment.spaceBetween,
+                                  children: [
+                                    Expanded(
+                                      child: Wrap(
+                                        spacing: 8,
+                                        runSpacing: 4,
+                                        crossAxisAlignment:
+                                            WrapCrossAlignment.center,
+                                        children: [
+                                          Text(
+                                            o['order_code'] ?? 'MÃ ĐƠN HÀNG',
+                                            style: const TextStyle(
+                                              fontWeight: FontWeight.bold,
+                                              fontSize: 15,
+                                              color: Colors.blueAccent,
+                                            ),
+                                          ),
+                                          Container(
+                                            padding: const EdgeInsets.symmetric(
+                                              horizontal: 6,
+                                              vertical: 2,
+                                            ),
+                                            decoration: BoxDecoration(
+                                              color: Colors.grey.shade100,
+                                              borderRadius:
+                                                  BorderRadius.circular(4),
+                                              border: Border.all(
+                                                color: Colors.grey.shade300,
+                                              ),
+                                            ),
+                                            child: Row(
+                                              mainAxisSize: MainAxisSize.min,
+                                              children: [
+                                                Icon(
+                                                  Icons.calendar_today,
+                                                  size: 11,
+                                                  color: Colors.grey.shade700,
+                                                ),
+                                                const SizedBox(width: 4),
+                                                Text(
+                                                  dateStr,
+                                                  style: TextStyle(
+                                                    fontSize: 11,
+                                                    color: Colors.grey.shade800,
+                                                    fontWeight: FontWeight.w600,
+                                                  ),
+                                                ),
+                                              ],
+                                            ),
+                                          ),
+                                        ],
+                                      ),
+                                    ),
+                                    Container(
+                                      padding: const EdgeInsets.symmetric(
+                                        horizontal: 8,
+                                        vertical: 3,
+                                      ),
+                                      decoration: BoxDecoration(
+                                        color: Colors.blue.shade50,
+                                        borderRadius: BorderRadius.circular(4),
+                                      ),
+                                      child: Text(
+                                        _translateTransportType(
+                                          o['transport_type'],
+                                        ),
+                                        style: TextStyle(
+                                          color: Colors.blue.shade800,
+                                          fontSize: 11,
+                                          fontWeight: FontWeight.bold,
+                                        ),
+                                      ),
+                                    ),
+                                  ],
+                                ),
+                                const SizedBox(height: 8),
+                                Text(
+                                  "Sản phẩm: ${o['product_name'] ?? 'Vật liệu'} (${o['cargo_weight_tons']} tấn)",
+                                  style: const TextStyle(
+                                    fontWeight: FontWeight.bold,
+                                  ),
+                                ),
+                                const SizedBox(height: 4),
+                                Text(
+                                  "• Nơi nhận: ${o['pickup_address'] ?? 'N/A'}",
+                                  style: const TextStyle(
+                                    fontSize: 12,
+                                    color: Colors.black87,
+                                  ),
+                                ),
+                                Text(
+                                  "• Điểm giao: ${o['delivery_address'] ?? 'N/A'}",
+                                  style: const TextStyle(
+                                    fontSize: 12,
+                                    color: Colors.black87,
+                                  ),
+                                ),
+                                const Divider(),
+                                Row(
+                                  mainAxisAlignment:
+                                      MainAxisAlignment.spaceBetween,
+                                  children: [
+                                    Text(
+                                      "Xe: ${o['assigned_vehicle_plate'] ?? 'Chưa gán'}",
+                                      style: const TextStyle(
+                                        fontSize: 12,
+                                        fontWeight: FontWeight.bold,
+                                      ),
+                                    ),
+                                    Text(
+                                      "Tài xế: ${o['driver_name'] ?? 'Nguyễn Văn A'}",
+                                      style: const TextStyle(
+                                        fontSize: 12,
+                                        color: Colors.teal,
+                                        fontWeight: FontWeight.bold,
+                                      ),
+                                    ),
+                                  ],
+                                ),
+                              ],
+                            ),
+                          ),
+                        );
+                      },
                     ),
-                  ],
+            ),
+            // THANH ĐIỀU HƯỚNG PHÂN TRANG (PAGINATION BAR)
+            if (filteredOrders.isNotEmpty)
+              Container(
+                height: 40,
+                padding: const EdgeInsets.symmetric(horizontal: 16),
+                decoration: BoxDecoration(
+                  color: Colors.white,
+                  border: Border(
+                    top: BorderSide(color: Colors.grey.shade300, width: 1),
+                  ),
                 ),
-                const SizedBox(height: 8),
-                Text(
-                  "Sản phẩm: ${o['product_name'] ?? 'Vật liệu'} (${o['cargo_weight_tons']} tấn)",
-                  style: const TextStyle(fontWeight: FontWeight.bold),
-                ),
-                const SizedBox(height: 4),
-                Text(
-                  "• Nơi nhận: ${o['pickup_address'] ?? 'N/A'}",
-                  style: const TextStyle(fontSize: 12, color: Colors.black87),
-                ),
-                Text(
-                  "• Điểm giao: ${o['delivery_address'] ?? 'N/A'}",
-                  style: const TextStyle(fontSize: 12, color: Colors.black87),
-                ),
-                const Divider(),
-                Row(
+                child: Row(
                   mainAxisAlignment: MainAxisAlignment.spaceBetween,
                   children: [
-                    Text(
-                      "Xe: ${o['assigned_vehicle_plate'] ?? 'Chưa gán'}",
-                      style: const TextStyle(
-                        fontSize: 12,
-                        fontWeight: FontWeight.bold,
+                    Flexible(
+                      child: Text(
+                        "Hiển thị ${startIndex + 1} - $endIndex trên tổng số $totalItems đơn hàng",
+                        style: TextStyle(
+                          fontSize: 12,
+                          color: Colors.grey.shade700,
+                          fontWeight: FontWeight.w500,
+                        ),
+                        overflow: TextOverflow.ellipsis,
                       ),
                     ),
-                    Text(
-                      "Tài xế: ${o['driver_name'] ?? 'Nguyễn Văn A'}",
-                      style: const TextStyle(
-                        fontSize: 12,
-                        color: Colors.teal,
-                        fontWeight: FontWeight.bold,
-                      ),
+                    Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        const Text(
+                          "Số dòng/trang: ",
+                          style: TextStyle(fontSize: 12, color: Colors.black87),
+                        ),
+                        const SizedBox(width: 4),
+                        DropdownButton<int>(
+                          value: _orderPageSize,
+                          underline: const SizedBox(),
+                          isDense: true,
+                          style: const TextStyle(
+                            fontSize: 12,
+                            color: Colors.blueGrey,
+                            fontWeight: FontWeight.bold,
+                          ),
+                          items: const [
+                            DropdownMenuItem(value: 5, child: Text("5")),
+                            DropdownMenuItem(value: 10, child: Text("10")),
+                            DropdownMenuItem(value: 20, child: Text("20")),
+                            DropdownMenuItem(value: 50, child: Text("50")),
+                          ],
+                          onChanged: (val) {
+                            if (val != null) {
+                              setState(() {
+                                _orderPageSize = val;
+                                _orderCurrentPage = 1;
+                              });
+                            }
+                          },
+                        ),
+                        const SizedBox(width: 14),
+                        IconButton(
+                          icon: const Icon(Icons.first_page, size: 18),
+                          padding: EdgeInsets.zero,
+                          constraints: const BoxConstraints(
+                            minWidth: 28,
+                            minHeight: 28,
+                          ),
+                          tooltip: "Trang đầu",
+                          onPressed: validPage > 1
+                              ? () {
+                                  setState(() {
+                                    _orderCurrentPage = 1;
+                                  });
+                                }
+                              : null,
+                        ),
+                        IconButton(
+                          icon: const Icon(Icons.chevron_left, size: 18),
+                          padding: EdgeInsets.zero,
+                          constraints: const BoxConstraints(
+                            minWidth: 28,
+                            minHeight: 28,
+                          ),
+                          tooltip: "Trang trước",
+                          onPressed: validPage > 1
+                              ? () {
+                                  setState(() {
+                                    _orderCurrentPage = validPage - 1;
+                                  });
+                                }
+                              : null,
+                        ),
+                        const SizedBox(width: 4),
+                        Container(
+                          padding: const EdgeInsets.symmetric(
+                            horizontal: 10,
+                            vertical: 3,
+                          ),
+                          decoration: BoxDecoration(
+                            color: Colors.blue.shade50,
+                            borderRadius: BorderRadius.circular(4),
+                          ),
+                          child: Text(
+                            "$validPage / $totalPages",
+                            style: TextStyle(
+                              fontSize: 12,
+                              fontWeight: FontWeight.bold,
+                              color: Colors.blue.shade800,
+                            ),
+                          ),
+                        ),
+                        const SizedBox(width: 4),
+                        IconButton(
+                          icon: const Icon(Icons.chevron_right, size: 18),
+                          padding: EdgeInsets.zero,
+                          constraints: const BoxConstraints(
+                            minWidth: 28,
+                            minHeight: 28,
+                          ),
+                          tooltip: "Trang sau",
+                          onPressed: validPage < totalPages
+                              ? () {
+                                  setState(() {
+                                    _orderCurrentPage = validPage + 1;
+                                  });
+                                }
+                              : null,
+                        ),
+                        IconButton(
+                          icon: const Icon(Icons.last_page, size: 18),
+                          padding: EdgeInsets.zero,
+                          constraints: const BoxConstraints(
+                            minWidth: 28,
+                            minHeight: 28,
+                          ),
+                          tooltip: "Trang cuối",
+                          onPressed: validPage < totalPages
+                              ? () {
+                                  setState(() {
+                                    _orderCurrentPage = totalPages;
+                                  });
+                                }
+                              : null,
+                        ),
+                      ],
                     ),
                   ],
                 ),
-              ],
-            ),
-          ),
+              ),
+          ],
         );
       },
     );
@@ -388,9 +1574,11 @@ class _DispatchSupervisorScreenState extends State<DispatchSupervisorScreen> {
                   Expanded(
                     flex: 4,
                     child: SizedBox(
-                      height: 44,
+                      height: 40,
                       child: TextField(
                         controller: _vehicleSearchCtrl,
+                        style: const TextStyle(fontSize: 13),
+                        textAlignVertical: TextAlignVertical.center,
                         onChanged: (val) {
                           setState(() {
                             _vehicleSearchQuery = val;
@@ -398,13 +1586,29 @@ class _DispatchSupervisorScreenState extends State<DispatchSupervisorScreen> {
                           });
                         },
                         decoration: InputDecoration(
+                          isDense: true,
+                          constraints: const BoxConstraints(
+                            minHeight: 40,
+                            maxHeight: 40,
+                          ),
                           hintText:
                               "Tìm theo biển số xe, loại xe, tài xế phụ trách...",
                           hintStyle: const TextStyle(fontSize: 13),
-                          prefixIcon: const Icon(Icons.search, size: 20),
+                          prefixIcon: const Icon(Icons.search, size: 18),
+                          prefixIconConstraints: const BoxConstraints(
+                            minWidth: 38,
+                            minHeight: 40,
+                            maxHeight: 40,
+                          ),
                           suffixIcon: _vehicleSearchQuery.isNotEmpty
                               ? IconButton(
-                                  icon: const Icon(Icons.clear, size: 18),
+                                  padding: EdgeInsets.zero,
+                                  constraints: const BoxConstraints(
+                                    minWidth: 38,
+                                    minHeight: 40,
+                                    maxHeight: 40,
+                                  ),
+                                  icon: const Icon(Icons.clear, size: 16),
                                   onPressed: () {
                                     _vehicleSearchCtrl.clear();
                                     setState(() {
@@ -415,7 +1619,7 @@ class _DispatchSupervisorScreenState extends State<DispatchSupervisorScreen> {
                                 )
                               : null,
                           contentPadding: const EdgeInsets.symmetric(
-                            horizontal: 12,
+                            horizontal: 10,
                             vertical: 0,
                           ),
                         ),
@@ -427,13 +1631,31 @@ class _DispatchSupervisorScreenState extends State<DispatchSupervisorScreen> {
                   Expanded(
                     flex: 2,
                     child: SizedBox(
-                      height: 44,
+                      height: 40,
                       child: DropdownButtonFormField<String>(
                         value: _selectedOwnershipFilter,
+                        isExpanded: true,
+                        isDense: true,
+                        iconSize: 18,
+                        style: const TextStyle(
+                          fontSize: 13,
+                          color: Colors.black87,
+                          fontFamily: 'Nunito',
+                        ),
                         decoration: const InputDecoration(
-                          prefixIcon: Icon(Icons.filter_alt_outlined, size: 20),
+                          isDense: true,
+                          constraints: BoxConstraints(
+                            minHeight: 40,
+                            maxHeight: 40,
+                          ),
+                          prefixIcon: Icon(Icons.filter_alt_outlined, size: 18),
+                          prefixIconConstraints: BoxConstraints(
+                            minWidth: 38,
+                            minHeight: 40,
+                            maxHeight: 40,
+                          ),
                           contentPadding: EdgeInsets.symmetric(
-                            horizontal: 12,
+                            horizontal: 10,
                             vertical: 0,
                           ),
                         ),
@@ -479,12 +1701,14 @@ class _DispatchSupervisorScreenState extends State<DispatchSupervisorScreen> {
                   const SizedBox(width: 14),
                   // Nút làm mới dữ liệu
                   SizedBox(
-                    height: 38,
+                    height: 40,
                     child: OutlinedButton.icon(
                       style: OutlinedButton.styleFrom(
                         foregroundColor: Colors.blue.shade800,
                         side: BorderSide(color: Colors.blue.shade300),
-                        minimumSize: Size.zero,
+                        minimumSize: const Size(0, 40),
+                        fixedSize: const Size.fromHeight(40),
+                        visualDensity: VisualDensity.standard,
                         tapTargetSize: MaterialTapTargetSize.shrinkWrap,
                         padding: const EdgeInsets.symmetric(horizontal: 12),
                         shape: RoundedRectangleBorder(
@@ -1252,9 +2476,11 @@ class _DispatchSupervisorScreenState extends State<DispatchSupervisorScreen> {
                   Expanded(
                     flex: 4,
                     child: SizedBox(
-                      height: 44,
+                      height: 40,
                       child: TextField(
                         controller: _userSearchCtrl,
+                        style: const TextStyle(fontSize: 13),
+                        textAlignVertical: TextAlignVertical.center,
                         onChanged: (val) {
                           setState(() {
                             _userSearchQuery = val;
@@ -1262,13 +2488,29 @@ class _DispatchSupervisorScreenState extends State<DispatchSupervisorScreen> {
                           });
                         },
                         decoration: InputDecoration(
+                          isDense: true,
+                          constraints: const BoxConstraints(
+                            minHeight: 40,
+                            maxHeight: 40,
+                          ),
                           hintText:
                               "Tìm theo tên, username, số điện thoại, email...",
                           hintStyle: const TextStyle(fontSize: 13),
-                          prefixIcon: const Icon(Icons.search, size: 20),
+                          prefixIcon: const Icon(Icons.search, size: 18),
+                          prefixIconConstraints: const BoxConstraints(
+                            minWidth: 38,
+                            minHeight: 40,
+                            maxHeight: 40,
+                          ),
                           suffixIcon: _userSearchQuery.isNotEmpty
                               ? IconButton(
-                                  icon: const Icon(Icons.clear, size: 18),
+                                  padding: EdgeInsets.zero,
+                                  constraints: const BoxConstraints(
+                                    minWidth: 38,
+                                    minHeight: 40,
+                                    maxHeight: 40,
+                                  ),
+                                  icon: const Icon(Icons.clear, size: 16),
                                   onPressed: () {
                                     _userSearchCtrl.clear();
                                     setState(() {
@@ -1279,7 +2521,7 @@ class _DispatchSupervisorScreenState extends State<DispatchSupervisorScreen> {
                                 )
                               : null,
                           contentPadding: const EdgeInsets.symmetric(
-                            horizontal: 12,
+                            horizontal: 10,
                             vertical: 0,
                           ),
                         ),
@@ -1291,13 +2533,31 @@ class _DispatchSupervisorScreenState extends State<DispatchSupervisorScreen> {
                   Expanded(
                     flex: 2,
                     child: SizedBox(
-                      height: 44,
+                      height: 40,
                       child: DropdownButtonFormField<String>(
                         value: _selectedRoleFilter,
+                        isExpanded: true,
+                        isDense: true,
+                        iconSize: 18,
+                        style: const TextStyle(
+                          fontSize: 13,
+                          color: Colors.black87,
+                          fontFamily: 'Nunito',
+                        ),
                         decoration: const InputDecoration(
-                          prefixIcon: Icon(Icons.filter_list, size: 20),
+                          isDense: true,
+                          constraints: BoxConstraints(
+                            minHeight: 40,
+                            maxHeight: 40,
+                          ),
+                          prefixIcon: Icon(Icons.filter_list, size: 18),
+                          prefixIconConstraints: BoxConstraints(
+                            minWidth: 38,
+                            minHeight: 40,
+                            maxHeight: 40,
+                          ),
                           contentPadding: EdgeInsets.symmetric(
-                            horizontal: 12,
+                            horizontal: 10,
                             vertical: 0,
                           ),
                         ),
@@ -1335,14 +2595,16 @@ class _DispatchSupervisorScreenState extends State<DispatchSupervisorScreen> {
                     ),
                   ),
                   const SizedBox(width: 14),
-                  // Nút Thêm tài khoản mới (Nút nội dòng toolbar: chuẩn chiều cao 38px, không lấn át thị giác)
+                  // Nút Thêm tài khoản mới (Đồng bộ chiều cao 40px với Input và Select)
                   SizedBox(
-                    height: 38,
+                    height: 40,
                     child: ElevatedButton.icon(
                       style: ElevatedButton.styleFrom(
                         backgroundColor: Colors.blue.shade800,
                         foregroundColor: Colors.white,
-                        minimumSize: Size.zero,
+                        minimumSize: const Size(0, 40),
+                        fixedSize: const Size.fromHeight(40),
+                        visualDensity: VisualDensity.standard,
                         tapTargetSize: MaterialTapTargetSize.shrinkWrap,
                         padding: const EdgeInsets.symmetric(horizontal: 12),
                         shape: RoundedRectangleBorder(
@@ -2577,51 +3839,63 @@ class _DispatchSupervisorScreenState extends State<DispatchSupervisorScreen> {
     Color color, {
     VoidCallback? onTap,
   }) {
-    return Card(
-      elevation: 0,
-      shape: RoundedRectangleBorder(
-        borderRadius: BorderRadius.circular(4),
-        side: BorderSide(color: Colors.grey.shade400, width: 1),
-      ),
-      child: InkWell(
-        borderRadius: BorderRadius.circular(4),
-        onTap: onTap,
-        child: Padding(
-          padding: const EdgeInsets.all(14),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Row(
-                children: [
-                  Icon(icon, color: color, size: 20),
-                  const SizedBox(width: 8),
-                  Expanded(
-                    child: Text(
-                      title,
-                      style: const TextStyle(
-                        fontSize: 12,
-                        color: Colors.black54,
+    return SizedBox(
+      height: 106,
+      child: Card(
+        margin: EdgeInsets.zero,
+        elevation: 0,
+        shape: RoundedRectangleBorder(
+          borderRadius: BorderRadius.circular(4),
+          side: BorderSide(color: Colors.grey.shade400, width: 1),
+        ),
+        child: InkWell(
+          borderRadius: BorderRadius.circular(4),
+          onTap: onTap,
+          child: Padding(
+            padding: const EdgeInsets.all(14),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+              children: [
+                Row(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Icon(icon, color: color, size: 20),
+                    const SizedBox(width: 8),
+                    Expanded(
+                      child: Text(
+                        title,
+                        maxLines: 2,
+                        overflow: TextOverflow.ellipsis,
+                        style: const TextStyle(
+                          fontSize: 12,
+                          color: Colors.black54,
+                        ),
                       ),
                     ),
-                  ),
-                  if (onTap != null)
-                    Icon(
-                      Icons.chevron_right,
-                      size: 16,
-                      color: Colors.grey.shade500,
-                    ),
-                ],
-              ),
-              const SizedBox(height: 10),
-              Text(
-                value,
-                style: TextStyle(
-                  fontSize: 20,
-                  fontWeight: FontWeight.bold,
-                  color: color,
+                    if (onTap != null)
+                      Icon(
+                        Icons.chevron_right,
+                        size: 16,
+                        color: Colors.grey.shade500,
+                      ),
+                  ],
                 ),
-              ),
-            ],
+                FittedBox(
+                  fit: BoxFit.scaleDown,
+                  alignment: Alignment.centerLeft,
+                  child: Text(
+                    value,
+                    maxLines: 1,
+                    style: TextStyle(
+                      fontSize: 20,
+                      fontWeight: FontWeight.bold,
+                      color: color,
+                    ),
+                  ),
+                ),
+              ],
+            ),
           ),
         ),
       ),
