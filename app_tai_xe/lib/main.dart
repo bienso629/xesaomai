@@ -84,11 +84,10 @@ class TaxiDriverApp extends StatelessWidget {
             width: 420, // Độ rộng gọn gàng trên Desktop, tự căn giữa
           ),
 
-          // Quy chuẩn rounded-sm và đồng bộ chiều cao 40px cho Input và Select (DropdownFormField)
+          // Quy chuẩn rounded-sm cho Input và Select (DropdownFormField)
           inputDecorationTheme: const InputDecorationTheme(
             isDense: true,
-            constraints: BoxConstraints(minHeight: 40, maxHeight: 40),
-            contentPadding: EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+            contentPadding: EdgeInsets.symmetric(horizontal: 12, vertical: 12),
             border: OutlineInputBorder(
               borderRadius: BorderRadius.all(Radius.circular(4)),
             ),
@@ -102,62 +101,62 @@ class TaxiDriverApp extends StatelessWidget {
             ),
           ),
 
-          // Quy chuẩn rounded-sm và đồng bộ chiều cao 40px cho ElevatedButton
+          // Quy chuẩn rounded-sm và đồng bộ chiều cao 36px cho ElevatedButton
           elevatedButtonTheme: ElevatedButtonThemeData(
             style: ElevatedButton.styleFrom(
               elevation: 0,
               shadowColor: Colors.transparent,
-              textStyle: const TextStyle(fontSize: 14, fontWeight: FontWeight.bold),
-              minimumSize: const Size(64, 40),
-              fixedSize: const Size.fromHeight(40),
+              textStyle: const TextStyle(fontSize: 13, fontWeight: FontWeight.bold),
+              minimumSize: const Size(64, 36),
+              fixedSize: const Size.fromHeight(36),
               tapTargetSize: MaterialTapTargetSize.shrinkWrap,
               visualDensity: VisualDensity.standard,
               shape: const RoundedRectangleBorder(
                 borderRadius: BorderRadius.all(Radius.circular(4)),
               ),
-              padding: const EdgeInsets.symmetric(horizontal: 16),
+              padding: const EdgeInsets.symmetric(horizontal: 14),
             ),
           ),
 
-          // Quy chuẩn rounded-sm và đồng bộ chiều cao 40px cho OutlinedButton
+          // Quy chuẩn rounded-sm và đồng bộ chiều cao 36px cho OutlinedButton
           outlinedButtonTheme: OutlinedButtonThemeData(
             style: OutlinedButton.styleFrom(
-              minimumSize: const Size(64, 40),
-              fixedSize: const Size.fromHeight(40),
+              minimumSize: const Size(64, 36),
+              fixedSize: const Size.fromHeight(36),
               tapTargetSize: MaterialTapTargetSize.shrinkWrap,
               visualDensity: VisualDensity.standard,
               shape: const RoundedRectangleBorder(
                 borderRadius: BorderRadius.all(Radius.circular(4)),
               ),
-              padding: const EdgeInsets.symmetric(horizontal: 16),
+              padding: const EdgeInsets.symmetric(horizontal: 14),
             ),
           ),
-          // Quy chuẩn nút văn bản (TextButton) trong Dialog: chiều cao 40px, chữ 14px đậm
+          // Quy chuẩn nút văn bản (TextButton) trong Dialog: chiều cao 36px, chữ 13px đậm
           textButtonTheme: TextButtonThemeData(
             style: TextButton.styleFrom(
-              minimumSize: const Size(64, 40),
-              fixedSize: const Size.fromHeight(40),
+              minimumSize: const Size(64, 36),
+              fixedSize: const Size.fromHeight(36),
               tapTargetSize: MaterialTapTargetSize.shrinkWrap,
               visualDensity: VisualDensity.standard,
-              textStyle: const TextStyle(fontSize: 14, fontWeight: FontWeight.w600),
+              textStyle: const TextStyle(fontSize: 13, fontWeight: FontWeight.w600),
               shape: const RoundedRectangleBorder(
                 borderRadius: BorderRadius.all(Radius.circular(4)),
               ),
-              padding: const EdgeInsets.symmetric(horizontal: 16),
+              padding: const EdgeInsets.symmetric(horizontal: 14),
             ),
           ),
 
-          // Quy chuẩn rounded-sm và đồng bộ chiều cao 40px cho FilledButton
+          // Quy chuẩn rounded-sm và đồng bộ chiều cao 36px cho FilledButton
           filledButtonTheme: FilledButtonThemeData(
             style: FilledButton.styleFrom(
-              minimumSize: const Size(64, 40),
-              fixedSize: const Size.fromHeight(40),
+              minimumSize: const Size(64, 36),
+              fixedSize: const Size.fromHeight(36),
               tapTargetSize: MaterialTapTargetSize.shrinkWrap,
               visualDensity: VisualDensity.standard,
               shape: const RoundedRectangleBorder(
                 borderRadius: BorderRadius.all(Radius.circular(4)),
               ),
-              padding: const EdgeInsets.symmetric(horizontal: 16),
+              padding: const EdgeInsets.symmetric(horizontal: 14),
             ),
           ),
 

@@ -67,7 +67,7 @@ class _DispatchSupervisorScreenState extends State<DispatchSupervisorScreen> {
   String _selectedOrderTransportTypeFilter = 'ALL';
   DateTime? _orderStartDate;
   DateTime? _orderEndDate;
-  bool _showAdvancedOrderFilters = true;
+  bool _showAdvancedOrderFilters = false;
   final TextEditingController _orderSearchCtrl = TextEditingController();
   final TextEditingController _orderCodeFilterCtrl = TextEditingController();
   final TextEditingController _orderPickupFilterCtrl = TextEditingController();
@@ -134,7 +134,7 @@ class _DispatchSupervisorScreenState extends State<DispatchSupervisorScreen> {
       case 0:
         return _buildOverviewTab(state);
       case 1:
-        return _buildOrdersTab();
+        return _buildOrdersTab(state);
       case 2:
         return _buildVehiclesTab();
       case 3:
@@ -312,10 +312,13 @@ class _DispatchSupervisorScreenState extends State<DispatchSupervisorScreen> {
     }
   }
 
-  // TAB 2: Đơn hàng vận tải (Tích hợp Bộ lọc đa tiêu chí & Phân trang)
-  Widget _buildOrdersTab() {
+  // TAB 2: Đơn hàng vận tải (Tích hợp Bộ lọc đa tiêu chí, DataTable & Phân trang)
+  Widget _buildOrdersTab(AppState state) {
     return Builder(
       builder: (context) {
+        final canManageOrders = state.currentUsername == 'admin' ||
+            state.userRoles.any((r) =>
+                ['admin', 'manager', 'dispatcher'].contains(r.toLowerCase()));
         // Tổng hợp danh sách tùy chọn động cho Dropdown từ dữ liệu đơn hàng, sản phẩm, xe, tài xế
         final productOptions = <String>{};
         for (final p in _products) {
@@ -466,14 +469,14 @@ class _DispatchSupervisorScreenState extends State<DispatchSupervisorScreen> {
                   final isTablet = constraints.maxWidth >= 720 &&
                       constraints.maxWidth < 1100;
 
-                  // Chiều cao đồng bộ chuẩn xác 40px cho toàn bộ Button, Input, Select và DatePicker
-                  const double kControlHeight = 40.0;
+                  // Chiều cao đồng bộ chuẩn xác 36px cho toàn bộ Button, Input, Select và DatePicker
+                  const double kControlHeight = 36.0;
                   const BoxConstraints kControlConstraints = BoxConstraints(
                     minHeight: kControlHeight,
                     maxHeight: kControlHeight,
                   );
                   const BoxConstraints kPrefixIconConstraints = BoxConstraints(
-                    minWidth: 38,
+                    minWidth: 34,
                     minHeight: kControlHeight,
                     maxHeight: kControlHeight,
                   );
@@ -1138,6 +1141,37 @@ class _DispatchSupervisorScreenState extends State<DispatchSupervisorScreen> {
                               onPressed: _loadAllManagementData,
                             ),
                           ),
+                          if (canManageOrders)
+                            SizedBox(
+                              height: kControlHeight,
+                              child: ElevatedButton.icon(
+                                style: ElevatedButton.styleFrom(
+                                  backgroundColor: Colors.blue.shade800,
+                                  foregroundColor: Colors.white,
+                                  minimumSize: const Size(0, kControlHeight),
+                                  fixedSize:
+                                      const Size.fromHeight(kControlHeight),
+                                  visualDensity: VisualDensity.standard,
+                                  tapTargetSize:
+                                      MaterialTapTargetSize.shrinkWrap,
+                                  padding: const EdgeInsets.symmetric(
+                                    horizontal: 14,
+                                  ),
+                                  shape: RoundedRectangleBorder(
+                                    borderRadius: BorderRadius.circular(4),
+                                  ),
+                                ),
+                                icon: const Icon(Icons.add_shopping_cart, size: 16),
+                                label: const Text(
+                                  "Tạo đơn hàng",
+                                  style: TextStyle(
+                                    fontWeight: FontWeight.w600,
+                                    fontSize: 12.5,
+                                  ),
+                                ),
+                                onPressed: _showCreateOrderDialog,
+                              ),
+                            ),
                         ],
                       ),
                       // Khối bộ lọc chi tiết (Ngày tháng, Mã đơn, Sản phẩm, Xe, Tài xế, Nơi nhận, Điểm giao, Loại xe)
@@ -1207,150 +1241,510 @@ class _DispatchSupervisorScreenState extends State<DispatchSupervisorScreen> {
                         ],
                       ),
                     )
-                  : ListView.builder(
-                      padding: const EdgeInsets.all(16),
-                      itemCount: paginatedOrders.length,
-                      itemBuilder: (context, index) {
-                        final o = paginatedOrders[index];
-                        final orderDate = _extractOrderDate(o);
-                        final dateStr = _formatOrderDateLabel(orderDate);
-                        return Card(
-                          elevation: 0,
-                          margin: const EdgeInsets.only(bottom: 12),
-                          shape: RoundedRectangleBorder(
-                            borderRadius: BorderRadius.circular(4),
-                            side: BorderSide(
-                              color: Colors.grey.shade400,
-                              width: 1,
-                            ),
-                          ),
-                          child: Padding(
-                            padding: const EdgeInsets.all(14),
-                            child: Column(
-                              crossAxisAlignment: CrossAxisAlignment.start,
-                              children: [
-                                Row(
-                                  mainAxisAlignment:
-                                      MainAxisAlignment.spaceBetween,
-                                  children: [
-                                    Expanded(
-                                      child: Wrap(
-                                        spacing: 8,
-                                        runSpacing: 4,
-                                        crossAxisAlignment:
-                                            WrapCrossAlignment.center,
-                                        children: [
-                                          Text(
-                                            o['order_code'] ?? 'MÃ ĐƠN HÀNG',
-                                            style: const TextStyle(
-                                              fontWeight: FontWeight.bold,
-                                              fontSize: 15,
-                                              color: Colors.blueAccent,
-                                            ),
-                                          ),
-                                          Container(
-                                            padding: const EdgeInsets.symmetric(
-                                              horizontal: 6,
-                                              vertical: 2,
-                                            ),
-                                            decoration: BoxDecoration(
-                                              color: Colors.grey.shade100,
-                                              borderRadius:
-                                                  BorderRadius.circular(4),
-                                              border: Border.all(
-                                                color: Colors.grey.shade300,
+                  : LayoutBuilder(
+                      builder: (context, constraints) {
+                        return SingleChildScrollView(
+                          scrollDirection: Axis.vertical,
+                          child: SingleChildScrollView(
+                            scrollDirection: Axis.horizontal,
+                            child: ConstrainedBox(
+                              constraints: BoxConstraints(
+                                minWidth: constraints.maxWidth,
+                              ),
+                              child: DataTable(
+                                headingRowColor: MaterialStateProperty.all(
+                                  Colors.grey.shade100,
+                                ),
+                                headingRowHeight: 44,
+                                dividerThickness: 0,
+                                dataRowMaxHeight: 64,
+                                dataRowMinHeight: 56,
+                                horizontalMargin: 16,
+                                columnSpacing: 20,
+                                columns: [
+                                  const DataColumn(
+                                    label: Text(
+                                      "Mã đơn hàng",
+                                      style: TextStyle(
+                                        fontWeight: FontWeight.bold,
+                                        fontSize: 13,
+                                      ),
+                                    ),
+                                  ),
+                                  const DataColumn(
+                                    label: Text(
+                                      "Ngày tạo",
+                                      style: TextStyle(
+                                        fontWeight: FontWeight.bold,
+                                        fontSize: 13,
+                                      ),
+                                    ),
+                                  ),
+                                  const DataColumn(
+                                    label: Text(
+                                      "Sản phẩm / Trọng lượng",
+                                      style: TextStyle(
+                                        fontWeight: FontWeight.bold,
+                                        fontSize: 13,
+                                      ),
+                                    ),
+                                  ),
+                                  const DataColumn(
+                                    label: Text(
+                                      "Điểm nhận & Giao",
+                                      style: TextStyle(
+                                        fontWeight: FontWeight.bold,
+                                        fontSize: 13,
+                                      ),
+                                    ),
+                                  ),
+                                  const DataColumn(
+                                    label: Text(
+                                      "Phương tiện & Tài xế",
+                                      style: TextStyle(
+                                        fontWeight: FontWeight.bold,
+                                        fontSize: 13,
+                                      ),
+                                    ),
+                                  ),
+                                  const DataColumn(
+                                    label: Text(
+                                      "Hình thức",
+                                      style: TextStyle(
+                                        fontWeight: FontWeight.bold,
+                                        fontSize: 13,
+                                      ),
+                                    ),
+                                  ),
+                                  const DataColumn(
+                                    label: Text(
+                                      "Trạng thái",
+                                      style: TextStyle(
+                                        fontWeight: FontWeight.bold,
+                                        fontSize: 13,
+                                      ),
+                                    ),
+                                  ),
+                                  if (canManageOrders)
+                                    const DataColumn(
+                                      label: Text(
+                                        "Thao tác",
+                                        style: TextStyle(
+                                          fontWeight: FontWeight.bold,
+                                          fontSize: 13,
+                                        ),
+                                      ),
+                                    ),
+                                ],
+                                rows: List.generate(paginatedOrders.length, (
+                                  idx,
+                                ) {
+                                  final o = paginatedOrders[idx];
+                                  final rowColor = idx % 2 == 0
+                                      ? Colors.white
+                                      : Colors.grey.shade50;
+                                  final orderCode =
+                                      (o['order_code'] ?? 'MÃ ĐƠN').toString();
+                                  final orderDate = _extractOrderDate(o);
+                                  final dateStr =
+                                      _formatOrderDateLabel(orderDate);
+                                  final productName =
+                                      (o['product_name'] ?? 'Vật liệu')
+                                          .toString();
+                                  final weightTons =
+                                      o['cargo_weight_tons']?.toString() ?? '0';
+                                  final pickupAddr =
+                                      (o['pickup_address'] ?? 'N/A').toString();
+                                  final deliveryAddr =
+                                      (o['delivery_address'] ?? 'N/A')
+                                          .toString();
+                                  final vehiclePlate =
+                                      (o['assigned_vehicle_plate'] ?? '')
+                                          .toString();
+                                  final driverName =
+                                      (o['driver_name'] ?? '').toString();
+                                  final transportType =
+                                      (o['transport_type'] ?? 'INTERNAL')
+                                          .toString();
+                                  final statusStr =
+                                      (o['status'] ?? 'assigned').toString();
+
+                                  DataCell makeCell(Widget child) {
+                                    return DataCell(
+                                      Container(
+                                        alignment: Alignment.centerLeft,
+                                        child: child,
+                                      ),
+                                    );
+                                  }
+
+                                  Color transBg = Colors.blue.shade50;
+                                  Color transBorder = Colors.blue.shade200;
+                                  Color transText = Colors.blue.shade800;
+                                  if (transportType == 'RENTAL') {
+                                    transBg = Colors.purple.shade50;
+                                    transBorder = Colors.purple.shade200;
+                                    transText = Colors.purple.shade800;
+                                  } else if (transportType ==
+                                      'CUSTOMER_SELF') {
+                                    transBg = Colors.orange.shade50;
+                                    transBorder = Colors.orange.shade200;
+                                    transText = Colors.orange.shade900;
+                                  }
+
+                                  return DataRow(
+                                    color: MaterialStateProperty.all(rowColor),
+                                    cells: [
+                                      // Cột 1: Mã đơn hàng
+                                      makeCell(
+                                        Row(
+                                          mainAxisSize: MainAxisSize.min,
+                                          children: [
+                                            Container(
+                                              padding:
+                                                  const EdgeInsets.all(6),
+                                              decoration: BoxDecoration(
+                                                color: Colors.blue.shade50,
+                                                borderRadius:
+                                                    BorderRadius.circular(4),
+                                              ),
+                                              child: const Icon(
+                                                Icons.receipt_long,
+                                                size: 16,
+                                                color: Colors.blue,
                                               ),
                                             ),
-                                            child: Row(
+                                            const SizedBox(width: 8),
+                                            Text(
+                                              orderCode,
+                                              style: TextStyle(
+                                                fontWeight: FontWeight.bold,
+                                                fontSize: 13,
+                                                color: Colors.blue.shade900,
+                                              ),
+                                            ),
+                                          ],
+                                        ),
+                                      ),
+                                      // Cột 2: Ngày tạo
+                                      makeCell(
+                                        Row(
+                                          mainAxisSize: MainAxisSize.min,
+                                          children: [
+                                            Icon(
+                                              Icons.calendar_today,
+                                              size: 12,
+                                              color: Colors.grey.shade600,
+                                            ),
+                                            const SizedBox(width: 4),
+                                            Text(
+                                              dateStr,
+                                              style: TextStyle(
+                                                fontSize: 12,
+                                                color: Colors.grey.shade800,
+                                                fontWeight: FontWeight.w600,
+                                              ),
+                                            ),
+                                          ],
+                                        ),
+                                      ),
+                                      // Cột 3: Sản phẩm & Trọng lượng
+                                      makeCell(
+                                        Column(
+                                          mainAxisAlignment:
+                                              MainAxisAlignment.center,
+                                          crossAxisAlignment:
+                                              CrossAxisAlignment.start,
+                                          children: [
+                                            Text(
+                                              productName,
+                                              style: const TextStyle(
+                                                fontWeight: FontWeight.bold,
+                                                fontSize: 12.5,
+                                              ),
+                                              maxLines: 1,
+                                              overflow: TextOverflow.ellipsis,
+                                            ),
+                                            const SizedBox(height: 2),
+                                            Text(
+                                              "$weightTons tấn",
+                                              style: TextStyle(
+                                                fontSize: 11.5,
+                                                color: Colors.indigo.shade800,
+                                                fontWeight: FontWeight.w600,
+                                              ),
+                                            ),
+                                          ],
+                                        ),
+                                      ),
+                                      // Cột 4: Nơi nhận & Điểm giao
+                                      makeCell(
+                                        ConstrainedBox(
+                                          constraints: const BoxConstraints(
+                                            maxWidth: 240,
+                                          ),
+                                          child: Column(
+                                            mainAxisAlignment:
+                                                MainAxisAlignment.center,
+                                            crossAxisAlignment:
+                                                CrossAxisAlignment.start,
+                                            children: [
+                                              Row(
+                                                children: [
+                                                  Icon(
+                                                    Icons.trip_origin,
+                                                    size: 11,
+                                                    color: Colors.amber.shade800,
+                                                  ),
+                                                  const SizedBox(width: 4),
+                                                  Expanded(
+                                                    child: Text(
+                                                      pickupAddr,
+                                                      style: const TextStyle(
+                                                        fontSize: 11.5,
+                                                      ),
+                                                      maxLines: 1,
+                                                      overflow:
+                                                          TextOverflow.ellipsis,
+                                                    ),
+                                                  ),
+                                                ],
+                                              ),
+                                              const SizedBox(height: 2),
+                                              Row(
+                                                children: [
+                                                  Icon(
+                                                    Icons.location_on,
+                                                    size: 11,
+                                                    color: Colors.red.shade700,
+                                                  ),
+                                                  const SizedBox(width: 4),
+                                                  Expanded(
+                                                    child: Text(
+                                                      deliveryAddr,
+                                                      style: const TextStyle(
+                                                        fontSize: 11.5,
+                                                      ),
+                                                      maxLines: 1,
+                                                      overflow:
+                                                          TextOverflow.ellipsis,
+                                                    ),
+                                                  ),
+                                                ],
+                                              ),
+                                            ],
+                                          ),
+                                        ),
+                                      ),
+                                      // Cột 5: Xe & Tài xế
+                                      makeCell(
+                                        Column(
+                                          mainAxisAlignment:
+                                              MainAxisAlignment.center,
+                                          crossAxisAlignment:
+                                              CrossAxisAlignment.start,
+                                          children: [
+                                            Row(
                                               mainAxisSize: MainAxisSize.min,
                                               children: [
-                                                Icon(
-                                                  Icons.calendar_today,
-                                                  size: 11,
-                                                  color: Colors.grey.shade700,
+                                                const Icon(
+                                                  Icons.local_shipping,
+                                                  size: 13,
+                                                  color: Colors.blueGrey,
                                                 ),
                                                 const SizedBox(width: 4),
                                                 Text(
-                                                  dateStr,
+                                                  vehiclePlate.isNotEmpty
+                                                      ? vehiclePlate
+                                                      : "Chưa gán xe",
                                                   style: TextStyle(
-                                                    fontSize: 11,
-                                                    color: Colors.grey.shade800,
-                                                    fontWeight: FontWeight.w600,
+                                                    fontSize: 12,
+                                                    fontWeight: FontWeight.bold,
+                                                    color: vehiclePlate.isNotEmpty
+                                                        ? Colors.black87
+                                                        : Colors.grey.shade500,
                                                   ),
                                                 ),
                                               ],
                                             ),
+                                            const SizedBox(height: 2),
+                                            Row(
+                                              mainAxisSize: MainAxisSize.min,
+                                              children: [
+                                                const Icon(
+                                                  Icons.person,
+                                                  size: 13,
+                                                  color: Colors.teal,
+                                                ),
+                                                const SizedBox(width: 4),
+                                                Text(
+                                                  driverName.isNotEmpty
+                                                      ? driverName
+                                                      : "Chưa gán tài xế",
+                                                  style: TextStyle(
+                                                    fontSize: 11.5,
+                                                    color: driverName.isNotEmpty
+                                                        ? Colors.teal.shade800
+                                                        : Colors.grey.shade500,
+                                                    fontWeight:
+                                                        FontWeight.w600,
+                                                  ),
+                                                ),
+                                              ],
+                                            ),
+                                          ],
+                                        ),
+                                      ),
+                                      // Cột 6: Hình thức
+                                      makeCell(
+                                        Container(
+                                          padding: const EdgeInsets.symmetric(
+                                            horizontal: 7,
+                                            vertical: 3,
                                           ),
-                                        ],
-                                      ),
-                                    ),
-                                    Container(
-                                      padding: const EdgeInsets.symmetric(
-                                        horizontal: 8,
-                                        vertical: 3,
-                                      ),
-                                      decoration: BoxDecoration(
-                                        color: Colors.blue.shade50,
-                                        borderRadius: BorderRadius.circular(4),
-                                      ),
-                                      child: Text(
-                                        _translateTransportType(
-                                          o['transport_type'],
-                                        ),
-                                        style: TextStyle(
-                                          color: Colors.blue.shade800,
-                                          fontSize: 11,
-                                          fontWeight: FontWeight.bold,
+                                          decoration: BoxDecoration(
+                                            color: transBg,
+                                            borderRadius:
+                                                BorderRadius.circular(4),
+                                            border: Border.all(
+                                              color: transBorder,
+                                            ),
+                                          ),
+                                          child: Text(
+                                            _translateTransportType(
+                                              transportType,
+                                            ),
+                                            style: TextStyle(
+                                              color: transText,
+                                              fontSize: 11,
+                                              fontWeight: FontWeight.bold,
+                                            ),
+                                          ),
                                         ),
                                       ),
-                                    ),
-                                  ],
-                                ),
-                                const SizedBox(height: 8),
-                                Text(
-                                  "Sản phẩm: ${o['product_name'] ?? 'Vật liệu'} (${o['cargo_weight_tons']} tấn)",
-                                  style: const TextStyle(
-                                    fontWeight: FontWeight.bold,
-                                  ),
-                                ),
-                                const SizedBox(height: 4),
-                                Text(
-                                  "• Nơi nhận: ${o['pickup_address'] ?? 'N/A'}",
-                                  style: const TextStyle(
-                                    fontSize: 12,
-                                    color: Colors.black87,
-                                  ),
-                                ),
-                                Text(
-                                  "• Điểm giao: ${o['delivery_address'] ?? 'N/A'}",
-                                  style: const TextStyle(
-                                    fontSize: 12,
-                                    color: Colors.black87,
-                                  ),
-                                ),
-                                const Divider(),
-                                Row(
-                                  mainAxisAlignment:
-                                      MainAxisAlignment.spaceBetween,
-                                  children: [
-                                    Text(
-                                      "Xe: ${o['assigned_vehicle_plate'] ?? 'Chưa gán'}",
-                                      style: const TextStyle(
-                                        fontSize: 12,
-                                        fontWeight: FontWeight.bold,
+                                      // Cột 7: Trạng thái
+                                      makeCell(
+                                        Container(
+                                          padding: const EdgeInsets.symmetric(
+                                            horizontal: 7,
+                                            vertical: 3,
+                                          ),
+                                          decoration: BoxDecoration(
+                                            color: Colors.green.shade50,
+                                            borderRadius:
+                                                BorderRadius.circular(4),
+                                            border: Border.all(
+                                              color: Colors.green.shade200,
+                                            ),
+                                          ),
+                                          child: Text(
+                                            statusStr == 'assigned'
+                                                ? "Đã điều phối"
+                                                : (statusStr == 'completed'
+                                                    ? "Hoàn thành"
+                                                    : statusStr),
+                                            style: TextStyle(
+                                              color: Colors.green.shade800,
+                                              fontSize: 11,
+                                              fontWeight: FontWeight.bold,
+                                            ),
+                                          ),
+                                        ),
                                       ),
-                                    ),
-                                    Text(
-                                      "Tài xế: ${o['driver_name'] ?? 'Nguyễn Văn A'}",
-                                      style: const TextStyle(
-                                        fontSize: 12,
-                                        color: Colors.teal,
-                                        fontWeight: FontWeight.bold,
-                                      ),
-                                    ),
-                                  ],
-                                ),
-                              ],
+                                      // Cột 8: Thao tác (Sửa, Xóa)
+                                      if (canManageOrders)
+                                        makeCell(
+                                          Row(
+                                            mainAxisSize: MainAxisSize.min,
+                                            children: [
+                                              OutlinedButton.icon(
+                                                style: OutlinedButton.styleFrom(
+                                                  foregroundColor:
+                                                      Colors.blue.shade800,
+                                                  side: BorderSide(
+                                                    color:
+                                                        Colors.blue.shade300,
+                                                  ),
+                                                  padding:
+                                                      const EdgeInsets.symmetric(
+                                                    horizontal: 8,
+                                                  ),
+                                                  minimumSize:
+                                                      const Size(0, 32),
+                                                  tapTargetSize:
+                                                      MaterialTapTargetSize
+                                                          .shrinkWrap,
+                                                  shape:
+                                                      RoundedRectangleBorder(
+                                                    borderRadius:
+                                                        BorderRadius.circular(
+                                                      4,
+                                                    ),
+                                                  ),
+                                                ),
+                                                icon: const Icon(
+                                                  Icons.edit,
+                                                  size: 13,
+                                                ),
+                                                label: const Text(
+                                                  "Sửa",
+                                                  style: TextStyle(
+                                                    fontSize: 11.5,
+                                                    fontWeight:
+                                                        FontWeight.bold,
+                                                  ),
+                                                ),
+                                                onPressed: () =>
+                                                    _showEditOrderDialog(o),
+                                              ),
+                                              const SizedBox(width: 6),
+                                              OutlinedButton.icon(
+                                                style: OutlinedButton.styleFrom(
+                                                  foregroundColor:
+                                                      Colors.red.shade700,
+                                                  side: BorderSide(
+                                                    color:
+                                                        Colors.red.shade300,
+                                                  ),
+                                                  padding:
+                                                      const EdgeInsets.symmetric(
+                                                    horizontal: 8,
+                                                  ),
+                                                  minimumSize:
+                                                      const Size(0, 32),
+                                                  tapTargetSize:
+                                                      MaterialTapTargetSize
+                                                          .shrinkWrap,
+                                                  shape:
+                                                      RoundedRectangleBorder(
+                                                    borderRadius:
+                                                        BorderRadius.circular(
+                                                      4,
+                                                    ),
+                                                  ),
+                                                ),
+                                                icon: const Icon(
+                                                  Icons.delete_outline,
+                                                  size: 13,
+                                                ),
+                                                label: const Text(
+                                                  "Xóa",
+                                                  style: TextStyle(
+                                                    fontSize: 11.5,
+                                                    fontWeight:
+                                                        FontWeight.bold,
+                                                  ),
+                                                ),
+                                                onPressed: () =>
+                                                    _confirmDeleteOrder(o),
+                                              ),
+                                            ],
+                                          ),
+                                        ),
+                                    ],
+                                  );
+                                }),
+                              ),
                             ),
                           ),
                         );
@@ -1574,10 +1968,10 @@ class _DispatchSupervisorScreenState extends State<DispatchSupervisorScreen> {
                   Expanded(
                     flex: 4,
                     child: SizedBox(
-                      height: 40,
+                      height: 36,
                       child: TextField(
                         controller: _vehicleSearchCtrl,
-                        style: const TextStyle(fontSize: 13),
+                        style: const TextStyle(fontSize: 12.5),
                         textAlignVertical: TextAlignVertical.center,
                         onChanged: (val) {
                           setState(() {
@@ -1588,27 +1982,27 @@ class _DispatchSupervisorScreenState extends State<DispatchSupervisorScreen> {
                         decoration: InputDecoration(
                           isDense: true,
                           constraints: const BoxConstraints(
-                            minHeight: 40,
-                            maxHeight: 40,
+                            minHeight: 36,
+                            maxHeight: 36,
                           ),
                           hintText:
                               "Tìm theo biển số xe, loại xe, tài xế phụ trách...",
-                          hintStyle: const TextStyle(fontSize: 13),
-                          prefixIcon: const Icon(Icons.search, size: 18),
+                          hintStyle: const TextStyle(fontSize: 12.5),
+                          prefixIcon: const Icon(Icons.search, size: 17),
                           prefixIconConstraints: const BoxConstraints(
-                            minWidth: 38,
-                            minHeight: 40,
-                            maxHeight: 40,
+                            minWidth: 34,
+                            minHeight: 36,
+                            maxHeight: 36,
                           ),
                           suffixIcon: _vehicleSearchQuery.isNotEmpty
                               ? IconButton(
                                   padding: EdgeInsets.zero,
                                   constraints: const BoxConstraints(
-                                    minWidth: 38,
-                                    minHeight: 40,
-                                    maxHeight: 40,
+                                    minWidth: 34,
+                                    minHeight: 36,
+                                    maxHeight: 36,
                                   ),
-                                  icon: const Icon(Icons.clear, size: 16),
+                                  icon: const Icon(Icons.clear, size: 15),
                                   onPressed: () {
                                     _vehicleSearchCtrl.clear();
                                     setState(() {
@@ -1626,33 +2020,33 @@ class _DispatchSupervisorScreenState extends State<DispatchSupervisorScreen> {
                       ),
                     ),
                   ),
-                  const SizedBox(width: 12),
+                  const SizedBox(width: 10),
                   // Bộ lọc theo Hình thức sở hữu
                   Expanded(
                     flex: 2,
                     child: SizedBox(
-                      height: 40,
+                      height: 36,
                       child: DropdownButtonFormField<String>(
                         value: _selectedOwnershipFilter,
                         isExpanded: true,
                         isDense: true,
                         iconSize: 18,
                         style: const TextStyle(
-                          fontSize: 13,
+                          fontSize: 12.5,
                           color: Colors.black87,
                           fontFamily: 'Nunito',
                         ),
                         decoration: const InputDecoration(
                           isDense: true,
                           constraints: BoxConstraints(
-                            minHeight: 40,
-                            maxHeight: 40,
+                            minHeight: 36,
+                            maxHeight: 36,
                           ),
-                          prefixIcon: Icon(Icons.filter_alt_outlined, size: 18),
+                          prefixIcon: Icon(Icons.filter_alt_outlined, size: 17),
                           prefixIconConstraints: BoxConstraints(
-                            minWidth: 38,
-                            minHeight: 40,
-                            maxHeight: 40,
+                            minWidth: 34,
+                            minHeight: 36,
+                            maxHeight: 36,
                           ),
                           contentPadding: EdgeInsets.symmetric(
                             horizontal: 10,
@@ -1688,26 +2082,26 @@ class _DispatchSupervisorScreenState extends State<DispatchSupervisorScreen> {
                       ),
                     ),
                   ),
-                  const SizedBox(width: 14),
+                  const SizedBox(width: 12),
                   // Thống kê số lượng phương tiện
                   Text(
                     "(${filteredVehicles.length}/${_vehicles.length} phương tiện)",
                     style: const TextStyle(
                       fontWeight: FontWeight.bold,
-                      fontSize: 13,
+                      fontSize: 12.5,
                       color: Colors.blueGrey,
                     ),
                   ),
-                  const SizedBox(width: 14),
+                  const SizedBox(width: 12),
                   // Nút làm mới dữ liệu
                   SizedBox(
-                    height: 40,
+                    height: 36,
                     child: OutlinedButton.icon(
                       style: OutlinedButton.styleFrom(
                         foregroundColor: Colors.blue.shade800,
                         side: BorderSide(color: Colors.blue.shade300),
-                        minimumSize: const Size(0, 40),
-                        fixedSize: const Size.fromHeight(40),
+                        minimumSize: const Size(0, 36),
+                        fixedSize: const Size.fromHeight(36),
                         visualDensity: VisualDensity.standard,
                         tapTargetSize: MaterialTapTargetSize.shrinkWrap,
                         padding: const EdgeInsets.symmetric(horizontal: 12),
@@ -1715,12 +2109,12 @@ class _DispatchSupervisorScreenState extends State<DispatchSupervisorScreen> {
                           borderRadius: BorderRadius.circular(4),
                         ),
                       ),
-                      icon: const Icon(Icons.refresh, size: 16),
+                      icon: const Icon(Icons.refresh, size: 15),
                       label: const Text(
                         "Tải lại danh sách",
                         style: TextStyle(
                           fontWeight: FontWeight.w600,
-                          fontSize: 13,
+                          fontSize: 12.5,
                         ),
                       ),
                       onPressed: _loadAllManagementData,
@@ -2476,10 +2870,10 @@ class _DispatchSupervisorScreenState extends State<DispatchSupervisorScreen> {
                   Expanded(
                     flex: 4,
                     child: SizedBox(
-                      height: 40,
+                      height: 36,
                       child: TextField(
                         controller: _userSearchCtrl,
-                        style: const TextStyle(fontSize: 13),
+                        style: const TextStyle(fontSize: 12.5),
                         textAlignVertical: TextAlignVertical.center,
                         onChanged: (val) {
                           setState(() {
@@ -2490,27 +2884,27 @@ class _DispatchSupervisorScreenState extends State<DispatchSupervisorScreen> {
                         decoration: InputDecoration(
                           isDense: true,
                           constraints: const BoxConstraints(
-                            minHeight: 40,
-                            maxHeight: 40,
+                            minHeight: 36,
+                            maxHeight: 36,
                           ),
                           hintText:
                               "Tìm theo tên, username, số điện thoại, email...",
-                          hintStyle: const TextStyle(fontSize: 13),
-                          prefixIcon: const Icon(Icons.search, size: 18),
+                          hintStyle: const TextStyle(fontSize: 12.5),
+                          prefixIcon: const Icon(Icons.search, size: 17),
                           prefixIconConstraints: const BoxConstraints(
-                            minWidth: 38,
-                            minHeight: 40,
-                            maxHeight: 40,
+                            minWidth: 34,
+                            minHeight: 36,
+                            maxHeight: 36,
                           ),
                           suffixIcon: _userSearchQuery.isNotEmpty
                               ? IconButton(
                                   padding: EdgeInsets.zero,
                                   constraints: const BoxConstraints(
-                                    minWidth: 38,
-                                    minHeight: 40,
-                                    maxHeight: 40,
+                                    minWidth: 34,
+                                    minHeight: 36,
+                                    maxHeight: 36,
                                   ),
-                                  icon: const Icon(Icons.clear, size: 16),
+                                  icon: const Icon(Icons.clear, size: 15),
                                   onPressed: () {
                                     _userSearchCtrl.clear();
                                     setState(() {
@@ -2528,33 +2922,33 @@ class _DispatchSupervisorScreenState extends State<DispatchSupervisorScreen> {
                       ),
                     ),
                   ),
-                  const SizedBox(width: 12),
+                  const SizedBox(width: 10),
                   // Bộ lọc theo Vai trò
                   Expanded(
                     flex: 2,
                     child: SizedBox(
-                      height: 40,
+                      height: 36,
                       child: DropdownButtonFormField<String>(
                         value: _selectedRoleFilter,
                         isExpanded: true,
                         isDense: true,
                         iconSize: 18,
                         style: const TextStyle(
-                          fontSize: 13,
+                          fontSize: 12.5,
                           color: Colors.black87,
                           fontFamily: 'Nunito',
                         ),
                         decoration: const InputDecoration(
                           isDense: true,
                           constraints: BoxConstraints(
-                            minHeight: 40,
-                            maxHeight: 40,
+                            minHeight: 36,
+                            maxHeight: 36,
                           ),
-                          prefixIcon: Icon(Icons.filter_list, size: 18),
+                          prefixIcon: Icon(Icons.filter_list, size: 17),
                           prefixIconConstraints: BoxConstraints(
-                            minWidth: 38,
-                            minHeight: 40,
-                            maxHeight: 40,
+                            minWidth: 34,
+                            minHeight: 36,
+                            maxHeight: 36,
                           ),
                           contentPadding: EdgeInsets.symmetric(
                             horizontal: 10,
@@ -2584,26 +2978,26 @@ class _DispatchSupervisorScreenState extends State<DispatchSupervisorScreen> {
                       ),
                     ),
                   ),
-                  const SizedBox(width: 14),
+                  const SizedBox(width: 12),
                   // Thống kê số lượng bản ghi
                   Text(
                     "(${filteredUsers.length}/${_users.length} tài khoản)",
                     style: const TextStyle(
                       fontWeight: FontWeight.bold,
-                      fontSize: 13,
+                      fontSize: 12.5,
                       color: Colors.blueGrey,
                     ),
                   ),
-                  const SizedBox(width: 14),
-                  // Nút Thêm tài khoản mới (Đồng bộ chiều cao 40px với Input và Select)
+                  const SizedBox(width: 12),
+                  // Nút Thêm tài khoản mới (Đồng bộ chiều cao 36px với Input và Select)
                   SizedBox(
-                    height: 40,
+                    height: 36,
                     child: ElevatedButton.icon(
                       style: ElevatedButton.styleFrom(
                         backgroundColor: Colors.blue.shade800,
                         foregroundColor: Colors.white,
-                        minimumSize: const Size(0, 40),
-                        fixedSize: const Size.fromHeight(40),
+                        minimumSize: const Size(0, 36),
+                        fixedSize: const Size.fromHeight(36),
                         visualDensity: VisualDensity.standard,
                         tapTargetSize: MaterialTapTargetSize.shrinkWrap,
                         padding: const EdgeInsets.symmetric(horizontal: 12),
@@ -2611,12 +3005,12 @@ class _DispatchSupervisorScreenState extends State<DispatchSupervisorScreen> {
                           borderRadius: BorderRadius.circular(4),
                         ),
                       ),
-                      icon: const Icon(Icons.person_add, size: 16),
+                      icon: const Icon(Icons.person_add, size: 15),
                       label: const Text(
                         "Thêm tài khoản mới",
                         style: TextStyle(
                           fontWeight: FontWeight.w600,
-                          fontSize: 13,
+                          fontSize: 12.5,
                         ),
                       ),
                       onPressed: _showCreateUserDialog,
@@ -6630,6 +7024,784 @@ class _DispatchSupervisorScreenState extends State<DispatchSupervisorScreen> {
               );
             },
             child: const Text("Xóa vĩnh viễn"),
+          ),
+        ],
+      ),
+    );
+  }
+
+  // HELPER: Ô NHẬP LIỆU GỢI Ý TỰ ĐỘNG (AUTOCOMPLETE INPUT) CHO FORM ĐƠN HÀNG
+  Widget _buildOrderAutocompleteInput({
+    required TextEditingController controller,
+    required String labelText,
+    required IconData prefixIcon,
+    required List<String> suggestions,
+    String? hintText,
+    bool isRequired = false,
+  }) {
+    return Autocomplete<String>(
+      initialValue: TextEditingValue(text: controller.text),
+      optionsBuilder: (TextEditingValue textEditingValue) {
+        final query = textEditingValue.text.trim().toLowerCase();
+        if (query.isEmpty) {
+          return suggestions.take(6);
+        }
+        return suggestions.where((option) => option.toLowerCase().contains(query)).take(8);
+      },
+      onSelected: (String selection) {
+        controller.text = selection;
+      },
+      fieldViewBuilder: (context, fieldTextEditingController, fieldFocusNode, onFieldSubmitted) {
+        // Đồng bộ dữ liệu khi người dùng nhập tay tự do
+        fieldTextEditingController.addListener(() {
+          if (controller.text != fieldTextEditingController.text) {
+            controller.text = fieldTextEditingController.text;
+          }
+        });
+        return TextField(
+          controller: fieldTextEditingController,
+          focusNode: fieldFocusNode,
+          decoration: InputDecoration(
+            labelText: isRequired ? "$labelText *" : labelText,
+            hintText: hintText,
+            prefixIcon: Icon(prefixIcon),
+          ),
+          onSubmitted: (val) => onFieldSubmitted(),
+        );
+      },
+      optionsViewBuilder: (context, onSelected, options) {
+        return Align(
+          alignment: Alignment.topLeft,
+          child: Material(
+            elevation: 4,
+            borderRadius: BorderRadius.circular(4),
+            color: Colors.white,
+            child: ConstrainedBox(
+              constraints: const BoxConstraints(maxHeight: 220, maxWidth: 460),
+              child: ListView.separated(
+                padding: const EdgeInsets.symmetric(vertical: 4),
+                shrinkWrap: true,
+                itemCount: options.length,
+                separatorBuilder: (_, __) => Divider(height: 1, color: Colors.grey.shade200),
+                itemBuilder: (BuildContext context, int index) {
+                  final String option = options.elementAt(index);
+                  return InkWell(
+                    hoverColor: Colors.blue.shade50,
+                    onTap: () => onSelected(option),
+                    child: Padding(
+                      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+                      child: Row(
+                        children: [
+                          Icon(prefixIcon, size: 16, color: Colors.blue.shade700),
+                          const SizedBox(width: 10),
+                          Expanded(
+                            child: Text(
+                              option,
+                              style: const TextStyle(fontSize: 13, color: Colors.black87),
+                              overflow: TextOverflow.ellipsis,
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                  );
+                },
+              ),
+            ),
+          ),
+        );
+      },
+    );
+  }
+
+  // DIALOG: TẠO ĐƠN HÀNG MỚI
+  void _showCreateOrderDialog() {
+    final orderCodeCtrl = TextEditingController(
+      text: "DH${DateTime.now().year}${(DateTime.now().month).toString().padLeft(2, '0')}${(DateTime.now().day).toString().padLeft(2, '0')}-${DateTime.now().millisecondsSinceEpoch % 10000}",
+    );
+    final factoryCodeCtrl = TextEditingController(text: "NM-BIMSON");
+    final pickupAddrCtrl = TextEditingController(text: "Kho Xi Măng Bỉm Sơn, Thanh Hóa");
+    final deliveryAddrCtrl = TextEditingController();
+    final cargoWeightCtrl = TextEditingController(text: "30.0");
+    String transportType = "INTERNAL";
+    int? selectedProductId = _products.isNotEmpty ? (_products[0]['id'] as int?) : null;
+    String? selectedVehiclePlate = _vehicles.isNotEmpty ? (_vehicles[0]['plate_number']?.toString()) : null;
+    int? selectedDriverId;
+
+    // Danh sách gợi ý Nhà máy, Nơi nhận và Điểm giao hàng
+    final factorySuggestions = <String>{
+      "NM-BIMSON",
+      "NM_LONG_AN",
+      "NM-NGHISON",
+      "NM-HAIPHONG",
+      "NM-CAMPHA",
+    };
+    final pickupSuggestions = <String>{
+      "Kho Xi Măng Bỉm Sơn, Thanh Hóa",
+      "Kho Long An KCN Thuận Đạo",
+      "Kho Nghi Sơn, Thanh Hóa",
+      "Cảng Nghi Sơn, Tĩnh Gia",
+      "Kho Cảng Sài Gòn, Q.4, TP.HCM",
+      "Cảng Cát Lái, TP. Thủ Đức",
+    };
+    final deliverySuggestions = <String>{
+      "Dự án Khu đô thị Waterpoint, Bến Lức",
+      "Trạm trộn Bê tông An Cư, Long An",
+      "Công trình Cầu Mỹ Thuận 2",
+      "Khu đô thị Vinhomes Grand Park, TP. Thủ Đức",
+      "Trạm bê tông Lê Phan, Bình Chánh",
+      "Công trình Cao tốc Bắc Nam - Đoạn Diễn Châu",
+    };
+
+    for (final ord in _orders) {
+      if (ord is Map) {
+        final f = (ord['factory_code'] ?? '').toString().trim();
+        if (f.isNotEmpty) factorySuggestions.add(f);
+        final p = (ord['pickup_address'] ?? '').toString().trim();
+        if (p.isNotEmpty) pickupSuggestions.add(p);
+        final d = (ord['delivery_address'] ?? '').toString().trim();
+        if (d.isNotEmpty) deliverySuggestions.add(d);
+      }
+    }
+
+    // Lọc danh sách tài xế
+    final driverUsers = _users.where((u) {
+      if (u is! Map) return false;
+      final roleCodes = (u['role_codes'] as List<dynamic>?)?.map((e) => e.toString()).toList() ?? [];
+      return roleCodes.contains('driver') || u['driver_type'] != null;
+    }).toList();
+
+    if (driverUsers.isNotEmpty) {
+      selectedDriverId = driverUsers[0]['id'] as int?;
+    }
+
+    showDialog(
+      context: context,
+      builder: (dialogCtx) => StatefulBuilder(
+        builder: (context, setDialogState) => AlertDialog(
+          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(4)),
+          title: Row(
+            children: [
+              Container(
+                padding: const EdgeInsets.all(6),
+                decoration: BoxDecoration(
+                  color: Colors.blue.shade50,
+                  borderRadius: BorderRadius.circular(4),
+                ),
+                child: const Icon(Icons.add_shopping_cart, size: 20, color: Colors.blue),
+              ),
+              const SizedBox(width: 10),
+              const Text(
+                "Tạo đơn hàng vận tải mới",
+                style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
+              ),
+            ],
+          ),
+          content: SizedBox(
+            width: 520,
+            child: SingleChildScrollView(
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: [
+                  Row(
+                    children: [
+                      Expanded(
+                        child: TextField(
+                          controller: orderCodeCtrl,
+                          decoration: const InputDecoration(
+                            labelText: "Mã đơn hàng *",
+                            prefixIcon: Icon(Icons.receipt_outlined),
+                          ),
+                        ),
+                      ),
+                      const SizedBox(width: 10),
+                      Expanded(
+                        child: _buildOrderAutocompleteInput(
+                          controller: factoryCodeCtrl,
+                          labelText: "Mã nhà máy",
+                          prefixIcon: Icons.factory_outlined,
+                          suggestions: factorySuggestions.toList(),
+                          isRequired: true,
+                        ),
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 12),
+                  // Chọn sản phẩm
+                  DropdownButtonFormField<int?>(
+                    value: selectedProductId,
+                    decoration: const InputDecoration(
+                      labelText: "Sản phẩm / Hàng hóa *",
+                      prefixIcon: Icon(Icons.inventory_2_outlined),
+                    ),
+                    items: _products.map((p) {
+                      final id = p['id'] as int;
+                      final name = (p['name'] ?? 'Sản phẩm').toString();
+                      return DropdownMenuItem<int?>(
+                        value: id,
+                        child: Text(name),
+                      );
+                    }).toList(),
+                    onChanged: (val) {
+                      setDialogState(() => selectedProductId = val);
+                    },
+                  ),
+                  const SizedBox(height: 12),
+                  // Trọng lượng hàng hóa
+                  TextField(
+                    controller: cargoWeightCtrl,
+                    keyboardType: const TextInputType.numberWithOptions(decimal: true),
+                    decoration: const InputDecoration(
+                      labelText: "Khối lượng hàng hóa (Tấn) *",
+                      hintText: "Ví dụ: 30.5",
+                      prefixIcon: Icon(Icons.scale_outlined),
+                    ),
+                  ),
+                  const SizedBox(height: 12),
+                  // Hình thức vận chuyển
+                  DropdownButtonFormField<String>(
+                    value: transportType,
+                    decoration: const InputDecoration(
+                      labelText: "Hình thức vận chuyển",
+                      prefixIcon: Icon(Icons.alt_route),
+                    ),
+                    items: const [
+                      DropdownMenuItem(value: "INTERNAL", child: Text("Xe nội bộ")),
+                      DropdownMenuItem(value: "RENTAL", child: Text("Xe thuê ngoài")),
+                      DropdownMenuItem(value: "CUSTOMER_SELF", child: Text("Khách tự vận chuyển")),
+                    ],
+                    onChanged: (val) {
+                      if (val != null) {
+                        setDialogState(() => transportType = val);
+                      }
+                    },
+                  ),
+                  const SizedBox(height: 12),
+                  // Điểm nhận hàng (Gợi ý tự động Autocomplete)
+                  _buildOrderAutocompleteInput(
+                    controller: pickupAddrCtrl,
+                    labelText: "Nơi nhận hàng (Địa chỉ lấy hàng)",
+                    prefixIcon: Icons.warehouse_outlined,
+                    suggestions: pickupSuggestions.toList(),
+                    hintText: "Nhập hoặc chọn kho hàng...",
+                    isRequired: true,
+                  ),
+                  const SizedBox(height: 12),
+                  // Điểm giao hàng (Gợi ý tự động Autocomplete)
+                  _buildOrderAutocompleteInput(
+                    controller: deliveryAddrCtrl,
+                    labelText: "Điểm giao hàng (Địa chỉ trả hàng)",
+                    prefixIcon: Icons.location_on_outlined,
+                    suggestions: deliverySuggestions.toList(),
+                    hintText: "Nhập địa chỉ hoặc chọn công trình...",
+                    isRequired: true,
+                  ),
+                  const SizedBox(height: 12),
+                  // Phương tiện chỉ định
+                  DropdownButtonFormField<String?>(
+                    value: selectedVehiclePlate,
+                    decoration: const InputDecoration(
+                      labelText: "Phương tiện vận chuyển *",
+                      prefixIcon: Icon(Icons.local_shipping_outlined),
+                    ),
+                    items: [
+                      ..._vehicles.map((v) {
+                        final plate = (v['plate_number'] ?? '').toString();
+                        final vtype = (v['vehicle_type'] ?? '').toString();
+                        return DropdownMenuItem<String?>(
+                          value: plate,
+                          child: Text("$plate ($vtype)"),
+                        );
+                      }),
+                    ],
+                    onChanged: (val) {
+                      setDialogState(() => selectedVehiclePlate = val);
+                    },
+                  ),
+                  const SizedBox(height: 12),
+                  // Tài xế chỉ định
+                  DropdownButtonFormField<int?>(
+                    value: selectedDriverId,
+                    decoration: const InputDecoration(
+                      labelText: "Tài xế phụ trách *",
+                      prefixIcon: Icon(Icons.person_outline),
+                    ),
+                    items: [
+                      ...driverUsers.map((u) {
+                        final id = u['id'] as int;
+                        final name = (u['full_name'] ?? u['username'] ?? '').toString();
+                        final phone = (u['phone'] ?? '').toString();
+                        final label = phone.isNotEmpty ? "$name ($phone)" : name;
+                        return DropdownMenuItem<int?>(
+                          value: id,
+                          child: Text(label),
+                        );
+                      }),
+                    ],
+                    onChanged: (val) {
+                      setDialogState(() => selectedDriverId = val);
+                    },
+                  ),
+                ],
+              ),
+            ),
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.of(dialogCtx).pop(),
+              child: const Text("Hủy"),
+            ),
+            ElevatedButton(
+              style: ElevatedButton.styleFrom(
+                backgroundColor: Colors.blue.shade800,
+                foregroundColor: Colors.white,
+                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(4)),
+                minimumSize: const Size(100, 36),
+              ),
+              onPressed: () async {
+                final code = orderCodeCtrl.text.trim();
+                final factory = factoryCodeCtrl.text.trim();
+                final pickup = pickupAddrCtrl.text.trim();
+                final delivery = deliveryAddrCtrl.text.trim();
+                final weight = double.tryParse(cargoWeightCtrl.text.trim()) ?? 0.0;
+
+                if (code.isEmpty || factory.isEmpty || pickup.isEmpty || delivery.isEmpty) {
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    const SnackBar(content: Text("Vui lòng điền đầy đủ thông tin bắt buộc")),
+                  );
+                  return;
+                }
+                if (selectedProductId == null) {
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    const SnackBar(content: Text("Vui lòng chọn loại sản phẩm")),
+                  );
+                  return;
+                }
+                if (selectedVehiclePlate == null || selectedVehiclePlate!.isEmpty) {
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    const SnackBar(content: Text("Vui lòng chọn phương tiện")),
+                  );
+                  return;
+                }
+                if (selectedDriverId == null) {
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    const SnackBar(content: Text("Vui lòng chỉ định tài xế phụ trách")),
+                  );
+                  return;
+                }
+
+                Navigator.of(dialogCtx).pop();
+                setState(() => _isLoading = true);
+
+                final payload = <String, dynamic>{
+                  "order_code": code,
+                  "factory_code": factory,
+                  "product_id": selectedProductId,
+                  "transport_type": transportType,
+                  "pickup_address": pickup,
+                  "delivery_address": delivery,
+                  "assigned_vehicle_plate": selectedVehiclePlate,
+                  "assigned_driver_id": selectedDriverId,
+                  "cargo_weight_tons": weight,
+                };
+
+                final res = await AdminService.createOrder(payload);
+                await _loadAllManagementData();
+
+                if (!mounted) return;
+                ScaffoldMessenger.of(context).showSnackBar(
+                  SnackBar(
+                    backgroundColor: res['success'] == true ? Colors.green : Colors.red,
+                    content: Text(
+                      res['success'] == true
+                          ? "Tạo đơn hàng thành công!"
+                          : "Lỗi: ${res['message']}",
+                    ),
+                  ),
+                );
+              },
+              child: const Text("Tạo đơn hàng"),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  // DIALOG: CHỈNH SỬA ĐƠN HÀNG
+  void _showEditOrderDialog(dynamic orderData) {
+    final o = orderData is Map ? orderData : <String, dynamic>{};
+    final orderId = o['id'] as int;
+    final orderCodeCtrl = TextEditingController(text: (o['order_code'] ?? '').toString());
+    final factoryCodeCtrl = TextEditingController(text: (o['factory_code'] ?? 'NM-BIMSON').toString());
+    final pickupAddrCtrl = TextEditingController(text: (o['pickup_address'] ?? '').toString());
+    final deliveryAddrCtrl = TextEditingController(text: (o['delivery_address'] ?? '').toString());
+    final cargoWeightCtrl = TextEditingController(text: (o['cargo_weight_tons']?.toString() ?? '30.0'));
+    String transportType = (o['transport_type'] ?? 'INTERNAL').toString();
+    if (!['INTERNAL', 'RENTAL', 'CUSTOMER_SELF'].contains(transportType)) {
+      transportType = 'INTERNAL';
+    }
+    int? selectedProductId = o['product_id'] as int?;
+    String? selectedVehiclePlate = o['assigned_vehicle_plate']?.toString();
+    int? selectedDriverId = o['assigned_driver_id'] as int?;
+    String status = (o['status'] ?? 'assigned').toString();
+
+    // Danh sách gợi ý Nhà máy, Nơi nhận và Điểm giao hàng
+    final factorySuggestions = <String>{
+      "NM-BIMSON",
+      "NM_LONG_AN",
+      "NM-NGHISON",
+      "NM-HAIPHONG",
+      "NM-CAMPHA",
+    };
+    final pickupSuggestions = <String>{
+      "Kho Xi Măng Bỉm Sơn, Thanh Hóa",
+      "Kho Long An KCN Thuận Đạo",
+      "Kho Nghi Sơn, Thanh Hóa",
+      "Cảng Nghi Sơn, Tĩnh Gia",
+      "Kho Cảng Sài Gòn, Q.4, TP.HCM",
+      "Cảng Cát Lái, TP. Thủ Đức",
+    };
+    final deliverySuggestions = <String>{
+      "Dự án Khu đô thị Waterpoint, Bến Lức",
+      "Trạm trộn Bê tông An Cư, Long An",
+      "Công trình Cầu Mỹ Thuận 2",
+      "Khu đô thị Vinhomes Grand Park, TP. Thủ Đức",
+      "Trạm bê tông Lê Phan, Bình Chánh",
+      "Công trình Cao tốc Bắc Nam - Đoạn Diễn Châu",
+    };
+
+    for (final ord in _orders) {
+      if (ord is Map) {
+        final f = (ord['factory_code'] ?? '').toString().trim();
+        if (f.isNotEmpty) factorySuggestions.add(f);
+        final p = (ord['pickup_address'] ?? '').toString().trim();
+        if (p.isNotEmpty) pickupSuggestions.add(p);
+        final d = (ord['delivery_address'] ?? '').toString().trim();
+        if (d.isNotEmpty) deliverySuggestions.add(d);
+      }
+    }
+
+    // Lọc danh sách tài xế
+    final driverUsers = _users.where((u) {
+      if (u is! Map) return false;
+      final roleCodes = (u['role_codes'] as List<dynamic>?)?.map((e) => e.toString()).toList() ?? [];
+      return roleCodes.contains('driver') || u['driver_type'] != null;
+    }).toList();
+
+    showDialog(
+      context: context,
+      builder: (dialogCtx) => StatefulBuilder(
+        builder: (context, setDialogState) => AlertDialog(
+          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(4)),
+          title: Row(
+            children: [
+              Container(
+                padding: const EdgeInsets.all(6),
+                decoration: BoxDecoration(
+                  color: Colors.blue.shade50,
+                  borderRadius: BorderRadius.circular(4),
+                ),
+                child: const Icon(Icons.edit_note, size: 20, color: Colors.blue),
+              ),
+              const SizedBox(width: 10),
+              Text(
+                "Sửa đơn hàng: ${o['order_code'] ?? ''}",
+                style: const TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
+              ),
+            ],
+          ),
+          content: SizedBox(
+            width: 520,
+            child: SingleChildScrollView(
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: [
+                  Row(
+                    children: [
+                      Expanded(
+                        child: TextField(
+                          controller: orderCodeCtrl,
+                          decoration: const InputDecoration(
+                            labelText: "Mã đơn hàng *",
+                            prefixIcon: Icon(Icons.receipt_outlined),
+                          ),
+                        ),
+                      ),
+                      const SizedBox(width: 10),
+                      Expanded(
+                        child: _buildOrderAutocompleteInput(
+                          controller: factoryCodeCtrl,
+                          labelText: "Mã nhà máy",
+                          prefixIcon: Icons.factory_outlined,
+                          suggestions: factorySuggestions.toList(),
+                          isRequired: true,
+                        ),
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 12),
+                  // Chọn sản phẩm
+                  DropdownButtonFormField<int?>(
+                    value: selectedProductId,
+                    decoration: const InputDecoration(
+                      labelText: "Sản phẩm / Hàng hóa *",
+                      prefixIcon: Icon(Icons.inventory_2_outlined),
+                    ),
+                    items: _products.map((p) {
+                      final id = p['id'] as int;
+                      final name = (p['name'] ?? 'Sản phẩm').toString();
+                      return DropdownMenuItem<int?>(
+                        value: id,
+                        child: Text(name),
+                      );
+                    }).toList(),
+                    onChanged: (val) {
+                      setDialogState(() => selectedProductId = val);
+                    },
+                  ),
+                  const SizedBox(height: 12),
+                  // Trọng lượng hàng hóa
+                  TextField(
+                    controller: cargoWeightCtrl,
+                    keyboardType: const TextInputType.numberWithOptions(decimal: true),
+                    decoration: const InputDecoration(
+                      labelText: "Khối lượng hàng hóa (Tấn) *",
+                      prefixIcon: Icon(Icons.scale_outlined),
+                    ),
+                  ),
+                  const SizedBox(height: 12),
+                  // Hình thức vận chuyển
+                  DropdownButtonFormField<String>(
+                    value: transportType,
+                    decoration: const InputDecoration(
+                      labelText: "Hình thức vận chuyển",
+                      prefixIcon: Icon(Icons.alt_route),
+                    ),
+                    items: const [
+                      DropdownMenuItem(value: "INTERNAL", child: Text("Xe nội bộ")),
+                      DropdownMenuItem(value: "RENTAL", child: Text("Xe thuê ngoài")),
+                      DropdownMenuItem(value: "CUSTOMER_SELF", child: Text("Khách tự vận chuyển")),
+                    ],
+                    onChanged: (val) {
+                      if (val != null) {
+                        setDialogState(() => transportType = val);
+                      }
+                    },
+                  ),
+                  const SizedBox(height: 12),
+                  // Điểm nhận hàng (Gợi ý tự động Autocomplete)
+                  _buildOrderAutocompleteInput(
+                    controller: pickupAddrCtrl,
+                    labelText: "Nơi nhận hàng",
+                    prefixIcon: Icons.warehouse_outlined,
+                    suggestions: pickupSuggestions.toList(),
+                    hintText: "Nhập hoặc chọn kho hàng...",
+                    isRequired: true,
+                  ),
+                  const SizedBox(height: 12),
+                  // Điểm giao hàng (Gợi ý tự động Autocomplete)
+                  _buildOrderAutocompleteInput(
+                    controller: deliveryAddrCtrl,
+                    labelText: "Điểm giao hàng",
+                    prefixIcon: Icons.location_on_outlined,
+                    suggestions: deliverySuggestions.toList(),
+                    hintText: "Nhập địa chỉ hoặc chọn công trình...",
+                    isRequired: true,
+                  ),
+                  const SizedBox(height: 12),
+                  // Phương tiện chỉ định
+                  DropdownButtonFormField<String?>(
+                    value: selectedVehiclePlate,
+                    decoration: const InputDecoration(
+                      labelText: "Phương tiện vận chuyển *",
+                      prefixIcon: Icon(Icons.local_shipping_outlined),
+                    ),
+                    items: [
+                      ..._vehicles.map((v) {
+                        final plate = (v['plate_number'] ?? '').toString();
+                        final vtype = (v['vehicle_type'] ?? '').toString();
+                        return DropdownMenuItem<String?>(
+                          value: plate,
+                          child: Text("$plate ($vtype)"),
+                        );
+                      }),
+                    ],
+                    onChanged: (val) {
+                      setDialogState(() => selectedVehiclePlate = val);
+                    },
+                  ),
+                  const SizedBox(height: 12),
+                  // Tài xế chỉ định
+                  DropdownButtonFormField<int?>(
+                    value: selectedDriverId,
+                    decoration: const InputDecoration(
+                      labelText: "Tài xế phụ trách *",
+                      prefixIcon: Icon(Icons.person_outline),
+                    ),
+                    items: [
+                      ...driverUsers.map((u) {
+                        final id = u['id'] as int;
+                        final name = (u['full_name'] ?? u['username'] ?? '').toString();
+                        final phone = (u['phone'] ?? '').toString();
+                        final label = phone.isNotEmpty ? "$name ($phone)" : name;
+                        return DropdownMenuItem<int?>(
+                          value: id,
+                          child: Text(label),
+                        );
+                      }),
+                    ],
+                    onChanged: (val) {
+                      setDialogState(() => selectedDriverId = val);
+                    },
+                  ),
+                  const SizedBox(height: 12),
+                  // Trạng thái đơn hàng
+                  DropdownButtonFormField<String>(
+                    value: status,
+                    decoration: const InputDecoration(
+                      labelText: "Trạng thái đơn hàng",
+                      prefixIcon: Icon(Icons.flag_outlined),
+                    ),
+                    items: const [
+                      DropdownMenuItem(value: "assigned", child: Text("Đã điều phối (assigned)")),
+                      DropdownMenuItem(value: "in_transit", child: Text("Đang vận chuyển (in_transit)")),
+                      DropdownMenuItem(value: "completed", child: Text("Đã hoàn thành (completed)")),
+                      DropdownMenuItem(value: "cancelled", child: Text("Đã hủy (cancelled)")),
+                    ],
+                    onChanged: (val) {
+                      if (val != null) {
+                        setDialogState(() => status = val);
+                      }
+                    },
+                  ),
+                ],
+              ),
+            ),
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.of(dialogCtx).pop(),
+              child: const Text("Hủy"),
+            ),
+            ElevatedButton(
+              style: ElevatedButton.styleFrom(
+                backgroundColor: Colors.blue.shade800,
+                foregroundColor: Colors.white,
+                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(4)),
+                minimumSize: const Size(100, 36),
+              ),
+              onPressed: () async {
+                final code = orderCodeCtrl.text.trim();
+                final factory = factoryCodeCtrl.text.trim();
+                final pickup = pickupAddrCtrl.text.trim();
+                final delivery = deliveryAddrCtrl.text.trim();
+                final weight = double.tryParse(cargoWeightCtrl.text.trim()) ?? 0.0;
+
+                if (code.isEmpty || factory.isEmpty || pickup.isEmpty || delivery.isEmpty) {
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    const SnackBar(content: Text("Vui lòng điền đầy đủ thông tin bắt buộc")),
+                  );
+                  return;
+                }
+
+                Navigator.of(dialogCtx).pop();
+                setState(() => _isLoading = true);
+
+                final payload = <String, dynamic>{
+                  "order_code": code,
+                  "factory_code": factory,
+                  "product_id": selectedProductId,
+                  "transport_type": transportType,
+                  "pickup_address": pickup,
+                  "delivery_address": delivery,
+                  "assigned_vehicle_plate": selectedVehiclePlate,
+                  "assigned_driver_id": selectedDriverId,
+                  "cargo_weight_tons": weight,
+                  "status": status,
+                };
+
+                final res = await AdminService.updateOrder(orderId, payload);
+                await _loadAllManagementData();
+
+                if (!mounted) return;
+                ScaffoldMessenger.of(context).showSnackBar(
+                  SnackBar(
+                    backgroundColor: res['success'] == true ? Colors.green : Colors.red,
+                    content: Text(
+                      res['success'] == true
+                          ? "Cập nhật đơn hàng thành công!"
+                          : "Lỗi: ${res['message']}",
+                    ),
+                  ),
+                );
+              },
+              child: const Text("Lưu thay đổi"),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  // DIALOG: XÁC NHẬN XÓA ĐƠN HÀNG
+  void _confirmDeleteOrder(dynamic orderData) {
+    final o = orderData is Map ? orderData : <String, dynamic>{};
+    final orderId = o['id'] as int;
+    final orderCode = (o['order_code'] ?? 'N/A').toString();
+
+    showDialog(
+      context: context,
+      builder: (dialogCtx) => AlertDialog(
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(4)),
+        title: const Row(
+          children: [
+            Icon(Icons.warning_amber_rounded, color: Colors.red),
+            SizedBox(width: 8),
+            Text(
+              "Xác nhận xóa đơn hàng",
+              style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
+            ),
+          ],
+        ),
+        content: Text(
+          "Bạn có chắc chắn muốn xóa đơn hàng '$orderCode' khỏi hệ thống không?\n\nThao tác này sẽ xóa đơn và toàn bộ mốc giờ chuyến liên quan và không thể hoàn tác.",
+          style: const TextStyle(fontSize: 13, height: 1.4),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(dialogCtx).pop(),
+            child: const Text("Hủy"),
+          ),
+          ElevatedButton(
+            style: ElevatedButton.styleFrom(
+              backgroundColor: Colors.red.shade700,
+              foregroundColor: Colors.white,
+              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(4)),
+              minimumSize: const Size(100, 36),
+            ),
+            onPressed: () async {
+              Navigator.of(dialogCtx).pop();
+              setState(() => _isLoading = true);
+
+              final res = await AdminService.deleteOrder(orderId);
+              await _loadAllManagementData();
+
+              if (!mounted) return;
+              ScaffoldMessenger.of(context).showSnackBar(
+                SnackBar(
+                  backgroundColor: res['success'] == true ? Colors.green : Colors.red,
+                  content: Text(
+                    res['success'] == true
+                        ? "Đã xóa đơn hàng thành công!"
+                        : "Lỗi: ${res['message']}",
+                  ),
+                ),
+              );
+            },
+            child: const Text("Xóa đơn hàng"),
           ),
         ],
       ),

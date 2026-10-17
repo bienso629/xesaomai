@@ -55,6 +55,65 @@ class AdminService {
     return [];
   }
 
+  /// Tạo đơn hàng mới
+  static Future<Map<String, dynamic>> createOrder(Map<String, dynamic> payload) async {
+    try {
+      final res = await http.post(
+        Uri.parse('$baseUrl/orders'),
+        headers: await _headers(),
+        body: jsonEncode(payload),
+      ).timeout(const Duration(seconds: 8));
+
+      if (res.statusCode == 201 || res.statusCode == 200) {
+        return {'success': true, 'data': jsonDecode(res.body)};
+      } else {
+        final err = jsonDecode(res.body);
+        return {'success': false, 'message': err['detail'] ?? 'Lỗi tạo đơn hàng'};
+      }
+    } catch (e) {
+      return {'success': false, 'message': 'Không thể kết nối API: $e'};
+    }
+  }
+
+  /// Cập nhật đơn hàng
+  static Future<Map<String, dynamic>> updateOrder(int orderId, Map<String, dynamic> payload) async {
+    try {
+      final res = await http.put(
+        Uri.parse('$baseUrl/orders/$orderId'),
+        headers: await _headers(),
+        body: jsonEncode(payload),
+      ).timeout(const Duration(seconds: 8));
+
+      if (res.statusCode == 200) {
+        return {'success': true, 'data': jsonDecode(res.body)};
+      } else {
+        final err = jsonDecode(res.body);
+        return {'success': false, 'message': err['detail'] ?? 'Lỗi cập nhật đơn hàng'};
+      }
+    } catch (e) {
+      return {'success': false, 'message': 'Không thể kết nối API: $e'};
+    }
+  }
+
+  /// Xóa đơn hàng
+  static Future<Map<String, dynamic>> deleteOrder(int orderId) async {
+    try {
+      final res = await http.delete(
+        Uri.parse('$baseUrl/orders/$orderId'),
+        headers: await _headers(),
+      ).timeout(const Duration(seconds: 8));
+
+      if (res.statusCode == 200) {
+        return {'success': true, 'data': jsonDecode(res.body)};
+      } else {
+        final err = jsonDecode(res.body);
+        return {'success': false, 'message': err['detail'] ?? 'Lỗi xóa đơn hàng'};
+      }
+    } catch (e) {
+      return {'success': false, 'message': 'Không thể kết nối API: $e'};
+    }
+  }
+
   /// Lấy danh sách phương tiện thực tế
   static Future<List<dynamic>> fetchVehicles() async {
     try {

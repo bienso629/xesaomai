@@ -285,7 +285,7 @@ class _MapScreenState extends State<MapScreen> {
           // Khung danh sách 28 xe bên trái (Tương tự ảnh giao diện)
           if (_showPanel)
             Container(
-              width: isWide ? 340 : 280,
+              width: isWide ? 360 : 320,
               decoration: BoxDecoration(
                 color: Colors.white,
                 border: Border(right: BorderSide(color: Colors.grey.shade300, width: 1)),
@@ -327,19 +327,15 @@ class _MapScreenState extends State<MapScreen> {
                   // Bộ lọc trạng thái nhanh
                   Container(
                     padding: const EdgeInsets.symmetric(horizontal: 8),
-                    child: SingleChildScrollView(
-                      scrollDirection: Axis.horizontal,
-                      child: Row(
-                        children: [
-                          _buildFilterChip('Tất cả (${allVehicles.length})', 'all'),
-                          const SizedBox(width: 4),
-                          _buildFilterChip('Đang chạy ($runningCount)', 'running'),
-                          const SizedBox(width: 4),
-                          _buildFilterChip('Đang đỗ ($stoppedCount)', 'stopped'),
-                          const SizedBox(width: 4),
-                          _buildFilterChip('Offline ($offlineCount)', 'off'),
-                        ],
-                      ),
+                    child: Wrap(
+                      spacing: 4,
+                      runSpacing: 4,
+                      children: [
+                        _buildFilterChip('Tất cả (${allVehicles.length})', 'all'),
+                        _buildFilterChip('Đang chạy ($runningCount)', 'running'),
+                        _buildFilterChip('Đang đỗ ($stoppedCount)', 'stopped'),
+                        _buildFilterChip('Offline ($offlineCount)', 'off'),
+                      ],
                     ),
                   ),
                   const Divider(height: 12),
