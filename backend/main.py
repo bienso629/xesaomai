@@ -171,6 +171,23 @@ class OrderCreate(BaseModel):
     assigned_driver_id: int
     cargo_weight_tons: float
 
+class OrderUpdate(BaseModel):
+    order_code: Optional[str] = None
+    factory_code: Optional[str] = None
+    product_id: Optional[int] = None
+    transport_type: Optional[str] = None
+    customer_group_id: Optional[str] = None
+    pickup_address: Optional[str] = None
+    pickup_lat: Optional[float] = None
+    pickup_lng: Optional[float] = None
+    delivery_address: Optional[str] = None
+    delivery_lat: Optional[float] = None
+    delivery_lng: Optional[float] = None
+    assigned_vehicle_plate: Optional[str] = None
+    assigned_driver_id: Optional[int] = None
+    cargo_weight_tons: Optional[float] = None
+    status: Optional[str] = None
+
 class InspectionSubmit(BaseModel):
     check_date: str
     plate_number: str
@@ -955,6 +972,122 @@ def get_orders(current_user: dict = Depends(get_current_user)):
     cur.close()
     conn.close()
     return orders
+
+@app.put("/api/v1/orders/{order_id}")
+def update_order(order_id: int, o: OrderUpdate, current_user: dict = Depends(get_current_user)):
+    roles = current_user.get("roles", [])
+    username = current_user.get("username", "")
+    allowed = (username == "admin" or any(r in ["admin", "manager", "dispatcher"] for r in roles))
+    if not allowed:
+        raise HTTPException(status_code=403, detail="Chỉ Quản lý và Điều phối viên mới có quyền cập nhật đơn hàng")
+
+    conn = get_db()
+    cur = conn.cursor()
+    try:
+        cur.execute("SELECT * FROM orders WHERE id = %s", (order_id,))
+        existing = cur.fetchone()
+        if not existing:
+            raise HTTPException(status_code=404, detail="Không tìm thấy đơn hàng")
+
+        fields = []
+        values = []
+        if o.order_code is not None:
+            fields.append("order_code = %s")
+            values.append(o.order_code.strip())
+        if o.factory_code is not None:
+            fields.append("factory_code = %s")
+            values.append(o.factory_code.strip())
+        if o.product_id is not None:
+            fields.append("product_id = %s")
+            values.append(o.product_id)
+        if o.transport_type is not None:
+            fields.append("transport_type = %s")
+            values.append(o.transport_type)
+        if o.customer_group_id is not None:
+            fields.append("customer_group_id = %s")
+            values.append(o.customer_group_id)
+        if o.pickup_address is not None:
+            fields.append("pickup_address = %s")
+            values.append(o.pickup_address)
+        if o.pickup_lat is not None:
+            fields.append("pickup_lat = %s")
+            values.append(o.pickup_lat)
+        if o.pickup_lng is not None:
+            fields.append("pickup_lng = %s")
+            values.append(o.pickup_lng)
+        if o.delivery_address is not None:
+            fields.append("delivery_address = %s")
+            values.append(o.delivery_address)
+        if o.delivery_lat is not None:
+            fields.append("delivery_lat = %s")
+            values.append(o.delivery_lat)
+        if o.delivery_lng is not None:
+            fields.append("delivery_lng = %s")
+            values.append(o.delivery_lng)
+        if o.assigned_vehicle_plate is not None:
+            fields.append("assigned_vehicle_plate = %s")
+            values.append(o.assigned_vehicle_plate)
+        if o.assigned_driver_id is not None:
+            fields.append("assigned_driver_id = %s")
+            values.append(o.assigned_driver_id)
+        if o.cargo_weight_tons is not None:
+            fields.append("cargo_weight_tons = %s")
+            values.append(o.cargo_weight_tons)
+        if o.status is not None:
+            fields.append("status = %s")
+            values.append(o.status)
+
+        if fields:
+            values.append(order_id)
+            cur.execute(f"UPDATE orders SET {', '.join(fields)} WHERE id = %s RETURNING *", tuple(values))
+            conn.commit()
+            updated = cur.fetchone()
+        else:
+            updated = existing
+
+        cur.close()
+        conn.close()
+        return updated
+    except HTTPException:
+        conn.close()
+        raise
+    except Exception as e:
+        conn.rollback()
+        conn.close()
+        raise HTTPException(status_code=400, detail=str(e))
+
+@app.delete("/api/v1/orders/{order_id}")
+def delete_order(order_id: int, current_user: dict = Depends(get_current_user)):
+    roles = current_user.get("roles", [])
+    username = current_user.get("username", "")
+    allowed = (username == "admin" or any(r in ["admin", "manager", "dispatcher"] for r in roles))
+    if not allowed:
+        raise HTTPException(status_code=403, detail="Chỉ Quản lý và Điều phối viên mới có quyền xóa đơn hàng")
+
+    conn = get_db()
+    cur = conn.cursor()
+    try:
+        cur.execute("SELECT * FROM orders WHERE id = %s", (order_id,))
+        existing = cur.fetchone()
+        if not existing:
+            raise HTTPException(status_code=404, detail="Không tìm thấy đơn hàng")
+
+        # Xóa các ràng buộc liên quan nếu có (moc_chuyen, chung_tu_chuyen, cap_dau)
+        cur.execute("DELETE FROM moc_chuyen WHERE order_id = %s", (order_id,))
+        cur.execute("DELETE FROM chung_tu_chuyen WHERE order_id = %s", (order_id,))
+        cur.execute("DELETE FROM cap_dau WHERE order_id = %s", (order_id,))
+        cur.execute("DELETE FROM orders WHERE id = %s", (order_id,))
+        conn.commit()
+        cur.close()
+        conn.close()
+        return {"status": "success", "message": f"Đã xóa đơn hàng {existing['order_code']}"}
+    except HTTPException:
+        conn.close()
+        raise
+    except Exception as e:
+        conn.rollback()
+        conn.close()
+        raise HTTPException(status_code=400, detail=str(e))
 
 # 7. NGHIỆP VỤ KIỂM TRA ĐẦU NGÀY (5 ẢNH)
 @app.get("/api/v1/inspection/status/{plate_number}")

@@ -21,28 +21,29 @@ Tài liệu này xác lập các tiêu chuẩn kỹ thuật thiết kế giao di
 ## 2. QUY CHUẨN CHIỀU CAO VÀ KÍCH THƯỚC (HEIGHT & SIZING)
 
 ### 2.1. Thành phần nhập liệu (Input & Select)
-- **Chiều cao chuẩn chính**: `44px`.
-- **Cấu hình Theme (`InputDecorationTheme`)**:
-  - `isDense: true`
-  - `contentPadding: EdgeInsets.symmetric(horizontal: 12, vertical: 11)`
-  - `prefixIconConstraints: BoxConstraints(minWidth: 40, minHeight: 44, maxHeight: 44)`
-  - `suffixIconConstraints: BoxConstraints(minWidth: 40, minHeight: 44, maxHeight: 44)`
-- **Mục đích & Lưu ý kỹ thuật**:
-  - Khóa chặn việc biểu tượng (`prefixIcon` / `suffixIcon`) tự động kéo dãn chiều cao của `TextField` vượt mức cho phép.
-  - Đối với `DropdownButtonFormField`: Để chiều cao tính toán tự nhiên theo `InputDecorationTheme`. Tuyệt đối không bọc cứng bằng `SizedBox(height: 44)` kèm `contentPadding: EdgeInsets.symmetric(vertical: 0)` vì cơ chế căn chỉnh nhãn nổi (`floatingLabel`) và mũi tên xổ xuống sẽ bị nén nghẹt (xẹp) khung hiển thị.
+- **Thanh công cụ lọc và tìm kiếm (Toolbar / Search & Filter)**:
+  - Chiều cao chuẩn cố định: `36px` (tinh chỉnh thanh thoát, gọn gàng, tăng diện tích hiển thị dữ liệu bảng biểu).
+  - Bọc trong `SizedBox(height: 36)` hoặc chỉ định `constraints: BoxConstraints(minHeight: 36, maxHeight: 36)` trực tiếp tại từng thanh công cụ.
+  - Cấu hình: `isDense: true`, `prefixIconConstraints: BoxConstraints(minWidth: 34, minHeight: 36, maxHeight: 36)`.
+- **Biểu mẫu và Hộp thoại (Form & Dialog Input)**:
+  - Cho phép chiều cao co giãn tự nhiên theo nội dung và nhãn nổi (`labelText`), thường từ `48px` đến `52px` để không chèn ép chữ nhãn và con trỏ chuột.
+  - Cấu hình Theme chung (`InputDecorationTheme` trong `main.dart`):
+    - `isDense: true`
+    - `contentPadding: EdgeInsets.symmetric(horizontal: 12, vertical: 12)`
+    - `border: OutlineInputBorder(borderRadius: BorderRadius.all(Radius.circular(4)))`
+    - Không gán cứng `constraints: BoxConstraints(minHeight: 36, maxHeight: 36)` ở Theme toàn cục để tránh bóp nghẹt các ô Form/Dialog có dùng `labelText`.
 
 ### 2.2. Nút bấm (Button Hierarchy)
 - **Nút hành động chính (Primary Action Button)**:
-  - Ví dụ: "Lưu thay đổi", "Tạo tài khoản", "Xác nhận", "Đăng nhập".
-  - Chiều cao: `44px` (`minimumSize: Size(64, 44)`).
-  - Cỡ chữ: `14px`, `FontWeight.bold`.
+  - Ví dụ: "Lưu thay đổi", "Thêm tài khoản mới", "Tạo tài khoản", "Xác nhận", "Đăng nhập".
+  - Chiều cao: `36px` (`minimumSize: Size(64, 36)`, `fixedSize: Size.fromHeight(36)`).
+  - Cỡ chữ: `12.5px` - `13px`, `FontWeight.w600` hoặc `FontWeight.bold`.
   - Màu nền: `Colors.blue.shade800` hoặc màu thương hiệu chủ đạo.
-- **Nút hành động phụ / Nút nội dòng (Secondary / Inline Form Button)**:
-  - Ví dụ: Nút "Chọn & Tải lên" cạnh ô nhập URL ảnh, nút "Duyệt tệp".
-  - Chiều cao: Nhỏ hơn hoặc bằng `38px` (`SizedBox(height: 38)`).
-  - Cấu hình bắt buộc: `minimumSize: Size.zero`, `tapTargetSize: MaterialTapTargetSize.shrinkWrap`, `padding: EdgeInsets.symmetric(horizontal: 12)`.
-  - Cỡ chữ: `12px` - `13px`, `FontWeight.w600`.
-  - Mục đích: Không lấn át thị giác và kích thước của nút hành động chính của toàn bộ form hoặc dialog.
+- **Nút hành động phụ / Nút nội dòng (Secondary / Inline Form Button / Table Action)**:
+  - Ví dụ: Nút "Mật khẩu", "Sửa", "Xóa" trên từng dòng bảng dữ liệu.
+  - Chiều cao: `30px` - `32px` (`minimumSize: Size(0, 32)`).
+  - Cấu hình bắt buộc: `tapTargetSize: MaterialTapTargetSize.shrinkWrap`, `padding: EdgeInsets.symmetric(horizontal: 8)`.
+  - Cỡ chữ: `11px` - `12px`, `FontWeight.normal` hoặc `FontWeight.w600`.
 
 ---
 
