@@ -295,7 +295,12 @@ class _MapScreenState extends State<MapScreen> {
                   // Thanh trạng thái thống kê màu sắc
                   Container(
                     padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 8),
-                    color: const Color(0xFFF8FAFC),
+                    decoration: BoxDecoration(
+                      color: const Color(0xFFF8FAFC),
+                      border: Border(
+                        bottom: BorderSide(color: Colors.grey.shade300, width: 1),
+                      ),
+                    ),
                     child: Row(
                       mainAxisAlignment: MainAxisAlignment.spaceAround,
                       children: [

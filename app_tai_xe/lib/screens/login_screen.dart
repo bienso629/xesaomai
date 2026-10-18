@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import '../services/app_state.dart';
 import '../services/auth_service.dart';
+import '../services/notification_helper.dart';
 import 'main_navigation_screen.dart';
 
 class LoginScreen extends StatefulWidget {
@@ -21,6 +22,9 @@ class _LoginScreenState extends State<LoginScreen> {
   @override
   void initState() {
     super.initState();
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      NotificationHelper.requestNotificationPermission();
+    });
     _checkSavedSession();
   }
 
@@ -35,6 +39,7 @@ class _LoginScreenState extends State<LoginScreen> {
         fullName: session['full_name'] ?? '',
         roles: List<String>.from(session['roles'] ?? []),
       );
+      AuthService.syncDeviceToken();
 
       Navigator.of(context).pushReplacement(
         MaterialPageRoute(builder: (_) => const MainNavigationScreen()),

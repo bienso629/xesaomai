@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import '../services/app_state.dart';
 import '../services/auth_service.dart';
+import '../services/notification_helper.dart';
 import 'map_screen.dart';
 import 'dispatch_supervisor_screen.dart';
 import 'vehicle_inspection_screen.dart';
@@ -23,6 +24,12 @@ class _MainNavigationScreenState extends State<MainNavigationScreen> {
   int _currentRoot = 2; // 0: GPS (Dispatcher/Manager), 1: Inspection Review, 2: Management, 3: Driver Photo History, 4: Driver Schedule
   int _activeManagementTab = 0;
   bool _isDesktopSidebarVisible = true;
+  int _vehicleFilteredCount = 0;
+  int _vehicleTotalCount = 0;
+  int _orderFilteredCount = 0;
+  int _orderTotalCount = 0;
+  int _userFilteredCount = 0;
+  int _userTotalCount = 0;
   // Đồng bộ trạng thái duyệt của Điều phối định kỳ: xe chỉ "Đủ điều kiện chạy" khi server trả approved
   Timer? _approvalSyncTimer;
 
@@ -50,6 +57,7 @@ class _MainNavigationScreenState extends State<MainNavigationScreen> {
     }
 
     WidgetsBinding.instance.addPostFrameCallback((_) {
+      NotificationHelper.requestNotificationPermission();
       if (mounted) {
         if (isDriver) {
           state.setRole(UserRole.driver);
@@ -78,6 +86,7 @@ class _MainNavigationScreenState extends State<MainNavigationScreen> {
     "Danh Mục Sản Phẩm & Vật Liệu",
     "Cấu Hình Vai Trò & Quyền",
     "Cấu Hình Nhắc Nhở & Kịch Bản Nền",
+    "Cấu Hình Proxy AI & Trợ Lý Thông Minh",
   ];
 
   String _getAppTitle() {
@@ -86,6 +95,71 @@ class _MainNavigationScreenState extends State<MainNavigationScreen> {
     if (_currentRoot == 3) return "Lịch Sử Hình Chụp Kiểm Tra Xe";
     if (_currentRoot == 4) return "Theo Dõi Lịch Trình Xe Quản Lý";
     return _managementTitles[_activeManagementTab];
+  }
+
+  Widget _buildAppBarTitle() {
+    final title = _getAppTitle();
+    final isOrdersTab = _currentRoot == 2 && _activeManagementTab == 1;
+    final isVehiclesTab = _currentRoot == 2 && _activeManagementTab == 2;
+    final isUsersTab = _currentRoot == 2 && _activeManagementTab == 3;
+
+    String? countLabel;
+    if (isOrdersTab && _orderTotalCount > 0) {
+      countLabel = _orderFilteredCount == _orderTotalCount
+          ? "$_orderTotalCount đơn hàng"
+          : "$_orderFilteredCount/$_orderTotalCount đơn hàng";
+    } else if (isVehiclesTab && _vehicleTotalCount > 0) {
+      countLabel = _vehicleFilteredCount == _vehicleTotalCount
+          ? "$_vehicleTotalCount phương tiện"
+          : "$_vehicleFilteredCount/$_vehicleTotalCount phương tiện";
+    } else if (isUsersTab && _userTotalCount > 0) {
+      countLabel = _userFilteredCount == _userTotalCount
+          ? "$_userTotalCount tài khoản"
+          : "$_userFilteredCount/$_userTotalCount tài khoản";
+    }
+
+    if (countLabel == null) {
+      return Text(
+        title,
+        style: TextStyle(
+          fontWeight: FontWeight.bold,
+          fontSize: 16,
+          color: Colors.blueGrey.shade900,
+        ),
+      );
+    }
+
+    return Row(
+      mainAxisSize: MainAxisSize.min,
+      crossAxisAlignment: CrossAxisAlignment.center,
+      children: [
+        Text(
+          title,
+          style: TextStyle(
+            fontWeight: FontWeight.bold,
+            fontSize: 16,
+            color: Colors.blueGrey.shade900,
+          ),
+        ),
+        const SizedBox(width: 10),
+        Container(
+          padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2.5),
+          decoration: BoxDecoration(
+            color: Colors.blue.shade50,
+            borderRadius: BorderRadius.circular(4),
+            border: Border.all(color: Colors.blue.shade200),
+          ),
+          child: Text(
+            countLabel,
+            style: TextStyle(
+              color: Colors.blue.shade800,
+              fontWeight: FontWeight.bold,
+              fontSize: 12,
+            ),
+          ),
+        ),
+      ],
+    );
   }
 
   void _onSelectRoot(int rootIndex) {
@@ -170,10 +244,7 @@ class _MainNavigationScreenState extends State<MainNavigationScreen> {
                                 },
                               )
                             : null,
-                        title: Text(
-                          _getAppTitle(),
-                          style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16, color: Colors.blueGrey.shade900),
-                        ),
+                        title: _buildAppBarTitle(),
                         actions: const [],
                         backgroundColor: Colors.transparent, // Không dùng màu background
                         foregroundColor: Colors.blueGrey.shade900,
@@ -213,10 +284,7 @@ class _MainNavigationScreenState extends State<MainNavigationScreen> {
                   _scaffoldKey.currentState?.openDrawer();
                 },
               ),
-              title: Text(
-                _getAppTitle(),
-                style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16, color: Colors.blueGrey.shade900),
-              ),
+              title: _buildAppBarTitle(),
               actions: const [],
               backgroundColor: Colors.transparent, // Không dùng màu background
               foregroundColor: Colors.blueGrey.shade900,
@@ -415,16 +483,6 @@ class _MainNavigationScreenState extends State<MainNavigationScreen> {
                   subtitle: "Xi măng rời, xi măng bao, phụ gia",
                   onTap: () => _onSelectManagementTab(5),
                 ),
-                if (state.currentUsername == 'admin' || state.userRoles.any((r) => ['admin', 'manager', 'dispatcher'].contains(r.toLowerCase()))) ...[
-                  _buildDrawerItem(
-                    isSelected: _currentRoot == 2 && _activeManagementTab == 7,
-                    icon: Icons.notifications_active_outlined,
-                    activeIcon: Icons.notifications_active,
-                    title: "Cấu hình Nhắc nhở nền",
-                    subtitle: "Cấu hình GPS, thời gian chờ bồn, kịch bản",
-                    onTap: () => _onSelectManagementTab(7),
-                  ),
-                ],
                 if (state.currentUsername == 'admin' || state.userRoles.contains('admin')) ...[
                   _buildDrawerItem(
                     isSelected: _currentRoot == 2 && _activeManagementTab == 3,
@@ -434,14 +492,9 @@ class _MainNavigationScreenState extends State<MainNavigationScreen> {
                     subtitle: "Danh sách nhân viên, thông tin tài xế",
                     onTap: () => _onSelectManagementTab(3),
                   ),
-                  _buildDrawerItem(
-                    isSelected: _currentRoot == 2 && _activeManagementTab == 6,
-                    icon: Icons.verified_user_outlined,
-                    activeIcon: Icons.verified_user,
-                    title: "Cấu hình Vai trò & Quyền",
-                    subtitle: "Quản lý nhóm vai trò, Dynamic RBAC",
-                    onTap: () => _onSelectManagementTab(6),
-                  ),
+                ],
+                if (state.currentUsername == 'admin' || state.userRoles.any((r) => ['admin', 'manager', 'dispatcher'].contains(r.toLowerCase()))) ...[
+                  _buildConfigExpansionGroup(state),
                 ],
               ],
             ),
@@ -641,6 +694,30 @@ class _MainNavigationScreenState extends State<MainNavigationScreen> {
             _activeManagementTab = index;
           });
         },
+        onVehicleCountChanged: (filtered, total) {
+          if (_vehicleFilteredCount != filtered || _vehicleTotalCount != total) {
+            setState(() {
+              _vehicleFilteredCount = filtered;
+              _vehicleTotalCount = total;
+            });
+          }
+        },
+        onOrderCountChanged: (filtered, total) {
+          if (_orderFilteredCount != filtered || _orderTotalCount != total) {
+            setState(() {
+              _orderFilteredCount = filtered;
+              _orderTotalCount = total;
+            });
+          }
+        },
+        onUserCountChanged: (filtered, total) {
+          if (_userFilteredCount != filtered || _userTotalCount != total) {
+            setState(() {
+              _userFilteredCount = filtered;
+              _userTotalCount = total;
+            });
+          }
+        },
       );
     }
   }
@@ -679,6 +756,132 @@ class _MainNavigationScreenState extends State<MainNavigationScreen> {
         borderRadius: BorderRadius.circular(4),
         child: ListTile(
           dense: true,
+          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(4)),
+          leading: Icon(
+            isSelected ? activeIcon : icon,
+            color: isSelected ? Colors.amber : Colors.blueGrey.shade400,
+            size: 22,
+          ),
+          title: Text(
+            title,
+            style: TextStyle(
+              fontWeight: isSelected ? FontWeight.bold : FontWeight.w500,
+              color: isSelected ? Colors.white : Colors.white70,
+              fontSize: 13.5,
+            ),
+          ),
+          subtitle: Text(
+            subtitle,
+            style: TextStyle(
+              fontSize: 11,
+              color: isSelected ? Colors.amber.shade200 : Colors.white38,
+            ),
+          ),
+          selected: isSelected,
+          onTap: onTap,
+        ),
+      ),
+    );
+  }
+
+  Widget _buildConfigExpansionGroup(AppState state) {
+    final bool isChildSelected = _currentRoot == 2 && (_activeManagementTab == 7 || _activeManagementTab == 6 || _activeManagementTab == 8);
+    final bool isAdmin = state.currentUsername == 'admin' || state.userRoles.contains('admin');
+    final bool isManagerOrAdmin = isAdmin || state.userRoles.contains('manager');
+
+    return Container(
+      margin: const EdgeInsets.symmetric(horizontal: 8, vertical: 1.5),
+      decoration: BoxDecoration(
+        color: isChildSelected ? const Color(0xFF162032) : Colors.transparent,
+        borderRadius: BorderRadius.circular(4),
+        border: isChildSelected ? Border.all(color: Colors.amber.withOpacity(0.3), width: 1) : null,
+      ),
+      child: Theme(
+        data: Theme.of(context).copyWith(
+          dividerColor: Colors.transparent,
+          hoverColor: Colors.transparent,
+        ),
+        child: ExpansionTile(
+          initiallyExpanded: isChildSelected,
+          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(4)),
+          collapsedShape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(4)),
+          tilePadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 0),
+          childrenPadding: EdgeInsets.zero,
+          leading: Icon(
+            isChildSelected ? Icons.settings : Icons.settings_outlined,
+            color: isChildSelected ? Colors.amber : Colors.blueGrey.shade400,
+            size: 22,
+          ),
+          title: Text(
+            "Cấu hình",
+            style: TextStyle(
+              fontWeight: isChildSelected ? FontWeight.bold : FontWeight.w500,
+              color: isChildSelected ? Colors.white : Colors.white70,
+              fontSize: 13.5,
+            ),
+          ),
+          subtitle: Text(
+            "Nhắc nhở, Quyền, Proxy AI",
+            style: TextStyle(
+              fontSize: 11,
+              color: isChildSelected ? Colors.amber.shade200 : Colors.white38,
+            ),
+          ),
+          iconColor: Colors.amber,
+          collapsedIconColor: Colors.blueGrey.shade400,
+          children: [
+            _buildSubConfigItem(
+              isSelected: _currentRoot == 2 && _activeManagementTab == 7,
+              icon: Icons.notifications_active_outlined,
+              activeIcon: Icons.notifications_active,
+              title: "Cấu hình Nhắc nhở nền",
+              subtitle: "GPS, chờ xả bồn, kịch bản",
+              onTap: () => _onSelectManagementTab(7),
+            ),
+            if (isAdmin)
+              _buildSubConfigItem(
+                isSelected: _currentRoot == 2 && _activeManagementTab == 6,
+                icon: Icons.verified_user_outlined,
+                activeIcon: Icons.verified_user,
+                title: "Cấu hình Vai trò & Quyền",
+                subtitle: "Nhóm vai trò, Dynamic RBAC",
+                onTap: () => _onSelectManagementTab(6),
+              ),
+            if (isManagerOrAdmin)
+              _buildSubConfigItem(
+                isSelected: _currentRoot == 2 && _activeManagementTab == 8,
+                icon: Icons.psychology_outlined,
+                activeIcon: Icons.psychology,
+                title: "Cấu hình Proxy AI",
+                subtitle: "OpenAI Proxy, Vision, Voice",
+                onTap: () => _onSelectManagementTab(8),
+              ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildSubConfigItem({
+    required bool isSelected,
+    required IconData icon,
+    required IconData activeIcon,
+    required String title,
+    required String subtitle,
+    required VoidCallback onTap,
+  }) {
+    return Container(
+      margin: const EdgeInsets.symmetric(horizontal: 0, vertical: 1.5),
+      decoration: BoxDecoration(
+        color: isSelected ? const Color(0xFF1E293B) : Colors.transparent,
+        borderRadius: BorderRadius.circular(4),
+      ),
+      child: Material(
+        color: Colors.transparent,
+        borderRadius: BorderRadius.circular(4),
+        child: ListTile(
+          dense: true,
+          contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 0),
           shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(4)),
           leading: Icon(
             isSelected ? activeIcon : icon,

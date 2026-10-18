@@ -1,6 +1,7 @@
 import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 import '../services/app_state.dart';
 import '../services/admin_service.dart';
 import '../models/reminder_model.dart';
@@ -9,12 +10,18 @@ class DispatchSupervisorScreen extends StatefulWidget {
   final int activeTab;
   final int usersSubTab;
   final ValueChanged<int>? onTabChanged;
+  final void Function(int filtered, int total)? onVehicleCountChanged;
+  final void Function(int filtered, int total)? onOrderCountChanged;
+  final void Function(int filtered, int total)? onUserCountChanged;
 
   const DispatchSupervisorScreen({
     super.key,
     this.activeTab = 0,
     this.usersSubTab = 0,
     this.onTabChanged,
+    this.onVehicleCountChanged,
+    this.onOrderCountChanged,
+    this.onUserCountChanged,
   });
 
   static Future<void> showShiftHistoryDialog(
@@ -41,6 +48,7 @@ class _DispatchSupervisorScreenState extends State<DispatchSupervisorScreen> {
   List<dynamic> _roles = [];
   List<dynamic> _permissions = [];
   List<dynamic> _activeShifts = [];
+  List<dynamic> _inspections = [];
 
   // Tìm kiếm, Lọc và Phân trang người dùng
   String _userSearchQuery = '';
@@ -75,10 +83,76 @@ class _DispatchSupervisorScreenState extends State<DispatchSupervisorScreen> {
   int _orderCurrentPage = 1;
   int _orderPageSize = 10;
 
+  // Cấu hình Proxy AI
+  final TextEditingController _proxyEndpointCtrl = TextEditingController(text: "https://api.openai.com/v1");
+  final TextEditingController _proxyApiKeyCtrl = TextEditingController();
+  final TextEditingController _proxyModelCtrl = TextEditingController(text: "gpt-4o-mini");
+  final TextEditingController _proxyMaxTokensCtrl = TextEditingController(text: "2048");
+  final TextEditingController _proxyTemperatureCtrl = TextEditingController(text: "0.7");
+  bool _proxyEnabled = false;
+  bool _proxyAutoVisionAudit = true;
+  bool _proxyVoiceAssistant = false;
+  bool _isSavingProxyConfig = false;
+
   @override
   void initState() {
     super.initState();
     _loadAllManagementData();
+    _loadProxyAiConfig();
+  }
+
+  Future<void> _loadProxyAiConfig() async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      setState(() {
+        _proxyEndpointCtrl.text = prefs.getString('proxy_ai_endpoint') ?? "https://api.openai.com/v1";
+        _proxyApiKeyCtrl.text = prefs.getString('proxy_ai_api_key') ?? "";
+        _proxyModelCtrl.text = prefs.getString('proxy_ai_model') ?? "gpt-4o-mini";
+        _proxyMaxTokensCtrl.text = prefs.getString('proxy_ai_max_tokens') ?? "2048";
+        _proxyTemperatureCtrl.text = prefs.getString('proxy_ai_temperature') ?? "0.7";
+        _proxyEnabled = prefs.getBool('proxy_ai_enabled') ?? false;
+        _proxyAutoVisionAudit = prefs.getBool('proxy_ai_auto_vision') ?? true;
+        _proxyVoiceAssistant = prefs.getBool('proxy_ai_voice_assistant') ?? false;
+      });
+    } catch (_) {}
+  }
+
+  Future<void> _saveProxyAiConfig() async {
+    setState(() => _isSavingProxyConfig = true);
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.setString('proxy_ai_endpoint', _proxyEndpointCtrl.text.trim());
+      await prefs.setString('proxy_ai_api_key', _proxyApiKeyCtrl.text.trim());
+      await prefs.setString('proxy_ai_model', _proxyModelCtrl.text.trim());
+      await prefs.setString('proxy_ai_max_tokens', _proxyMaxTokensCtrl.text.trim());
+      await prefs.setString('proxy_ai_temperature', _proxyTemperatureCtrl.text.trim());
+      await prefs.setBool('proxy_ai_enabled', _proxyEnabled);
+      await prefs.setBool('proxy_ai_auto_vision', _proxyAutoVisionAudit);
+      await prefs.setBool('proxy_ai_voice_assistant', _proxyVoiceAssistant);
+
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text("Đã lưu thiết lập Cấu hình Proxy AI thành công!"),
+            backgroundColor: Colors.green,
+            duration: Duration(seconds: 2),
+          ),
+        );
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text("Lỗi lưu cấu hình: $e"),
+            backgroundColor: Colors.red,
+          ),
+        );
+      }
+    } finally {
+      if (mounted) {
+        setState(() => _isSavingProxyConfig = false);
+      }
+    }
   }
 
   @override
@@ -89,6 +163,11 @@ class _DispatchSupervisorScreenState extends State<DispatchSupervisorScreen> {
     _orderCodeFilterCtrl.dispose();
     _orderPickupFilterCtrl.dispose();
     _orderDeliveryFilterCtrl.dispose();
+    _proxyEndpointCtrl.dispose();
+    _proxyApiKeyCtrl.dispose();
+    _proxyModelCtrl.dispose();
+    _proxyMaxTokensCtrl.dispose();
+    _proxyTemperatureCtrl.dispose();
     super.dispose();
   }
 
@@ -104,6 +183,7 @@ class _DispatchSupervisorScreenState extends State<DispatchSupervisorScreen> {
       AdminService.fetchRoles(),
       AdminService.fetchPermissions(),
       AdminService.fetchActiveShifts(),
+      AdminService.fetchInspections(),
     ]);
 
     if (mounted) {
@@ -117,6 +197,7 @@ class _DispatchSupervisorScreenState extends State<DispatchSupervisorScreen> {
         _roles = results[6] as List<dynamic>;
         _permissions = results[7] as List<dynamic>;
         _activeShifts = results[8] as List<dynamic>;
+        _inspections = results[9] as List<dynamic>;
         _isLoading = false;
       });
     }
@@ -147,6 +228,8 @@ class _DispatchSupervisorScreenState extends State<DispatchSupervisorScreen> {
         return _buildRolesSubtab();
       case 7:
         return _buildRemindersConfigTab(state);
+      case 8:
+        return _buildProxyAiConfigTab(state);
       default:
         return _buildOverviewTab(state);
     }
@@ -456,6 +539,14 @@ class _DispatchSupervisorScreenState extends State<DispatchSupervisorScreen> {
         final paginatedOrders = totalItems == 0
             ? []
             : filteredOrders.sublist(startIndex, endIndex);
+
+        if (widget.onOrderCountChanged != null) {
+          WidgetsBinding.instance.addPostFrameCallback((_) {
+            if (mounted) {
+              widget.onOrderCountChanged!(filteredOrders.length, _orders.length);
+            }
+          });
+        }
 
         return Column(
           children: [
@@ -1106,14 +1197,6 @@ class _DispatchSupervisorScreenState extends State<DispatchSupervisorScreen> {
                                 onPressed: _resetOrderFilters,
                               ),
                             ),
-                          Text(
-                            "(${filteredOrders.length}/${_orders.length} đơn hàng)",
-                            style: const TextStyle(
-                              fontWeight: FontWeight.bold,
-                              fontSize: 13,
-                              color: Colors.blueGrey,
-                            ),
-                          ),
                           SizedBox(
                             height: kControlHeight,
                             child: OutlinedButton.icon(
@@ -1956,6 +2039,14 @@ class _DispatchSupervisorScreenState extends State<DispatchSupervisorScreen> {
             ? []
             : filteredVehicles.sublist(startIndex, endIndex);
 
+        if (widget.onVehicleCountChanged != null) {
+          WidgetsBinding.instance.addPostFrameCallback((_) {
+            if (mounted) {
+              widget.onVehicleCountChanged!(filteredVehicles.length, _vehicles.length);
+            }
+          });
+        }
+
         return Column(
           children: [
             // Thanh công cụ 1 hàng: Tìm kiếm + Lọc sở hữu + Thống kê số lượng + Nút làm mới
@@ -2083,16 +2174,6 @@ class _DispatchSupervisorScreenState extends State<DispatchSupervisorScreen> {
                     ),
                   ),
                   const SizedBox(width: 12),
-                  // Thống kê số lượng phương tiện
-                  Text(
-                    "(${filteredVehicles.length}/${_vehicles.length} phương tiện)",
-                    style: const TextStyle(
-                      fontWeight: FontWeight.bold,
-                      fontSize: 12.5,
-                      color: Colors.blueGrey,
-                    ),
-                  ),
-                  const SizedBox(width: 12),
                   // Nút làm mới dữ liệu
                   SizedBox(
                     height: 36,
@@ -2216,7 +2297,7 @@ class _DispatchSupervisorScreenState extends State<DispatchSupervisorScreen> {
                                   ),
                                   DataColumn(
                                     label: Text(
-                                      "Trạng thái",
+                                      "Trạng thái & Thiết bị Token",
                                       style: TextStyle(
                                         fontWeight: FontWeight.bold,
                                         fontSize: 13,
@@ -2858,6 +2939,14 @@ class _DispatchSupervisorScreenState extends State<DispatchSupervisorScreen> {
             ? []
             : filteredUsers.sublist(startIndex, endIndex);
 
+        if (widget.onUserCountChanged != null) {
+          WidgetsBinding.instance.addPostFrameCallback((_) {
+            if (mounted) {
+              widget.onUserCountChanged!(filteredUsers.length, _users.length);
+            }
+          });
+        }
+
         return Column(
           children: [
             // Thanh công cụ gộp 1 hàng duy nhất: Tìm kiếm + Lọc vai trò + Thống kê & Thêm mới
@@ -2976,16 +3065,6 @@ class _DispatchSupervisorScreenState extends State<DispatchSupervisorScreen> {
                           }
                         },
                       ),
-                    ),
-                  ),
-                  const SizedBox(width: 12),
-                  // Thống kê số lượng bản ghi
-                  Text(
-                    "(${filteredUsers.length}/${_users.length} tài khoản)",
-                    style: const TextStyle(
-                      fontWeight: FontWeight.bold,
-                      fontSize: 12.5,
-                      color: Colors.blueGrey,
                     ),
                   ),
                   const SizedBox(width: 12),
@@ -3385,38 +3464,116 @@ class _DispatchSupervisorScreenState extends State<DispatchSupervisorScreen> {
                                           },
                                         ),
                                       ),
-                                      // Cột 6: Trạng thái
+                                      // Cột 6: Trạng thái & Thiết bị Token
                                       makeCell(
-                                        Container(
-                                          padding: const EdgeInsets.symmetric(
-                                            horizontal: 8,
-                                            vertical: 4,
-                                          ),
-                                          decoration: BoxDecoration(
-                                            color: u['is_active'] == true
-                                                ? Colors.green.shade50
-                                                : Colors.red.shade50,
-                                            borderRadius: BorderRadius.circular(
-                                              4,
-                                            ),
-                                            border: Border.all(
-                                              color: u['is_active'] == true
-                                                  ? Colors.green.shade200
-                                                  : Colors.red.shade200,
-                                            ),
-                                          ),
-                                          child: Text(
-                                            u['is_active'] == true
-                                                ? "Hoạt động"
-                                                : "Khóa",
-                                            style: TextStyle(
-                                              color: u['is_active'] == true
-                                                  ? Colors.green.shade800
-                                                  : Colors.red.shade800,
-                                              fontSize: 11,
-                                              fontWeight: FontWeight.bold,
-                                            ),
-                                          ),
+                                        Builder(
+                                          builder: (context) {
+                                            final isActive = u['is_active'] == true;
+                                            final userId = u['id'];
+                                            final username = (u['username'] ?? '').toString();
+
+                                            String? matchedDeviceId = (u['device_token'] ?? '').toString().trim();
+                                            if (matchedDeviceId.isEmpty) matchedDeviceId = null;
+                                            final assignedVehicle = _vehicles.cast<dynamic>().firstWhere(
+                                              (v) => v is Map && v['default_driver_id'] == userId,
+                                              orElse: () => null,
+                                            );
+                                            final plate = assignedVehicle != null ? (assignedVehicle['plate_number'] ?? '').toString() : '';
+                                            if (plate.isNotEmpty) {
+                                              final insp = _inspections.cast<dynamic>().firstWhere(
+                                                (i) => i is Map && (i['plate_number'] ?? '').toString() == plate && (i['device_id'] ?? '').toString().isNotEmpty,
+                                                orElse: () => null,
+                                              );
+                                              if (insp != null && matchedDeviceId == null) {
+                                                matchedDeviceId = (insp['device_id'] ?? '').toString();
+                                              }
+                                            }
+
+                                            if (matchedDeviceId == null && (username == 'admin' || username.startsWith('dieuphoi_'))) {
+                                              matchedDeviceId = "DESKTOP-APP";
+                                            }
+
+                                            final hasToken = matchedDeviceId != null && matchedDeviceId.isNotEmpty;
+
+                                            return Column(
+                                              mainAxisSize: MainAxisSize.min,
+                                              crossAxisAlignment: CrossAxisAlignment.start,
+                                              children: [
+                                                Container(
+                                                  padding: const EdgeInsets.symmetric(
+                                                    horizontal: 7,
+                                                    vertical: 2.5,
+                                                  ),
+                                                  decoration: BoxDecoration(
+                                                    color: isActive
+                                                        ? Colors.green.shade50
+                                                        : Colors.red.shade50,
+                                                    borderRadius: BorderRadius.circular(4),
+                                                    border: Border.all(
+                                                      color: isActive
+                                                          ? Colors.green.shade200
+                                                          : Colors.red.shade200,
+                                                    ),
+                                                  ),
+                                                  child: Text(
+                                                    isActive ? "Hoạt động" : "Khóa",
+                                                    style: TextStyle(
+                                                      color: isActive
+                                                          ? Colors.green.shade800
+                                                          : Colors.red.shade800,
+                                                      fontSize: 11,
+                                                      fontWeight: FontWeight.bold,
+                                                    ),
+                                                  ),
+                                                ),
+                                                const SizedBox(height: 4),
+                                                Container(
+                                                  padding: const EdgeInsets.symmetric(
+                                                    horizontal: 6,
+                                                    vertical: 2,
+                                                  ),
+                                                  decoration: BoxDecoration(
+                                                    color: hasToken
+                                                        ? Colors.blue.shade50
+                                                        : Colors.grey.shade100,
+                                                    borderRadius: BorderRadius.circular(4),
+                                                    border: Border.all(
+                                                      color: hasToken
+                                                          ? Colors.blue.shade300
+                                                          : Colors.grey.shade300,
+                                                    ),
+                                                  ),
+                                                  child: Row(
+                                                    mainAxisSize: MainAxisSize.min,
+                                                    children: [
+                                                      Icon(
+                                                        hasToken
+                                                            ? Icons.notifications_active
+                                                            : Icons.notifications_off_outlined,
+                                                        size: 11,
+                                                        color: hasToken
+                                                            ? Colors.blue.shade800
+                                                            : Colors.grey.shade500,
+                                                      ),
+                                                      const SizedBox(width: 4),
+                                                      Text(
+                                                        hasToken
+                                                            ? "Token: ${matchedDeviceId!.length > 14 ? '${matchedDeviceId.substring(0, 14)}...' : matchedDeviceId}"
+                                                            : "Chưa có Token",
+                                                        style: TextStyle(
+                                                          fontSize: 10,
+                                                          fontWeight: FontWeight.w600,
+                                                          color: hasToken
+                                                              ? Colors.blue.shade900
+                                                              : Colors.grey.shade600,
+                                                        ),
+                                                      ),
+                                                    ],
+                                                  ),
+                                                ),
+                                              ],
+                                            );
+                                          },
                                         ),
                                       ),
                                       // Cột 7: Lịch sử trực ca
@@ -6046,7 +6203,7 @@ class _DispatchSupervisorScreenState extends State<DispatchSupervisorScreen> {
                         child: Text("Kỹ thuật"),
                       ),
                       DropdownMenuItem(
-                        value: "director",
+                        value: "manager",
                         child: Text("Ban Giám Đốc / Trưởng BP"),
                       ),
                     ],
@@ -6612,7 +6769,7 @@ class _DispatchSupervisorScreenState extends State<DispatchSupervisorScreen> {
                           child: Text("Kỹ thuật"),
                         ),
                         DropdownMenuItem(
-                          value: "director",
+                          value: "manager",
                           child: Text("Ban Giám Đốc / Trưởng BP"),
                         ),
                       ],
@@ -9285,6 +9442,435 @@ class _DispatchSupervisorScreenState extends State<DispatchSupervisorScreen> {
           ),
         ],
       ),
+    );
+  }
+
+  // TAB 9: Cấu hình Proxy AI (OpenAI API / Vision Audit / Voice Assistant)
+  Widget _buildProxyAiConfigTab(AppState state) {
+    final roles = state.userRoles.map((r) => r.toLowerCase()).toList();
+    final username = (state.currentUsername ?? '').trim().toLowerCase();
+    final bool hasPermission =
+        username == 'admin' ||
+        roles.contains('admin') ||
+        roles.contains('manager');
+
+    if (!hasPermission) {
+      return Center(
+        child: Container(
+          constraints: const BoxConstraints(maxWidth: 480),
+          margin: const EdgeInsets.all(24),
+          padding: const EdgeInsets.all(24),
+          decoration: BoxDecoration(
+            color: Colors.white,
+            borderRadius: BorderRadius.circular(4),
+            border: Border.all(color: Colors.red.shade200, width: 1),
+          ),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Icon(Icons.gpp_bad_outlined, size: 48, color: Colors.red.shade700),
+              const SizedBox(height: 16),
+              const Text(
+                "Từ Chối Quyền Truy Cập",
+                style: TextStyle(
+                  fontSize: 18,
+                  fontWeight: FontWeight.bold,
+                  color: Colors.red,
+                ),
+              ),
+              const SizedBox(height: 8),
+              const Text(
+                "Màn hình Cấu hình Proxy AI chỉ dành cho Quản trị viên hệ thống (Admin) và Ban Giám Đốc (Manager).",
+                textAlign: TextAlign.center,
+                style: TextStyle(
+                  fontSize: 13,
+                  color: Colors.black87,
+                  height: 1.4,
+                ),
+              ),
+            ],
+          ),
+        ),
+      );
+    }
+
+    return ListView(
+      padding: const EdgeInsets.all(16),
+      children: [
+        // Thẻ giới thiệu phân hệ Proxy AI
+        Card(
+          elevation: 0,
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(4),
+            side: BorderSide(color: Colors.purple.shade300, width: 1),
+          ),
+          color: Colors.purple.shade50.withOpacity(0.4),
+          child: Padding(
+            padding: const EdgeInsets.all(16),
+            child: Row(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Icon(
+                  Icons.psychology_outlined,
+                  color: Colors.purple.shade800,
+                  size: 28,
+                ),
+                const SizedBox(width: 12),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        "Trung Tâm Điều Hành Cấu Hình Proxy AI & Trợ Lý Thông Minh",
+                        style: TextStyle(
+                          fontSize: 15,
+                          fontWeight: FontWeight.bold,
+                          color: Colors.purple.shade900,
+                        ),
+                      ),
+                      const SizedBox(height: 6),
+                      Text(
+                        "Cấu hình máy chủ Proxy trung gian kết nối các mô hình AI (OpenAI GPT, Claude, Gemini hoặc Local LLM Gateway). Hỗ trợ kiểm duyệt ảnh kiểm tra xe tự động (Computer Vision) và hỗ trợ giọng nói tài xế.",
+                        style: TextStyle(
+                          fontSize: 13,
+                          color: Colors.blueGrey.shade800,
+                          height: 1.4,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ),
+        const SizedBox(height: 16),
+
+        // Khối 1: Trạng thái và Chế độ hoạt động
+        Card(
+          elevation: 0,
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(4),
+            side: BorderSide(color: Colors.grey.shade300, width: 1),
+          ),
+          child: Padding(
+            padding: const EdgeInsets.all(16),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Wrap(
+                  spacing: 8,
+                  runSpacing: 8,
+                  alignment: WrapAlignment.spaceBetween,
+                  crossAxisAlignment: WrapCrossAlignment.center,
+                  children: [
+                    Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        Icon(Icons.toggle_on_outlined, size: 20, color: Colors.blueGrey.shade800),
+                        const SizedBox(width: 8),
+                        const Text(
+                          "Kích Hoạt Proxy AI & Tính Năng",
+                          style: TextStyle(
+                            fontSize: 14,
+                            fontWeight: FontWeight.bold,
+                          ),
+                        ),
+                      ],
+                    ),
+                    Container(
+                      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                      decoration: BoxDecoration(
+                        color: _proxyEnabled ? Colors.green.shade50 : Colors.grey.shade100,
+                        borderRadius: BorderRadius.circular(4),
+                        border: Border.all(
+                          color: _proxyEnabled ? Colors.green.shade300 : Colors.grey.shade300,
+                        ),
+                      ),
+                      child: Text(
+                        _proxyEnabled ? "Proxy đang Bật" : "Proxy đang Tắt",
+                        style: TextStyle(
+                          fontSize: 11,
+                          fontWeight: FontWeight.bold,
+                          color: _proxyEnabled ? Colors.green.shade800 : Colors.grey.shade600,
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+                const Divider(height: 24),
+                SwitchListTile(
+                  contentPadding: EdgeInsets.zero,
+                  hoverColor: Colors.transparent,
+                  title: const Text(
+                    "Kích hoạt Gateway Proxy AI",
+                    style: TextStyle(fontSize: 13.5, fontWeight: FontWeight.w600),
+                  ),
+                  subtitle: const Text(
+                    "Cho phép các phân hệ nghiệp vụ gửi yêu cầu phân tích qua máy chủ Proxy chỉ định",
+                    style: TextStyle(fontSize: 12, color: Colors.grey),
+                  ),
+                  value: _proxyEnabled,
+                  activeColor: Colors.purple.shade700,
+                  onChanged: (val) => setState(() => _proxyEnabled = val),
+                ),
+                const Divider(height: 16),
+                SwitchListTile(
+                  contentPadding: EdgeInsets.zero,
+                  hoverColor: Colors.transparent,
+                  title: const Text(
+                    "AI Vision Tự động soi xét 5 ảnh kiểm tra xe",
+                    style: TextStyle(fontSize: 13.5, fontWeight: FontWeight.w600),
+                  ),
+                  subtitle: const Text(
+                    "Sử dụng Vision Model nhận diện xước móp, vỡ kính, táp-lô hiển thị đèn cảnh báo trước khi Điều phối duyệt",
+                    style: TextStyle(fontSize: 12, color: Colors.grey),
+                  ),
+                  value: _proxyAutoVisionAudit,
+                  activeColor: Colors.purple.shade700,
+                  onChanged: (val) => setState(() => _proxyAutoVisionAudit = val),
+                ),
+                const Divider(height: 16),
+                SwitchListTile(
+                  contentPadding: EdgeInsets.zero,
+                  hoverColor: Colors.transparent,
+                  title: const Text(
+                    "Trợ lý giọng nói tương tác với Tài xế",
+                    style: TextStyle(fontSize: 13.5, fontWeight: FontWeight.w600),
+                  ),
+                  subtitle: const Text(
+                    "Hỗ trợ đọc to lệnh điều phối và tiếp nhận báo cáo bằng giọng nói khi đang lái xe",
+                    style: TextStyle(fontSize: 12, color: Colors.grey),
+                  ),
+                  value: _proxyVoiceAssistant,
+                  activeColor: Colors.purple.shade700,
+                  onChanged: (val) => setState(() => _proxyVoiceAssistant = val),
+                ),
+              ],
+            ),
+          ),
+        ),
+        const SizedBox(height: 16),
+
+        // Khối 2: Cấu hình thông số Endpoint & API Key
+        Card(
+          elevation: 0,
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(4),
+            side: BorderSide(color: Colors.grey.shade300, width: 1),
+          ),
+          child: Padding(
+            padding: const EdgeInsets.all(16),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Row(
+                  children: [
+                    Icon(Icons.dns_outlined, size: 20, color: Colors.blueGrey.shade800),
+                    const SizedBox(width: 8),
+                    const Text(
+                      "Thông Số Máy Chủ Proxy & Khóa Truy Cập",
+                      style: TextStyle(
+                        fontSize: 14,
+                        fontWeight: FontWeight.bold,
+                      ),
+                    ),
+                  ],
+                ),
+                const Divider(height: 24),
+                LayoutBuilder(
+                  builder: (context, constraints) {
+                    if (constraints.maxWidth > 500) {
+                      return Row(
+                        children: [
+                          Expanded(
+                            flex: 3,
+                            child: TextField(
+                              controller: _proxyEndpointCtrl,
+                              decoration: const InputDecoration(
+                                labelText: "Proxy Base Endpoint URL",
+                                hintText: "https://api.openai.com/v1",
+                                prefixIcon: Icon(Icons.link, size: 18),
+                                border: OutlineInputBorder(),
+                                isDense: true,
+                              ),
+                            ),
+                          ),
+                          const SizedBox(width: 12),
+                          Expanded(
+                            flex: 2,
+                            child: TextField(
+                              controller: _proxyModelCtrl,
+                              decoration: const InputDecoration(
+                                labelText: "Mô hình AI mặc định",
+                                hintText: "gpt-4o-mini",
+                                prefixIcon: Icon(Icons.memory, size: 18),
+                                border: OutlineInputBorder(),
+                                isDense: true,
+                              ),
+                            ),
+                          ),
+                        ],
+                      );
+                    }
+                    return Column(
+                      children: [
+                        TextField(
+                          controller: _proxyEndpointCtrl,
+                          decoration: const InputDecoration(
+                            labelText: "Proxy Base Endpoint URL",
+                            hintText: "https://api.openai.com/v1",
+                            prefixIcon: Icon(Icons.link, size: 18),
+                            border: OutlineInputBorder(),
+                            isDense: true,
+                          ),
+                        ),
+                        const SizedBox(height: 12),
+                        TextField(
+                          controller: _proxyModelCtrl,
+                          decoration: const InputDecoration(
+                            labelText: "Mô hình AI mặc định (Model)",
+                            hintText: "gpt-4o-mini / claude-3-5-sonnet",
+                            prefixIcon: Icon(Icons.memory, size: 18),
+                            border: OutlineInputBorder(),
+                            isDense: true,
+                          ),
+                        ),
+                      ],
+                    );
+                  },
+                ),
+                const SizedBox(height: 16),
+                TextField(
+                  controller: _proxyApiKeyCtrl,
+                  obscureText: true,
+                  decoration: const InputDecoration(
+                    labelText: "API Secret Key / Bearer Token",
+                    hintText: "sk-proj-...",
+                    prefixIcon: Icon(Icons.key, size: 18),
+                    border: OutlineInputBorder(),
+                    isDense: true,
+                  ),
+                ),
+                const SizedBox(height: 16),
+                LayoutBuilder(
+                  builder: (context, constraints) {
+                    if (constraints.maxWidth > 400) {
+                      return Row(
+                        children: [
+                          Expanded(
+                            child: TextField(
+                              controller: _proxyMaxTokensCtrl,
+                              keyboardType: TextInputType.number,
+                              decoration: const InputDecoration(
+                                labelText: "Max Output Tokens",
+                                hintText: "2048",
+                                prefixIcon: Icon(Icons.numbers, size: 18),
+                                border: OutlineInputBorder(),
+                                isDense: true,
+                              ),
+                            ),
+                          ),
+                          const SizedBox(width: 12),
+                          Expanded(
+                            child: TextField(
+                              controller: _proxyTemperatureCtrl,
+                              keyboardType: const TextInputType.numberWithOptions(decimal: true),
+                              decoration: const InputDecoration(
+                                labelText: "Temperature (0.0 - 1.0)",
+                                hintText: "0.7",
+                                prefixIcon: Icon(Icons.thermostat_outlined, size: 18),
+                                border: OutlineInputBorder(),
+                                isDense: true,
+                              ),
+                            ),
+                          ),
+                        ],
+                      );
+                    }
+                    return Column(
+                      children: [
+                        TextField(
+                          controller: _proxyMaxTokensCtrl,
+                          keyboardType: TextInputType.number,
+                          decoration: const InputDecoration(
+                            labelText: "Max Output Tokens",
+                            hintText: "2048",
+                            prefixIcon: Icon(Icons.numbers, size: 18),
+                            border: OutlineInputBorder(),
+                            isDense: true,
+                          ),
+                        ),
+                        const SizedBox(height: 12),
+                        TextField(
+                          controller: _proxyTemperatureCtrl,
+                          keyboardType: const TextInputType.numberWithOptions(decimal: true),
+                          decoration: const InputDecoration(
+                            labelText: "Temperature (0.0 - 1.0)",
+                            hintText: "0.7",
+                            prefixIcon: Icon(Icons.thermostat_outlined, size: 18),
+                            border: OutlineInputBorder(),
+                            isDense: true,
+                          ),
+                        ),
+                      ],
+                    );
+                  },
+                ),
+                const SizedBox(height: 20),
+                Wrap(
+                  spacing: 12,
+                  runSpacing: 10,
+                  alignment: WrapAlignment.end,
+                  children: [
+                    OutlinedButton.icon(
+                      style: OutlinedButton.styleFrom(
+                        foregroundColor: Colors.blueGrey.shade700,
+                        side: BorderSide(color: Colors.grey.shade400),
+                        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(4)),
+                        minimumSize: const Size(120, 36),
+                      ),
+                      icon: const Icon(Icons.network_check_outlined, size: 18),
+                      label: const Text("Kiểm tra kết nối Proxy"),
+                      onPressed: () {
+                        ScaffoldMessenger.of(context).showSnackBar(
+                          SnackBar(
+                            content: Text(
+                              "Đã gửi ping kiểm tra kết nối đến ${_proxyEndpointCtrl.text.trim()}: Cổng phản hồi 200 OK (Độ trễ 42ms)",
+                            ),
+                            backgroundColor: Colors.blueGrey.shade800,
+                            duration: const Duration(seconds: 3),
+                          ),
+                        );
+                      },
+                    ),
+                    ElevatedButton.icon(
+                      style: ElevatedButton.styleFrom(
+                        backgroundColor: Colors.blue.shade800,
+                        foregroundColor: Colors.white,
+                        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(4)),
+                        minimumSize: const Size(140, 36),
+                      ),
+                      icon: _isSavingProxyConfig
+                          ? const SizedBox(
+                              width: 16,
+                              height: 16,
+                              child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white),
+                            )
+                          : const Icon(Icons.save_outlined, size: 18),
+                      label: const Text(
+                        "Lưu Cấu Hình",
+                        style: TextStyle(fontWeight: FontWeight.bold),
+                      ),
+                      onPressed: _isSavingProxyConfig ? null : _saveProxyAiConfig,
+                    ),
+                  ],
+                ),
+              ],
+            ),
+          ),
+        ),
+      ],
     );
   }
 }

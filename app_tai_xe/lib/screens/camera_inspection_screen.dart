@@ -322,6 +322,67 @@ class _CameraInspectionScreenState extends State<CameraInspectionScreen> with Wi
                   style: ElevatedButton.styleFrom(backgroundColor: Colors.blueAccent),
                   onPressed: () async {
                     final confirmed = double.tryParse(_kmController.text) ?? _mockOcrKm;
+                    final rootNavigator = Navigator.of(context);
+                    final messenger = ScaffoldMessenger.of(context);
+
+                    Navigator.of(ctx).pop(); // Đóng dialog nhập km
+
+                    // Hiển thị dialog tiến trình tải ảnh lên máy chủ
+                    showDialog(
+                      context: context,
+                      barrierDismissible: false,
+                      builder: (loadCtx) => PopScope(
+                        canPop: false,
+                        child: AlertDialog(
+                          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(4)),
+                          content: const Padding(
+                            padding: EdgeInsets.symmetric(vertical: 8.0),
+                            child: Row(
+                              children: [
+                                SizedBox(
+                                  width: 28,
+                                  height: 28,
+                                  child: CircularProgressIndicator(strokeWidth: 2.8),
+                                ),
+                                SizedBox(width: 18),
+                                Expanded(
+                                  child: Text(
+                                    "Đang tải 5 ảnh lên máy chủ...",
+                                    style: TextStyle(fontSize: 14, fontWeight: FontWeight.w500),
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ),
+                        ),
+                      ),
+                    );
+
+                    // Tải lần lượt hoặc song song 5 ảnh lên máy chủ
+                    final List<String> serverUrls = [];
+                    for (int i = 0; i < _capturedPhotos.length; i++) {
+                      final localPath = _capturedPhotos[i].imagePath;
+                      if (localPath.isNotEmpty) {
+                        try {
+                          final upRes = await AdminService.uploadImage(localPath);
+                          if (upRes['success'] == true && upRes['url'] != null) {
+                            serverUrls.add(upRes['url'].toString());
+                          } else {
+                            serverUrls.add(localPath);
+                          }
+                        } catch (_) {
+                          serverUrls.add(localPath);
+                        }
+                      } else {
+                        serverUrls.add('');
+                      }
+                    }
+
+                    // Đóng dialog loading
+                    if (rootNavigator.canPop()) {
+                      rootNavigator.pop();
+                    }
+
                     state.completeDailyInspection(
                       photos: _capturedPhotos,
                       ocrKm: _mockOcrKm,
@@ -329,15 +390,15 @@ class _CameraInspectionScreenState extends State<CameraInspectionScreen> with Wi
                       isKmFlagged: (confirmed - _previousDayGpsKm).abs() > 20.0,
                     );
 
-                    // Ghi lịch sử kiểm tra xe 5 ảnh lên Backend API
+                    // Ghi lịch sử kiểm tra xe 5 ảnh lên Backend API với URL máy chủ
                     final String todayStr = DateTime.now().toIso8601String().substring(0, 10);
-                    final String img1 = _capturedPhotos.isNotEmpty ? _capturedPhotos[0].imagePath : '';
-                    final String img2 = _capturedPhotos.length > 1 ? _capturedPhotos[1].imagePath : '';
-                    final String img3 = _capturedPhotos.length > 2 ? _capturedPhotos[2].imagePath : '';
-                    final String img4 = _capturedPhotos.length > 3 ? _capturedPhotos[3].imagePath : '';
-                    final String img5 = _capturedPhotos.length > 4 ? _capturedPhotos[4].imagePath : '';
+                    final String img1 = serverUrls.isNotEmpty ? serverUrls[0] : '';
+                    final String img2 = serverUrls.length > 1 ? serverUrls[1] : '';
+                    final String img3 = serverUrls.length > 2 ? serverUrls[2] : '';
+                    final String img4 = serverUrls.length > 3 ? serverUrls[3] : '';
+                    final String img5 = serverUrls.length > 4 ? serverUrls[4] : '';
 
-                    AdminService.submitInspection(
+                    await AdminService.submitInspection(
                       checkDate: todayStr,
                       plateNumber: state.selectedPlate,
                       imgFront: img1,
@@ -353,14 +414,15 @@ class _CameraInspectionScreenState extends State<CameraInspectionScreen> with Wi
                       kmConfirmed: confirmed,
                     );
 
-                    Navigator.of(ctx).pop(); // Đóng dialog
-                    Navigator.of(context).pop(); // Đóng camera screen
-                    ScaffoldMessenger.of(context).showSnackBar(
-                      const SnackBar(
-                        backgroundColor: Colors.green,
-                        content: Text("Hoàn thành kiểm tra đầu ngày! Xe đủ điều kiện nhận chuyến."),
-                      ),
-                    );
+                    if (mounted) {
+                      rootNavigator.pop(); // Đóng camera screen
+                      messenger.showSnackBar(
+                        const SnackBar(
+                          backgroundColor: Colors.blue,
+                          content: Text("Đã gửi đủ 5 ảnh! Đang chờ Điều phối viên kiểm tra và duyệt chuyến."),
+                        ),
+                      );
+                    }
                   },
                   child: const Text("Hoàn tất kiểm tra", style: TextStyle(color: Colors.white)),
                 ),
