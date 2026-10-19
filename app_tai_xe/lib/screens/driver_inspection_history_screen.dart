@@ -102,6 +102,7 @@ class _DriverInspectionHistoryScreenState extends State<DriverInspectionHistoryS
       context: context,
       builder: (ctx) => Dialog(
         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(4)),
+        constraints: const BoxConstraints(maxWidth: 850),
         child: Container(
           width: 850,
           padding: const EdgeInsets.all(16),

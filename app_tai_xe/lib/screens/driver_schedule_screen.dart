@@ -187,9 +187,6 @@ class _DriverScheduleScreenState extends State<DriverScheduleScreen> {
     final bool isOnline = gps != null && gps.latitude > 0 && gps.longitude > 0;
     final double speed = isOnline ? gps.speed : 0.0;
     final bool isAccOn = isOnline ? gps.isAccOn : false;
-    final String address = isOnline && gps.address.isNotEmpty
-        ? gps.address
-        : "Đang đồng bộ vị trí trạm / bãi xe...";
     final int odoKm = isOnline ? gps.odoKm : 0;
 
     final List<String> selectablePlates = _myAssignedVehicles.isNotEmpty
@@ -214,88 +211,17 @@ class _DriverScheduleScreenState extends State<DriverScheduleScreen> {
           children: [
             Row(
               children: [
-                Container(
-                  width: 44,
-                  height: 44,
-                  decoration: BoxDecoration(
-                    color: Colors.blue.shade800,
-                    borderRadius: BorderRadius.circular(4),
-                  ),
-                  child: const Icon(Icons.local_shipping, color: Colors.white, size: 24),
-                ),
-                const SizedBox(width: 12),
-                Expanded(
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Row(
-                        children: [
-                          Expanded(
-                            child: Text(
-                              state.currentFullName ?? state.currentDriverName,
-                              style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 15, color: Colors.black87),
-                              overflow: TextOverflow.ellipsis,
-                            ),
-                          ),
-                          Container(
-                            padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
-                            decoration: BoxDecoration(
-                              color: isOnline
-                                  ? (speed > 0 ? Colors.green.shade50 : Colors.amber.shade50)
-                                  : Colors.grey.shade100,
-                              borderRadius: BorderRadius.circular(4),
-                              border: Border.all(
-                                color: isOnline
-                                    ? (speed > 0 ? Colors.green.shade300 : Colors.amber.shade300)
-                                    : Colors.grey.shade300,
-                              ),
-                            ),
-                            child: Text(
-                              isOnline
-                                  ? (speed > 0
-                                      ? "Đang chạy (${speed.toStringAsFixed(0)} km/h)"
-                                      : (isAccOn ? "Nổ máy dừng" : "Đang đỗ"))
-                                  : "Chờ tín hiệu GPS",
-                              style: TextStyle(
-                                fontSize: 11,
-                                fontWeight: FontWeight.bold,
-                                color: isOnline
-                                    ? (speed > 0 ? Colors.green.shade800 : Colors.amber.shade900)
-                                    : Colors.grey.shade700,
-                              ),
-                            ),
-                          ),
-                        ],
-                      ),
-                      const SizedBox(height: 3),
-                      Text(
-                        "Tài khoản: @${state.currentUsername ?? 'driver'} • Mã TX: ${state.currentDriverId}",
-                        style: TextStyle(color: Colors.grey.shade600, fontSize: 12),
-                      ),
-                    ],
-                  ),
-                ),
-              ],
-            ),
-            const Divider(height: 22),
-            Row(
-              children: [
-                Icon(Icons.directions_car_outlined, size: 18, color: Colors.blue.shade800),
-                const SizedBox(width: 6),
-                const Text(
-                  "Xe quản lý:",
-                  style: TextStyle(fontWeight: FontWeight.bold, fontSize: 13, color: Colors.black87),
-                ),
-                const SizedBox(width: 10),
                 Expanded(
                   child: DropdownButtonFormField<String>(
-                    value: state.selectedPlate,
+                    value: selectablePlates.contains(state.selectedPlate)
+                        ? state.selectedPlate
+                        : (selectablePlates.isNotEmpty ? selectablePlates.first : null),
                     isDense: true,
                     isExpanded: true,
-                    style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 13, color: Colors.black87),
+                    style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 15, color: Colors.black87),
                     decoration: InputDecoration(
                       isDense: true,
-                      contentPadding: const EdgeInsets.symmetric(horizontal: 10, vertical: 9),
+                      contentPadding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
                       border: OutlineInputBorder(
                         borderRadius: BorderRadius.circular(4),
                         borderSide: BorderSide(color: Colors.grey.shade300),
@@ -304,7 +230,7 @@ class _DriverScheduleScreenState extends State<DriverScheduleScreen> {
                     items: selectablePlates.map((plate) {
                       return DropdownMenuItem<String>(
                         value: plate,
-                        child: Text(plate, overflow: TextOverflow.ellipsis, style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 13)),
+                        child: Text(plate, overflow: TextOverflow.ellipsis, style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 15)),
                       );
                     }).toList(),
                     onChanged: (newPlate) {
@@ -320,44 +246,59 @@ class _DriverScheduleScreenState extends State<DriverScheduleScreen> {
                     },
                   ),
                 ),
-                const SizedBox(width: 8),
-                Container(
-                  padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
-                  decoration: BoxDecoration(
-                    color: Colors.blueGrey.shade50,
-                    borderRadius: BorderRadius.circular(4),
-                    border: Border.all(color: Colors.blueGrey.shade200),
-                  ),
-                  child: Text(
-                    "ODO: $odoKm km",
-                    style: TextStyle(fontSize: 12, fontWeight: FontWeight.bold, color: Colors.blueGrey.shade800),
-                  ),
-                ),
               ],
             ),
             const SizedBox(height: 10),
-            Container(
-              width: double.infinity,
-              padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
-              decoration: BoxDecoration(
-                color: const Color(0xFFF8FAFC),
-                borderRadius: BorderRadius.circular(4),
-                border: Border.all(color: Colors.grey.shade200),
-              ),
-              child: Row(
-                children: [
-                  Icon(Icons.location_on_outlined, size: 16, color: Colors.blue.shade700),
-                  const SizedBox(width: 6),
-                  Expanded(
-                    child: Text(
-                      "Vị trí xe hiện tại: $address",
-                      style: const TextStyle(fontSize: 12, color: Colors.black87),
-                      maxLines: 2,
-                      overflow: TextOverflow.ellipsis,
+            Row(
+              children: [
+                Expanded(
+                  child: Container(
+                      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 6),
+                      decoration: BoxDecoration(
+                        color: isOnline
+                            ? (speed > 0 ? Colors.green.shade50 : Colors.amber.shade50)
+                            : Colors.grey.shade100,
+                        borderRadius: BorderRadius.circular(4),
+                        border: Border.all(
+                          color: isOnline
+                              ? (speed > 0 ? Colors.green.shade300 : Colors.amber.shade300)
+                              : Colors.grey.shade300,
+                        ),
+                      ),
+                      child: Text(
+                        isOnline
+                            ? (speed > 0
+                                ? "Đang chạy (${speed.toStringAsFixed(0)} km/h)"
+                                : (isAccOn ? "Nổ máy dừng" : "Đang đỗ"))
+                            : "Chờ tín hiệu GPS",
+                        textAlign: TextAlign.center,
+                        style: TextStyle(
+                          fontSize: 11,
+                          fontWeight: FontWeight.bold,
+                          color: isOnline
+                              ? (speed > 0 ? Colors.green.shade800 : Colors.amber.shade900)
+                              : Colors.grey.shade700,
+                        ),
+                      ),
                     ),
-                  ),
-                ],
-              ),
+                ),
+                const SizedBox(width: 8),
+                Expanded(
+                  child: Container(
+                      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+                      decoration: BoxDecoration(
+                        color: Colors.blueGrey.shade50,
+                        borderRadius: BorderRadius.circular(4),
+                        border: Border.all(color: Colors.blueGrey.shade200),
+                      ),
+                      child: Text(
+                        "ODO: $odoKm km",
+                        textAlign: TextAlign.center,
+                        style: TextStyle(fontSize: 12, fontWeight: FontWeight.bold, color: Colors.blueGrey.shade800),
+                      ),
+                    ),
+                ),
+              ],
             ),
           ],
         ),
@@ -375,6 +316,10 @@ class _DriverScheduleScreenState extends State<DriverScheduleScreen> {
     }
     final trip = state.currentTrip;
     final destPos = trip != null ? LatLng(trip.destinationLat, trip.destinationLng) : null;
+    final gpsInfo = state.currentGpsStatus ?? state.allFleetVehiclesStatus[state.selectedPlate];
+    final String address = (gpsInfo != null && gpsInfo.latitude > 0 && gpsInfo.longitude > 0 && gpsInfo.address.isNotEmpty)
+        ? gpsInfo.address
+        : "Đang đồng bộ vị trí trạm / bãi xe...";
 
     return Card(
       elevation: 0,
@@ -526,6 +471,29 @@ class _DriverScheduleScreenState extends State<DriverScheduleScreen> {
               ],
             ),
           ),
+          Container(
+            margin: const EdgeInsets.fromLTRB(12, 10, 12, 12),
+            padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+            decoration: BoxDecoration(
+              color: const Color(0xFFF8FAFC),
+              borderRadius: BorderRadius.circular(4),
+              border: Border.all(color: Colors.grey.shade200),
+            ),
+            child: Row(
+              children: [
+                Icon(Icons.location_on_outlined, size: 16, color: Colors.blue.shade700),
+                const SizedBox(width: 6),
+                Expanded(
+                  child: Text(
+                    "Vị trí xe hiện tại: $address",
+                    style: const TextStyle(fontSize: 12, color: Colors.black87),
+                    maxLines: 2,
+                    overflow: TextOverflow.ellipsis,
+                  ),
+                ),
+              ],
+            ),
+          ),
         ],
       ),
     );
@@ -641,7 +609,7 @@ class _DriverScheduleScreenState extends State<DriverScheduleScreen> {
                       ),
                       icon: const Icon(Icons.camera_alt, size: 18),
                       label: Text(
-                        completed ? "Chụp Lại 5 Ảnh" : "Chụp 5 Ảnh Đầu Ca",
+                        completed ? "Chụp Lại 5 Ảnh" : "Chụp 5 ảnh ngay",
                         style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 13.5),
                       ),
                       onPressed: () {

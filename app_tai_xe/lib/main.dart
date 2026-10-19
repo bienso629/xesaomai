@@ -24,9 +24,7 @@ class TaxiDriverApp extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return MultiProvider(
-      providers: [
-        ChangeNotifierProvider(create: (_) => AppState()),
-      ],
+      providers: [ChangeNotifierProvider(create: (_) => AppState())],
       child: MaterialApp(
         title: 'Tài xế Sao Mai',
         theme: ThemeData(
@@ -46,12 +44,15 @@ class TaxiDriverApp extends StatelessWidget {
             ),
           ),
           // Quy chuẩn Dialog: chữ to dễ đọc trên mobile (Title 20px bold, Nội dung 15px, giãn dòng 1.5)
+          // Phóng to dialog toàn app: rộng tối đa 480 (mặc định ~280), thêm 16 lề mỗi bên để không chạm mép màn hình hẹp
           dialogTheme: const DialogThemeData(
             elevation: 0,
             shadowColor: Colors.transparent,
             shape: RoundedRectangleBorder(
               borderRadius: BorderRadius.all(Radius.circular(4)),
             ),
+            constraints: BoxConstraints(minWidth: 320, maxWidth: 480),
+            insetPadding: EdgeInsets.symmetric(horizontal: 16, vertical: 24),
             titleTextStyle: TextStyle(
               fontSize: 20,
               fontWeight: FontWeight.bold,
@@ -73,14 +74,18 @@ class TaxiDriverApp extends StatelessWidget {
             shadowColor: Colors.transparent,
           ),
 
-          // Quy chuẩn Toast thông báo (SnackBar): Nổi (floating), cách đáy 100px, co gọn vừa phải (không full width), bo góc 4px
+          // Quy chuẩn Toast thông báo (SnackBar): Nổi (floating), cách đáy 100px, co gọn vừa phải (không full width, tự co theo chiều rộng màn hình), bo góc 4px
           snackBarTheme: SnackBarThemeData(
             behavior: SnackBarBehavior.floating,
             elevation: 0,
             shape: RoundedRectangleBorder(
               borderRadius: BorderRadius.circular(4),
             ),
-            insetPadding: const EdgeInsets.only(bottom: 100, left: 24, right: 24),
+            insetPadding: const EdgeInsets.only(
+              bottom: 100,
+              left: 24,
+              right: 24,
+            ),
             width: 420, // Độ rộng gọn gàng trên Desktop, tự căn giữa
           ),
 
@@ -106,7 +111,10 @@ class TaxiDriverApp extends StatelessWidget {
             style: ElevatedButton.styleFrom(
               elevation: 0,
               shadowColor: Colors.transparent,
-              textStyle: const TextStyle(fontSize: 13, fontWeight: FontWeight.bold),
+              textStyle: const TextStyle(
+                fontSize: 13,
+                fontWeight: FontWeight.bold,
+              ),
               minimumSize: const Size(64, 36),
               fixedSize: const Size.fromHeight(36),
               tapTargetSize: MaterialTapTargetSize.shrinkWrap,
@@ -138,7 +146,10 @@ class TaxiDriverApp extends StatelessWidget {
               fixedSize: const Size.fromHeight(36),
               tapTargetSize: MaterialTapTargetSize.shrinkWrap,
               visualDensity: VisualDensity.standard,
-              textStyle: const TextStyle(fontSize: 13, fontWeight: FontWeight.w600),
+              textStyle: const TextStyle(
+                fontSize: 13,
+                fontWeight: FontWeight.w600,
+              ),
               shape: const RoundedRectangleBorder(
                 borderRadius: BorderRadius.all(Radius.circular(4)),
               ),
@@ -164,13 +175,26 @@ class TaxiDriverApp extends StatelessWidget {
           segmentedButtonTheme: SegmentedButtonThemeData(
             style: ButtonStyle(
               shape: WidgetStatePropertyAll(
-                RoundedRectangleBorder(
-                  borderRadius: BorderRadius.circular(4),
-                ),
+                RoundedRectangleBorder(borderRadius: BorderRadius.circular(4)),
               ),
             ),
           ),
         ),
+        builder: (context, child) {
+          // Toast (SnackBar) responsive: giữ width 420 gọn gàng trên Desktop,
+          // tự co lại trên màn hình điện thoại hẹp (tránh dính sát 2 mép).
+          // Lề tối thiểu 14dp mỗi bên -> ngưỡng co: 420 + 2 * 14 = 448.
+          final screenW = MediaQuery.sizeOf(context).width;
+          final toastMax = screenW < 448 ? screenW - 28 : 420.0;
+          return Theme(
+            data: Theme.of(context).copyWith(
+              snackBarTheme: Theme.of(
+                context,
+              ).snackBarTheme.copyWith(width: toastMax),
+            ),
+            child: child ?? const SizedBox.shrink(),
+          );
+        },
         home: const LoginScreen(),
         debugShowCheckedModeBanner: false,
       ),

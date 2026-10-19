@@ -10551,6 +10551,7 @@ class _VehicleInspectionsModalState extends State<_VehicleInspectionsModal> {
     return Dialog(
       shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(4)),
       insetPadding: const EdgeInsets.symmetric(horizontal: 20, vertical: 24),
+      constraints: const BoxConstraints(maxWidth: 1100),
       child: Container(
         width: 1100,
         height: 750,
