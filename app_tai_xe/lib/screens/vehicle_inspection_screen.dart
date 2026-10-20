@@ -1263,71 +1263,70 @@ class _VehicleInspectionReviewScreenState
                                               crossAxisAlignment:
                                                   CrossAxisAlignment.stretch,
                                               children: [
-                                                SizedBox(
-                                                  height: 44,
-                                                  child: TextField(
-                                                    controller: _noteCtrl,
-                                                    textAlignVertical:
-                                                        TextAlignVertical
-                                                            .center,
-                                                    style: const TextStyle(
-                                                      fontSize: 13.5,
+                                                TextField(
+                                                  controller: _noteCtrl,
+                                                  minLines: 2,
+                                                  maxLines: 4,
+                                                  keyboardType:
+                                                      TextInputType.multiline,
+                                                  style: const TextStyle(
+                                                    fontSize: 13,
+                                                    height: 1.4,
+                                                  ),
+                                                  decoration: InputDecoration(
+                                                    hintText:
+                                                        "Ghi chú kiểm tra của Điều phối (ví dụ: cản nứt, lệch km hành trình, ảnh mờ...)",
+                                                    hintStyle: TextStyle(
+                                                      fontSize: 12.5,
+                                                      color: Colors
+                                                          .grey
+                                                          .shade500,
                                                     ),
-                                                    decoration: InputDecoration(
-                                                      hintText:
-                                                          "Ghi chú kiểm tra của Điều phối (ví dụ: cản nứt, lệch km hành trình, ảnh mờ...)",
-                                                      hintStyle: TextStyle(
-                                                        fontSize: 13,
+                                                    filled: true,
+                                                    fillColor: Colors.white,
+                                                    isDense: true,
+                                                    contentPadding:
+                                                        const EdgeInsets.symmetric(
+                                                          horizontal: 12,
+                                                          vertical: 10,
+                                                        ),
+                                                    border: OutlineInputBorder(
+                                                      borderRadius:
+                                                          BorderRadius.circular(
+                                                            4,
+                                                          ),
+                                                      borderSide: BorderSide(
                                                         color: Colors
                                                             .grey
-                                                            .shade500,
+                                                            .shade400,
                                                       ),
-                                                      filled: true,
-                                                      fillColor: Colors.white,
-                                                      isDense: true,
-                                                      contentPadding:
-                                                          const EdgeInsets.symmetric(
-                                                            horizontal: 12,
-                                                            vertical: 16,
-                                                          ),
-                                                      border: OutlineInputBorder(
-                                                        borderRadius:
-                                                            BorderRadius.circular(
-                                                              4,
-                                                            ),
-                                                        borderSide: BorderSide(
-                                                          color: Colors
-                                                              .grey
-                                                              .shade400,
-                                                        ),
-                                                      ),
-                                                      enabledBorder:
-                                                          OutlineInputBorder(
-                                                            borderRadius:
-                                                                BorderRadius.circular(
-                                                                  4,
-                                                                ),
-                                                            borderSide:
-                                                                BorderSide(
-                                                                  color: Colors
-                                                                      .grey
-                                                                      .shade400,
-                                                                ),
-                                                          ),
-                                                      focusedBorder:
-                                                          OutlineInputBorder(
-                                                            borderRadius:
-                                                                BorderRadius.circular(
-                                                                  4,
-                                                                ),
-                                                            borderSide:
-                                                                const BorderSide(
-                                                                  color: Colors
-                                                                      .blue,
-                                                                  width: 1.5,
-                                                                ),
-                                                          ),
                                                     ),
+                                                    enabledBorder:
+                                                        OutlineInputBorder(
+                                                          borderRadius:
+                                                              BorderRadius.circular(
+                                                                4,
+                                                              ),
+                                                          borderSide:
+                                                              BorderSide(
+                                                                color: Colors
+                                                                    .grey
+                                                                    .shade400,
+                                                              ),
+                                                        ),
+                                                    focusedBorder:
+                                                        OutlineInputBorder(
+                                                          borderRadius:
+                                                              BorderRadius.circular(
+                                                                4,
+                                                              ),
+                                                          borderSide:
+                                                              const BorderSide(
+                                                                color: Colors
+                                                                    .blue,
+                                                                width: 1.5,
+                                                              ),
+                                                        ),
                                                   ),
                                                 ),
                                                 const SizedBox(height: 10),
@@ -1351,33 +1350,34 @@ class _VehicleInspectionReviewScreenState
                                                         : WrapAlignment.end,
                                                     children: [
                                                       SizedBox(
-                                                        height: 44,
+                                                        height: 36,
                                                         child: OutlinedButton.icon(
                                                           style: OutlinedButton.styleFrom(
                                                             foregroundColor: Colors.purple.shade700,
-                                                            side: BorderSide(color: Colors.purple.shade400, width: 1.2),
+                                                            side: BorderSide(color: Colors.purple.shade400, width: 1.1),
                                                             backgroundColor: Colors.purple.shade50.withValues(alpha: 0.3),
-                                                            padding: const EdgeInsets.symmetric(horizontal: 14),
-                                                            minimumSize: const Size(64, 44),
+                                                            padding: const EdgeInsets.symmetric(horizontal: 12),
+                                                            minimumSize: const Size(64, 36),
+                                                            fixedSize: const Size.fromHeight(36),
                                                             shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(4)),
                                                           ),
                                                           icon: _isAiChecking
                                                               ? const SizedBox(
-                                                                  width: 18,
-                                                                  height: 18,
+                                                                  width: 16,
+                                                                  height: 16,
                                                                   child: CircularProgressIndicator(strokeWidth: 2),
                                                                 )
-                                                              : const Icon(Icons.auto_awesome, size: 18),
+                                                              : const Icon(Icons.auto_awesome, size: 16),
                                                           label: const Text(
                                                             "Kiểm tra chất lượng xe",
-                                                            style: TextStyle(fontWeight: FontWeight.bold, fontSize: 13.5),
+                                                            style: TextStyle(fontWeight: FontWeight.w600, fontSize: 12.5),
                                                           ),
                                                           onPressed: _isAiChecking ? null : _runAiQualityCheck,
                                                         ),
                                                       ),
 
                                                       SizedBox(
-                                                        height: 44,
+                                                        height: 36,
                                                         child: ElevatedButton.icon(
                                                           style: ElevatedButton.styleFrom(
                                                             elevation: 0,
@@ -1392,12 +1392,16 @@ class _VehicleInspectionReviewScreenState
                                                             padding:
                                                                 const EdgeInsets.symmetric(
                                                                   horizontal:
-                                                                      16,
+                                                                      12,
                                                                 ),
                                                             minimumSize:
                                                                 const Size(
                                                                   64,
-                                                                  44,
+                                                                  36,
+                                                                ),
+                                                            fixedSize:
+                                                                const Size.fromHeight(
+                                                                  36,
                                                                 ),
                                                             shape: RoundedRectangleBorder(
                                                               borderRadius:
@@ -1409,15 +1413,15 @@ class _VehicleInspectionReviewScreenState
                                                           icon: const Icon(
                                                             Icons
                                                                 .check_circle_outline,
-                                                            size: 18,
+                                                            size: 16,
                                                           ),
                                                           label: const Text(
                                                             "Duyệt Nhận Chuyến",
                                                             style: TextStyle(
                                                               fontWeight:
                                                                   FontWeight
-                                                                      .bold,
-                                                              fontSize: 13.5,
+                                                                      .w600,
+                                                              fontSize: 12.5,
                                                             ),
                                                           ),
                                                           onPressed: () =>
@@ -1427,7 +1431,7 @@ class _VehicleInspectionReviewScreenState
                                                         ),
                                                       ),
                                                       SizedBox(
-                                                        height: 44,
+                                                        height: 36,
                                                         child: OutlinedButton.icon(
                                                           style: OutlinedButton.styleFrom(
                                                             foregroundColor:
@@ -1438,7 +1442,7 @@ class _VehicleInspectionReviewScreenState
                                                               color: Colors
                                                                   .amber
                                                                   .shade700,
-                                                              width: 1.2,
+                                                              width: 1.1,
                                                             ),
                                                             backgroundColor:
                                                                 Colors
@@ -1451,12 +1455,16 @@ class _VehicleInspectionReviewScreenState
                                                             padding:
                                                                 const EdgeInsets.symmetric(
                                                                   horizontal:
-                                                                      14,
+                                                                      12,
                                                                 ),
                                                             minimumSize:
                                                                 const Size(
                                                                   64,
-                                                                  44,
+                                                                  36,
+                                                                ),
+                                                            fixedSize:
+                                                                const Size.fromHeight(
+                                                                  36,
                                                                 ),
                                                             shape: RoundedRectangleBorder(
                                                               borderRadius:
@@ -1468,15 +1476,15 @@ class _VehicleInspectionReviewScreenState
                                                           icon: const Icon(
                                                             Icons
                                                                 .visibility_outlined,
-                                                            size: 18,
+                                                            size: 16,
                                                           ),
                                                           label: const Text(
                                                             "Theo Dõi",
                                                             style: TextStyle(
                                                               fontWeight:
                                                                   FontWeight
-                                                                      .bold,
-                                                              fontSize: 13.5,
+                                                                      .w600,
+                                                              fontSize: 12.5,
                                                             ),
                                                           ),
                                                           onPressed: () =>
@@ -1486,7 +1494,7 @@ class _VehicleInspectionReviewScreenState
                                                         ),
                                                       ),
                                                       SizedBox(
-                                                        height: 44,
+                                                        height: 36,
                                                         child: OutlinedButton.icon(
                                                           style: OutlinedButton.styleFrom(
                                                             foregroundColor:
@@ -1497,7 +1505,7 @@ class _VehicleInspectionReviewScreenState
                                                               color: Colors
                                                                   .red
                                                                   .shade400,
-                                                              width: 1.2,
+                                                              width: 1.1,
                                                             ),
                                                             backgroundColor:
                                                                 Colors
@@ -1510,12 +1518,16 @@ class _VehicleInspectionReviewScreenState
                                                             padding:
                                                                 const EdgeInsets.symmetric(
                                                                   horizontal:
-                                                                      14,
+                                                                      12,
                                                                 ),
                                                             minimumSize:
                                                                 const Size(
                                                                   64,
-                                                                  44,
+                                                                  36,
+                                                                ),
+                                                            fixedSize:
+                                                                const Size.fromHeight(
+                                                                  36,
                                                                 ),
                                                             shape: RoundedRectangleBorder(
                                                               borderRadius:
@@ -1527,15 +1539,15 @@ class _VehicleInspectionReviewScreenState
                                                           icon: const Icon(
                                                             Icons
                                                                 .cancel_outlined,
-                                                            size: 18,
+                                                            size: 16,
                                                           ),
                                                           label: const Text(
                                                             "Yêu Cầu Chụp Lại",
                                                             style: TextStyle(
                                                               fontWeight:
                                                                   FontWeight
-                                                                      .bold,
-                                                              fontSize: 13.5,
+                                                                      .w600,
+                                                              fontSize: 12.5,
                                                             ),
                                                           ),
                                                           onPressed: () =>

@@ -132,6 +132,14 @@ class ProductCreate(BaseModel):
     standard_pump_time_minutes: Optional[int] = 90
     requires_air_pump: Optional[bool] = True
 
+class ProductUpdate(BaseModel):
+    code: Optional[str] = None
+    name: Optional[str] = None
+    category: Optional[str] = None
+    unit: Optional[str] = None
+    standard_pump_time_minutes: Optional[int] = None
+    requires_air_pump: Optional[bool] = None
+
 class VehicleCreate(BaseModel):
     plate_number: str
     vehicle_type: str
@@ -153,6 +161,14 @@ class GasStationCreate(BaseModel):
     lat: float
     lng: float
     allowed_radius_meters: Optional[int] = 500
+    user_id: Optional[int] = None
+
+class GasStationUpdate(BaseModel):
+    name: Optional[str] = None
+    address: Optional[str] = None
+    lat: Optional[float] = None
+    lng: Optional[float] = None
+    allowed_radius_meters: Optional[int] = None
     user_id: Optional[int] = None
 
 class OrderCreate(BaseModel):
@@ -289,11 +305,21 @@ def get_current_user(token: str = Depends(oauth2_scheme)):
     return user
 
 def require_admin(current_user: dict = Depends(get_current_user)):
-    # Chỉ tài khoản admin tối cao mới có quyền truy cập
+    # Chỉ tài khoản admin tối cao mới có quyền thực hiện
     if current_user["username"] != "admin" and "admin" not in current_user.get("roles", []):
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
             detail="Chỉ Quản trị viên (admin) tối cao mới có quyền thực hiện thao tác này"
+        )
+    return current_user
+
+def require_admin_or_manager(current_user: dict = Depends(get_current_user)):
+    # Chỉ tài khoản Admin và Giám đốc (manager) mới có quyền quản lý người dùng
+    user_roles = [r.lower() for r in current_user.get("roles", [])]
+    if current_user["username"] != "admin" and not any(r in ("admin", "manager") for r in user_roles):
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Chỉ Quản trị viên (admin) và Giám đốc (manager) mới có quyền quản lý người dùng"
         )
     return current_user
 
@@ -396,7 +422,7 @@ def get_my_profile(current_user: dict = Depends(get_current_user)):
 
 # 2. Quản lý Người dùng & Tạo tài khoản mới (Chỉ admin tối cao mới có quyền Quản lý Tài khoản & Phân quyền)
 @app.post("/api/v1/users", status_code=status.HTTP_201_CREATED)
-def create_user(user: UserCreate, current_user: dict = Depends(require_admin)):
+def create_user(user: UserCreate, current_user: dict = Depends(require_admin_or_manager)):
     conn = get_db()
     cur = conn.cursor()
     hashed_pwd = get_password_hash(user.password)
@@ -452,7 +478,7 @@ class PasswordChangeRequest(BaseModel):
     new_password: str
 
 @app.put("/api/v1/users/{user_id}")
-def update_user(user_id: int, req: UserUpdate, current_user: dict = Depends(require_admin)):
+def update_user(user_id: int, req: UserUpdate, current_user: dict = Depends(require_admin_or_manager)):
     conn = get_db()
     cur = conn.cursor()
     try:
@@ -531,7 +557,7 @@ def update_user(user_id: int, req: UserUpdate, current_user: dict = Depends(requ
         raise HTTPException(status_code=400, detail=str(e))
 
 @app.put("/api/v1/users/{user_id}/password")
-def change_user_password(user_id: int, req: PasswordChangeRequest, current_user: dict = Depends(require_admin)):
+def change_user_password(user_id: int, req: PasswordChangeRequest, current_user: dict = Depends(require_admin_or_manager)):
     conn = get_db()
     cur = conn.cursor()
     try:
@@ -551,7 +577,7 @@ def change_user_password(user_id: int, req: PasswordChangeRequest, current_user:
         raise HTTPException(status_code=400, detail=str(e))
 
 @app.delete("/api/v1/users/{user_id}")
-def delete_user(user_id: int, current_user: dict = Depends(require_admin)):
+def delete_user(user_id: int, current_user: dict = Depends(require_admin_or_manager)):
     conn = get_db()
     cur = conn.cursor()
     try:
@@ -574,7 +600,7 @@ def delete_user(user_id: int, current_user: dict = Depends(require_admin)):
         raise HTTPException(status_code=400, detail=str(e))
 
 @app.get("/api/v1/users")
-def get_all_users(current_user: dict = Depends(require_admin)):
+def get_all_users(current_user: dict = Depends(require_admin_or_manager)):
     conn = get_db()
     cur = conn.cursor()
     cur.execute("""
@@ -637,9 +663,77 @@ def create_product(product: ProductCreate, current_user: dict = Depends(get_curr
         conn.close()
         raise HTTPException(status_code=400, detail=str(e))
 
+@app.put("/api/v1/products/{product_id}")
+def update_product(product_id: int, product: ProductUpdate, current_user: dict = Depends(require_admin)):
+    conn = get_db()
+    cur = conn.cursor()
+    try:
+        cur.execute("SELECT id, name, code FROM products WHERE id = %s", (product_id,))
+        existing = cur.fetchone()
+        if not existing:
+            cur.close()
+            conn.close()
+            raise HTTPException(status_code=404, detail="Không tìm thấy sản phẩm")
+
+        fields, params = [], []
+        for col, val in [("code", product.code), ("name", product.name), ("category", product.category),
+                         ("unit", product.unit), ("standard_pump_time_minutes", product.standard_pump_time_minutes),
+                         ("requires_air_pump", product.requires_air_pump)]:
+            if val is not None:
+                fields.append(f"{col} = %s")
+                params.append(val)
+        params.append(product_id)
+
+        cur.execute(f"UPDATE products SET {', '.join(fields)}, updated_at = CURRENT_TIMESTAMP WHERE id = %s RETURNING *", params)
+        conn.commit()
+        updated = cur.fetchone()
+        cur.close()
+        conn.close()
+        return updated
+    except HTTPException:
+        raise
+    except Exception as e:
+        conn.rollback()
+        conn.close()
+        raise HTTPException(status_code=400, detail=str(e))
+
+@app.delete("/api/v1/products/{product_id}")
+def delete_product(product_id: int, current_user: dict = Depends(require_admin)):
+    conn = get_db()
+    cur = conn.cursor()
+    try:
+        cur.execute("SELECT id, name FROM products WHERE id = %s", (product_id,))
+        existing = cur.fetchone()
+        if not existing:
+            cur.close()
+            conn.close()
+            raise HTTPException(status_code=404, detail="Không tìm thấy sản phẩm")
+
+        # Soft delete nếu đang có đơn hàng tham chiếu, hard delete nếu trơn tru
+        cur.execute("SELECT COUNT(*) AS cnt FROM orders WHERE product_id = %s", (product_id,))
+        used = cur.fetchone()["cnt"]
+        if used and used > 0:
+            cur.execute("UPDATE products SET is_active = FALSE, updated_at = CURRENT_TIMESTAMP WHERE id = %s", (product_id,))
+            conn.commit()
+            cur.close()
+            conn.close()
+            return {"message": f"Sản phẩm '{existing['name']}' đang có {used} đơn hàng nên đã được chuyển trạng thái ẩn (soft delete)"}
+
+        cur.execute("DELETE FROM products WHERE id = %s", (product_id,))
+        conn.commit()
+        cur.close()
+        conn.close()
+        return {"message": f"Đã xóa sản phẩm '{existing['name']}'"}
+    except HTTPException:
+        raise
+    except Exception as e:
+        conn.rollback()
+        conn.close()
+        raise HTTPException(status_code=400, detail=str(e))
+
 # 4. Quản lý Roles & Permissions (Dynamic RBAC - Chỉ Admin tối cao)
 @app.get("/api/v1/rbac/roles")
-def get_roles(current_user: dict = Depends(require_admin)):
+def get_roles(current_user: dict = Depends(require_admin_or_manager)):
     conn = get_db()
     cur = conn.cursor()
     cur.execute("""
@@ -898,6 +992,88 @@ def create_gas_station(gs: GasStationCreate, current_user: dict = Depends(get_cu
         cur.close()
         conn.close()
         return created
+    except Exception as e:
+        conn.rollback()
+        conn.close()
+        raise HTTPException(status_code=400, detail=str(e))
+
+@app.put("/api/v1/gas-stations/{station_id}")
+def update_gas_station(station_id: int, req: GasStationUpdate, current_user: dict = Depends(require_admin)):
+    conn = get_db()
+    cur = conn.cursor()
+    try:
+        cur.execute("SELECT id FROM gas_stations WHERE id = %s", (station_id,))
+        if not cur.fetchone():
+            cur.close()
+            conn.close()
+            raise HTTPException(status_code=404, detail="Không tìm thấy trạm dầu")
+
+        fields = []
+        values = []
+        if req.name is not None:
+            fields.append("name = %s")
+            values.append(req.name)
+        if req.address is not None:
+            fields.append("address = %s")
+            values.append(req.address)
+        if req.lat is not None:
+            fields.append("lat = %s")
+            values.append(req.lat)
+        if req.lng is not None:
+            fields.append("lng = %s")
+            values.append(req.lng)
+        if req.allowed_radius_meters is not None:
+            fields.append("allowed_radius_meters = %s")
+            values.append(req.allowed_radius_meters)
+        if req.user_id is not None:
+            fields.append("user_id = %s")
+            values.append(req.user_id)
+
+        if not fields:
+            cur.close()
+            conn.close()
+            raise HTTPException(status_code=400, detail="Không có dữ liệu cần cập nhật")
+
+        values.append(station_id)
+        cur.execute(f"""UPDATE gas_stations SET {', '.join(fields)} WHERE id = %s RETURNING *""", values)
+        conn.commit()
+        updated = cur.fetchone()
+        cur.close()
+        conn.close()
+        return updated
+    except HTTPException:
+        raise
+    except Exception as e:
+        conn.rollback()
+        conn.close()
+        raise HTTPException(status_code=400, detail=str(e))
+
+@app.delete("/api/v1/gas-stations/{station_id}")
+def delete_gas_station(station_id: int, current_user: dict = Depends(require_admin)):
+    conn = get_db()
+    cur = conn.cursor()
+    try:
+        cur.execute("SELECT id, name FROM gas_stations WHERE id = %s", (station_id,))
+        station = cur.fetchone()
+        if not station:
+            cur.close()
+            conn.close()
+            raise HTTPException(status_code=404, detail="Không tìm thấy trạm dầu")
+
+        cur.execute("SELECT COUNT(*) AS cnt FROM cap_dau WHERE gas_station_id = %s", (station_id,))
+        used = cur.fetchone()["cnt"]
+        if used and used > 0:
+            cur.close()
+            conn.close()
+            raise HTTPException(status_code=400, detail=f"Không thể xóa trạm '{station['name']}' vì đã có {used} lượt cấp dầu liên quan")
+
+        cur.execute("DELETE FROM gas_stations WHERE id = %s", (station_id,))
+        conn.commit()
+        cur.close()
+        conn.close()
+        return {"message": f"Đã xóa trạm dầu '{station['name']}'"}
+    except HTTPException:
+        raise
     except Exception as e:
         conn.rollback()
         conn.close()

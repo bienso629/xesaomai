@@ -91,6 +91,8 @@ class TaxiDriverApp extends StatelessWidget {
 
           // Quy chuẩn rounded-sm cho Input và Select (DropdownFormField)
           inputDecorationTheme: const InputDecorationTheme(
+            filled: true,
+            fillColor: Colors.white,
             isDense: true,
             contentPadding: EdgeInsets.symmetric(horizontal: 12, vertical: 12),
             border: OutlineInputBorder(
