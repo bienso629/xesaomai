@@ -4614,6 +4614,34 @@ class _DispatchSupervisorScreenState extends State<DispatchSupervisorScreen> {
                     ),
                   ),
                   const SizedBox(width: 10),
+                  // Nút thêm mới trạm dầu
+                  SizedBox(
+                    height: 36,
+                    child: ElevatedButton.icon(
+                      style: ElevatedButton.styleFrom(
+                        backgroundColor: Colors.orange.shade700,
+                        foregroundColor: Colors.white,
+                        elevation: 0,
+                        minimumSize: const Size(0, 36),
+                        fixedSize: const Size.fromHeight(36),
+                        tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                        padding: const EdgeInsets.symmetric(horizontal: 12),
+                        shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(4),
+                        ),
+                      ),
+                      icon: const Icon(Icons.add_business, size: 16),
+                      label: const Text(
+                        "Thêm trạm dầu",
+                        style: TextStyle(
+                          fontWeight: FontWeight.w600,
+                          fontSize: 12.5,
+                        ),
+                      ),
+                      onPressed: () => _showGasStationFormDialog(),
+                    ),
+                  ),
+                  const SizedBox(width: 10),
                   // Nút làm mới dữ liệu
                   SizedBox(
                     height: 36,
