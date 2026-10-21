@@ -3,7 +3,7 @@ import 'package:provider/provider.dart';
 import '../models/inspection_model.dart';
 import '../services/app_state.dart';
 import 'camera_inspection_screen.dart';
-import 'weigh_slip_dialog.dart';
+import 'slip_capture_screen.dart';
 import 'breakdown_dialog.dart';
 import 'dispatch_supervisor_screen.dart';
 
@@ -295,8 +295,10 @@ class HomeDriverScreen extends StatelessWidget {
   }
 
   Widget _buildTripMilestonesCard(BuildContext context, AppState state, bool isLocked) {
-    final trip = state.currentTrip;
-    if (trip == null) return const SizedBox.shrink();
+    final bool approved = state.isApprovedByDispatcher;
+    final trip = approved ? state.currentTrip : null;
+    final bool hasAssignedOrder = approved && trip != null && trip.orderCode.trim().isNotEmpty;
+    final bool stepDisabled = isLocked || !hasAssignedOrder;
 
     return Card(
       elevation: 0,
@@ -310,28 +312,43 @@ class HomeDriverScreen extends StatelessWidget {
               mainAxisAlignment: MainAxisAlignment.spaceBetween,
               children: [
                 const Text("Lịch Chuyến & Mốc Giờ", style: TextStyle(fontWeight: FontWeight.bold, fontSize: 15)),
-                if (isLocked)
+                if (stepDisabled)
                   Container(
                     padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
                     decoration: BoxDecoration(color: Colors.grey.shade400, borderRadius: BorderRadius.circular(6)),
-                    child: const Text("ĐANG KHÓA", style: TextStyle(fontSize: 11, fontWeight: FontWeight.bold, color: Colors.black54)),
+                    child: Text(
+                      !approved ? "CHỜ KIỂM TRA XE" : "CHỜ GẮN MÃ LỆNH",
+                      style: const TextStyle(fontSize: 11, fontWeight: FontWeight.bold, color: Colors.black54),
+                    ),
                   ),
               ],
             ),
             const Divider(),
-            Text("Mã đơn: ${trip.orderCode}", style: const TextStyle(fontWeight: FontWeight.bold, color: Colors.blue)),
-            Text("Điểm đến: ${trip.destinationName}", style: const TextStyle(fontSize: 13, color: Colors.black87)),
+            if (!hasAssignedOrder)
+              Padding(
+                padding: const EdgeInsets.symmetric(vertical: 4),
+                child: Text(
+                  !approved
+                      ? "Xe chưa kiểm tra & Duyệt Nhận Chuyến nên chưa có Mã lệnh."
+                      : "Xe đã duyệt — Đang chờ Điều phối viên gắn Mã lệnh cho xe.",
+                  style: TextStyle(fontSize: 12.5, color: Colors.orange.shade900),
+                ),
+              )
+            else ...[
+              Text("Mã đơn: ${trip.orderCode}", style: const TextStyle(fontWeight: FontWeight.bold, color: Colors.blue)),
+              Text("Điểm đến: ${trip.destinationName}", style: const TextStyle(fontSize: 13, color: Colors.black87)),
+            ],
             const SizedBox(height: 12),
 
             // Nút 1: ĐẾN ĐIỂM GIAO
             _buildMilestoneRow(
               title: "1. ĐẾN điểm giao",
-              timeText: trip.arrivedTime != null
-                  ? "${trip.arrivedTime!.hour}:${trip.arrivedTime!.minute.toString().padLeft(2, '0')} (GPS đã ghi)"
+              timeText: trip?.arrivedTime != null
+                  ? "${trip!.arrivedTime!.hour}:${trip.arrivedTime!.minute.toString().padLeft(2, '0')} (GPS đã ghi)"
                   : "Chưa ghi nhận",
-              isRecorded: trip.arrivedTime != null,
+              isRecorded: trip?.arrivedTime != null,
               buttonLabel: "Bấm ĐẾN",
-              isDisabled: isLocked || trip.arrivedTime != null,
+              isDisabled: stepDisabled || trip.arrivedTime != null,
               onPressed: () => _handleArrived(context, state),
             ),
             const SizedBox(height: 10),
@@ -339,12 +356,12 @@ class HomeDriverScreen extends StatelessWidget {
             // Nút 2: BƠM XONG (Kiểm tra > 120 phút chọn nguyên nhân)
             _buildMilestoneRow(
               title: "2. BƠM XONG",
-              timeText: trip.pumpedTime != null
-                  ? "${trip.pumpedTime!.hour}:${trip.pumpedTime!.minute.toString().padLeft(2, '0')}"
-                  : (trip.arrivedTime != null ? "Đang bơm (${trip.waitDurationMinutes} phút)" : "Chờ đến"),
-              isRecorded: trip.pumpedTime != null,
+              timeText: trip?.pumpedTime != null
+                  ? "${trip!.pumpedTime!.hour}:${trip.pumpedTime!.minute.toString().padLeft(2, '0')}"
+                  : (trip?.arrivedTime != null ? "Đang bơm (${trip!.waitDurationMinutes} phút)" : "Chờ đến"),
+              isRecorded: trip?.pumpedTime != null,
               buttonLabel: "BƠM XONG",
-              isDisabled: isLocked || trip.arrivedTime == null || trip.pumpedTime != null,
+              isDisabled: stepDisabled || trip.arrivedTime == null || trip.pumpedTime != null,
               onPressed: () => _handlePumped(context, state),
             ),
             const SizedBox(height: 10),
@@ -352,37 +369,32 @@ class HomeDriverScreen extends StatelessWidget {
             // Nút 3: GỬI PHIẾU CÂN (OCR + Tự đăng Zalo nhóm KH)
             _buildMilestoneRow(
               title: "3. Phiếu cân",
-              timeText: trip.weighSlipPhotoUrl != null
-                  ? "${trip.weighTonnage} Tấn (Đã gửi Zalo OA)"
+              timeText: trip?.weighSlipPhotoUrl != null
+                  ? "${trip!.weighTonnage} Tấn (Đã gửi Zalo OA)"
                   : "Chưa gửi phiếu",
-              isRecorded: trip.weighSlipPhotoUrl != null,
+              isRecorded: trip?.weighSlipPhotoUrl != null,
               buttonLabel: "Gửi Phiếu Cân",
-              isDisabled: isLocked,
-              onPressed: () {
-                showDialog(
-                  context: context,
-                  builder: (ctx) => const WeighSlipDialog(),
-                );
-              },
+              isDisabled: stepDisabled,
+              onPressed: () => SlipCaptureScreen.show(
+                context,
+                slipType: 'weigh',
+                orderCode: trip?.orderCode ?? '',
+              ),
             ),
             const SizedBox(height: 10),
 
             // Nút 4: GỬI PHIẾU GIAO HÀNG
             _buildMilestoneRow(
               title: "4. Phiếu giao hàng",
-              timeText: trip.deliverySlipPhotoUrl != null ? "Đã gửi Zalo KH" : "Chưa gửi phiếu",
-              isRecorded: trip.deliverySlipPhotoUrl != null,
+              timeText: trip?.deliverySlipPhotoUrl != null ? "Đã gửi Zalo KH" : "Chưa gửi phiếu",
+              isRecorded: trip?.deliverySlipPhotoUrl != null,
               buttonLabel: "Gửi Phiếu GH",
-              isDisabled: isLocked,
-              onPressed: () {
-                state.recordDeliverySlip(photoUrl: "storage/slips/pgh_${DateTime.now().millisecondsSinceEpoch}.jpg");
-                ScaffoldMessenger.of(context).showSnackBar(
-                  const SnackBar(
-                    backgroundColor: Colors.green,
-                    content: Text("Đã chụp và tự động gửi Phiếu giao hàng vào nhóm Zalo OA khách hàng!"),
-                  ),
-                );
-              },
+              isDisabled: stepDisabled,
+              onPressed: () => SlipCaptureScreen.show(
+                context,
+                slipType: 'delivery',
+                orderCode: trip?.orderCode ?? '',
+              ),
             ),
           ],
         ),

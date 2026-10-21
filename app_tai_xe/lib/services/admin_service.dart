@@ -815,4 +815,45 @@ class AdminService {
       return {'success': false, 'message': 'Không thể kết nối API: $e'};
     }
   }
+
+  /// Gửi hình chụp chứng từ / sự cố gắn vào đơn hàng vận tải:
+  /// photoType: 'pump_slip' | 'weigh_slip' | 'delivery_slip' | 'breakdown' | 'repair'
+  static Future<Map<String, dynamic>?> submitOrderAttachment({
+    required int orderId,
+    required String photoType,
+    required String photoBase64,
+    String? note,
+    double? tonnage,
+    String? slipCode,
+    String? location,
+    String? repairStatus,
+  }) async {
+    try {
+      final body = <String, dynamic>{
+        'photo_type': photoType,
+        'photo_base64': photoBase64,
+        if (note != null && note.trim().isNotEmpty) 'note': note.trim(),
+        if (tonnage != null) 'tonnage': tonnage,
+        if (slipCode != null && slipCode.trim().isNotEmpty)
+          'slip_code': slipCode.trim(),
+        if (location != null && location.trim().isNotEmpty)
+          'location': location.trim(),
+        if (repairStatus != null && repairStatus.trim().isNotEmpty)
+          'repair_status': repairStatus.trim(),
+      };
+      final res = await http
+          .post(
+            Uri.parse('$baseUrl/orders/$orderId/attachment'),
+            headers: await _headers(),
+            body: jsonEncode(body),
+          )
+          .timeout(const Duration(seconds: 15));
+      if (res.statusCode == 200 || res.statusCode == 201) {
+        return jsonDecode(utf8.decode(res.bodyBytes)) as Map<String, dynamic>;
+      }
+      return null;
+    } catch (_) {
+      return null;
+    }
+  }
 }

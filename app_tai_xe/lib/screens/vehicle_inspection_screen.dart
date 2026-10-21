@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 import 'package:http/http.dart' as http;
 import 'package:shared_preferences/shared_preferences.dart';
 import '../services/admin_service.dart';
+import '../widgets/assign_order_approve_dialog.dart';
 
 class VehicleInspectionReviewScreen extends StatefulWidget {
   const VehicleInspectionReviewScreen({super.key});
@@ -283,6 +284,28 @@ class _VehicleInspectionReviewScreenState
 
   Future<void> _updateReviewStatus(String status) async {
     if (_selectedRecord == null) return;
+    if (status == 'approved') {
+      final result = await AssignOrderOnApproveDialog.show(
+        context,
+        inspectionRecord: Map<String, dynamic>.from(_selectedRecord!),
+        reviewNote: _noteCtrl.text.trim(),
+      );
+      if (result != null && result['approved'] == true && mounted) {
+        final orderCode = result['order_code'];
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            backgroundColor: Colors.green.shade700,
+            content: Text(
+              (orderCode != null && orderCode.toString().isNotEmpty)
+                  ? "Đã duyệt nhận chuyến và gắn đơn hàng $orderCode cho tài xế!"
+                  : "Đã phê duyệt kiểm tra xe! Xe được phép nhận chuyến.",
+            ),
+          ),
+        );
+        _loadInspections();
+      }
+      return;
+    }
     final int inspId = _selectedRecord!['id'];
     setState(() => _isSubmitting = true);
 

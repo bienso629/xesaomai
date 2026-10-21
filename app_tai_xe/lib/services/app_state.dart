@@ -101,7 +101,7 @@ class AppState extends ChangeNotifier {
   int uninspectedMoveViolations = 0;
 
   AppState() {
-    _initSampleTrip();
+    currentTrip = null;
     initQuanLyXeData();
   }
 
@@ -166,29 +166,68 @@ class AppState extends ChangeNotifier {
     }
   }
 
-  void _initSampleTrip() {
-    currentTrip = TripMilestone(
-      orderCode: "DH-XI-MANG-2026-092",
-      vehiclePlate: selectedPlate,
-      destinationName: "Trạm trộn Bê tông Nghi Sơn - Nhơn Trạch",
-      destinationLat: 10.7025,
-      destinationLng: 106.9452,
-    );
+  /// Đồng bộ chuyến hiện tại từ đơn hàng do Điều phối gắn sau khi xe đã được Duyệt Nhận Chuyến.
+  /// Nếu xe chưa được duyệt nhận chuyến hoặc chưa có đơn hàng gắn cho xe -> currentTrip = null.
+  void syncAssignedTripFromOrder(Map<String, dynamic>? order) {
+    if (!isApprovedByDispatcher || order == null) {
+      if (currentTrip != null) {
+        currentTrip = null;
+        notifyListeners();
+      }
+      return;
+    }
+    final String code = (order['order_code'] ?? '').toString().trim();
+    if (code.isEmpty) {
+      if (currentTrip != null) {
+        currentTrip = null;
+        notifyListeners();
+      }
+      return;
+    }
+    final String dest = (order['delivery_address'] ?? order['destination_name'] ?? 'Điểm giao khách hàng').toString().trim();
+    final double dLat = double.tryParse('${order['delivery_lat'] ?? ''}') ?? 10.7500;
+    final double dLng = double.tryParse('${order['delivery_lng'] ?? ''}') ?? 106.7500;
+
+    final int? oid = order['id'] is int
+        ? order['id'] as int
+        : int.tryParse('${order['id'] ?? ''}');
+    if (currentTrip == null ||
+        currentTrip!.orderCode != code ||
+        currentTrip!.vehiclePlate != selectedPlate) {
+      currentTrip = TripMilestone(
+        orderId: oid,
+        orderCode: code,
+        vehiclePlate: selectedPlate,
+        destinationName: dest,
+        destinationLat: dLat,
+        destinationLng: dLng,
+      );
+    } else if (currentTrip!.orderId == null && oid != null) {
+      currentTrip!.orderId = oid;
+    }
+    final wPhoto = (order['weigh_slip_photo_url'] ?? '').toString().trim();
+    if (wPhoto.isNotEmpty) {
+      currentTrip!.weighSlipPhotoUrl = wPhoto;
+      final wTon = order['weigh_slip_tonnage'];
+      if (wTon is num) currentTrip!.weighTonnage = wTon.toDouble();
+    }
+    final dPhoto = (order['delivery_slip_photo_url'] ?? '').toString().trim();
+    if (dPhoto.isNotEmpty) {
+      currentTrip!.deliverySlipPhotoUrl = dPhoto;
+    }
+    if (order['has_breakdown'] == true) {
+      currentTrip!.hasBreakdown = true;
+      currentTrip!.breakdownReason = (order['breakdown_reason'] ?? '').toString();
+      currentTrip!.breakdownPhotoUrl = (order['breakdown_photo_url'] ?? '').toString();
+    }
+    notifyListeners();
   }
 
   void setVehicle(String plate, VehicleType type) {
     selectedPlate = plate;
     selectedVehicleType = type;
-    if (currentTrip != null) {
-      currentTrip = TripMilestone(
-        orderCode: currentTrip!.orderCode,
-        vehiclePlate: plate,
-        destinationName: currentTrip!.destinationName,
-        destinationLat: currentTrip!.destinationLat,
-        destinationLng: currentTrip!.destinationLng,
-      );
-    }
-    // Đổi xe thì reset kiểm tra đầu ngày của xe đó
+    // Đổi xe thì reset kiểm tra đầu ngày và xóa chuyến của xe cũ cho đến khi đồng bộ lại
+    currentTrip = null;
     isInspectionCompleted = false;
     isApprovedByDispatcher = false;
     todayInspection = null;
@@ -249,8 +288,21 @@ class AppState extends ChangeNotifier {
         final status = (latest?['flag_status'] ?? '').toString().trim().toLowerCase();
         approved = status == 'approved';
       }
+      final bool completedToday = data.isNotEmpty;
+      bool changed = false;
+      if (isInspectionCompleted != completedToday) {
+        isInspectionCompleted = completedToday;
+        changed = true;
+      }
       if (isApprovedByDispatcher != approved) {
         isApprovedByDispatcher = approved;
+        changed = true;
+      }
+      if (!approved && currentTrip != null) {
+        currentTrip = null;
+        changed = true;
+      }
+      if (changed) {
         notifyListeners();
       }
     } catch (_) {

@@ -7,7 +7,7 @@ import '../models/inspection_model.dart';
 import '../services/admin_service.dart';
 import '../services/app_state.dart';
 import 'camera_inspection_screen.dart';
-import 'weigh_slip_dialog.dart';
+import 'slip_capture_screen.dart';
 import 'breakdown_dialog.dart';
 
 class DriverScheduleScreen extends StatefulWidget {
@@ -33,9 +33,9 @@ class _DriverScheduleScreenState extends State<DriverScheduleScreen> {
   void initState() {
     super.initState();
     _loadDriverData();
-    _gpsRefreshTimer = Timer.periodic(const Duration(seconds: 25), (_) {
+    _gpsRefreshTimer = Timer.periodic(const Duration(seconds: 15), (_) {
       if (mounted) {
-        context.read<AppState>().refreshCurrentVehicleGps();
+        _loadDriverData(silent: true);
       }
     });
   }
@@ -93,20 +93,38 @@ class _DriverScheduleScreenState extends State<DriverScheduleScreen> {
         }
       }
 
-      // Lọc lịch trình đơn hàng của tài xế hoặc của chiếc xe tài xế đang quản lý
+      // Đồng bộ trạng thái Kiểm tra xe & Duyệt Nhận Chuyến của xe đang chọn từ server
+      await state.refreshInspectionApprovalStatus();
+      if (!mounted) return;
+
+      // Chỉ khi xe ĐÃ ĐƯỢC DUYỆT NHẬN CHUYẾN (isApprovedByDispatcher == true)
+      // mới cho phép lấy đơn hàng do Điều phối viên gắn cho xe/tài xế
       final activePlate = state.selectedPlate;
-      final driverOrders = allOrders.where((o) {
-        if (o is! Map) return false;
-        final ordDriverId = o['assigned_driver_id'];
-        final ordPlate = (o['assigned_vehicle_plate'] ?? '').toString().trim();
-        if (myUserId != null && ordDriverId != null && ordDriverId == myUserId) {
-          return true;
-        }
-        if (ordPlate.isNotEmpty && ordPlate == activePlate) {
-          return true;
-        }
-        return false;
-      }).toList();
+      List<dynamic> driverOrders = [];
+      if (state.isApprovedByDispatcher) {
+        driverOrders = allOrders.where((o) {
+          if (o is! Map) return false;
+          final status = (o['status'] ?? '').toString().trim().toLowerCase();
+          if (status == 'completed' || status == 'cancelled' || status == 'waiting') {
+            return false;
+          }
+          final ordDriverId = o['assigned_driver_id'];
+          final ordPlate = (o['assigned_vehicle_plate'] ?? '').toString().trim();
+          if (ordPlate.isNotEmpty && ordPlate == activePlate) {
+            return true;
+          }
+          if (myUserId != null && ordDriverId != null && ordDriverId == myUserId) {
+            return true;
+          }
+          return false;
+        }).toList();
+      }
+
+      // Đồng bộ currentTrip: chỉ có Mã lệnh khi xe đã được Duyệt Nhận Chuyến + có đơn hàng gắn
+      final Map<String, dynamic>? activeOrder = driverOrders.isNotEmpty
+          ? Map<String, dynamic>.from(driverOrders.first as Map)
+          : null;
+      state.syncAssignedTripFromOrder(activeOrder);
 
       setState(() {
         _myAssignedVehicles = assignedVehicles;
@@ -242,6 +260,7 @@ class _DriverScheduleScreenState extends State<DriverScheduleScreen> {
                         _lastCenteredPos = null;
                         final pos = _getCurrentVehiclePosition(state);
                         _mapController.move(pos, 14.5);
+                        _loadDriverData(silent: true);
                       }
                     },
                   ),
@@ -651,8 +670,18 @@ class _DriverScheduleScreenState extends State<DriverScheduleScreen> {
   }
 
   Widget _buildActiveScheduleMilestonesCard(BuildContext context, AppState state, bool isLocked) {
-    final trip = state.currentTrip;
-    if (trip == null) return const SizedBox.shrink();
+    final bool approved = state.isApprovedByDispatcher;
+    final bool completedInspection = state.isInspectionCompleted;
+    final trip = approved ? state.currentTrip : null;
+    final bool hasAssignedOrder = approved && trip != null && trip.orderCode.trim().isNotEmpty;
+    final bool stepDisabled = isLocked || !hasAssignedOrder;
+
+    String badgeText = "ĐANG THỰC HIỆN";
+    if (!approved) {
+      badgeText = completedInspection ? "CHỜ ĐIỀU PHỐI DUYỆT" : "CHỜ KIỂM TRA XE";
+    } else if (!hasAssignedOrder) {
+      badgeText = "CHỜ GẮN MÃ LỆNH";
+    }
 
     return Card(
       elevation: 0,
@@ -685,68 +714,99 @@ class _DriverScheduleScreenState extends State<DriverScheduleScreen> {
                   ),
                 ),
                 const SizedBox(width: 6),
-                if (isLocked)
-                  Container(
-                    padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
-                    decoration: BoxDecoration(
-                      color: Colors.grey.shade200,
-                      borderRadius: BorderRadius.circular(4),
-                      border: Border.all(color: Colors.grey.shade400),
-                    ),
-                    child: const Text(
-                      "CHỜ KIỂM TRA XE",
-                      style: TextStyle(fontSize: 10.5, fontWeight: FontWeight.bold, color: Colors.black54),
+                Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+                  decoration: BoxDecoration(
+                    color: hasAssignedOrder ? Colors.green.shade50 : Colors.grey.shade200,
+                    borderRadius: BorderRadius.circular(4),
+                    border: Border.all(
+                      color: hasAssignedOrder ? Colors.green.shade400 : Colors.grey.shade400,
                     ),
                   ),
+                  child: Text(
+                    badgeText,
+                    style: TextStyle(
+                      fontSize: 10.5,
+                      fontWeight: FontWeight.bold,
+                      color: hasAssignedOrder ? Colors.green.shade800 : Colors.black54,
+                    ),
+                  ),
+                ),
               ],
             ),
             const Divider(height: 20),
-            Container(
-              padding: const EdgeInsets.all(10),
-              decoration: BoxDecoration(
-                color: Colors.blue.shade50.withOpacity(0.5),
-                borderRadius: BorderRadius.circular(4),
-                border: Border.all(color: Colors.blue.shade100),
-              ),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Row(
-                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                    children: [
-                      Expanded(
-                        child: Text(
-                          "Mã lệnh: ${trip.orderCode}",
-                          overflow: TextOverflow.ellipsis,
-                          style: TextStyle(fontWeight: FontWeight.bold, fontSize: 13.5, color: Colors.blue.shade900),
+            if (!hasAssignedOrder)
+              Container(
+                width: double.infinity,
+                padding: const EdgeInsets.all(12),
+                decoration: BoxDecoration(
+                  color: Colors.orange.shade50,
+                  borderRadius: BorderRadius.circular(4),
+                  border: Border.all(color: Colors.orange.shade200),
+                ),
+                child: Row(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Icon(Icons.info_outline, color: Colors.orange.shade800, size: 18),
+                    const SizedBox(width: 8),
+                    Expanded(
+                      child: Text(
+                        !approved
+                            ? "Xe ${state.selectedPlate} chưa được kiểm tra & Duyệt Nhận Chuyến nên chưa có Mã lệnh. Vui lòng chụp đủ 5 ảnh kiểm tra xe và chờ Điều phối viên bấm 'Duyệt Nhận Chuyến' để gắn đơn hàng."
+                            : "Xe ${state.selectedPlate} đã được Duyệt Nhận Chuyến. Đang chờ Điều phối viên gắn đơn hàng (Mã lệnh) cho xe.",
+                        style: TextStyle(fontSize: 12.5, color: Colors.orange.shade900, height: 1.4),
+                      ),
+                    ),
+                  ],
+                ),
+              )
+            else
+              Container(
+                padding: const EdgeInsets.all(10),
+                decoration: BoxDecoration(
+                  color: Colors.blue.shade50.withOpacity(0.5),
+                  borderRadius: BorderRadius.circular(4),
+                  border: Border.all(color: Colors.blue.shade100),
+                ),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Row(
+                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                      children: [
+                        Expanded(
+                          child: Text(
+                            "Mã lệnh: ${trip.orderCode}",
+                            overflow: TextOverflow.ellipsis,
+                            style: TextStyle(fontWeight: FontWeight.bold, fontSize: 13.5, color: Colors.blue.shade900),
+                          ),
                         ),
-                      ),
-                      const SizedBox(width: 6),
-                      Text(
-                        "Xe: ${state.selectedPlate}",
-                        style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 12.5, color: Colors.black87),
-                      ),
-                    ],
-                  ),
-                  const SizedBox(height: 4),
-                  Text(
-                    "Điểm giao hàng: ${trip.destinationName}",
-                    style: const TextStyle(fontSize: 12.5, color: Colors.black87),
-                  ),
-                ],
+                        const SizedBox(width: 6),
+                        Text(
+                          "Xe: ${state.selectedPlate}",
+                          style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 12.5, color: Colors.black87),
+                        ),
+                      ],
+                    ),
+                    const SizedBox(height: 4),
+                    Text(
+                      "Điểm giao hàng: ${trip.destinationName}",
+                      style: const TextStyle(fontSize: 12.5, color: Colors.black87),
+                    ),
+                  ],
+                ),
               ),
-            ),
             const SizedBox(height: 12),
 
             // Mốc 1: ĐẾN ĐIỂM GIAO
             _buildMilestoneStepRow(
               title: "1. ĐẾN điểm giao hàng",
-              timeText: trip.arrivedTime != null
-                  ? "Đã ghi nhận lúc ${trip.arrivedTime!.hour.toString().padLeft(2, '0')}:${trip.arrivedTime!.minute.toString().padLeft(2, '0')} (GPS)"
+              timeText: (trip?.arrivedTime != null)
+                  ? "Đã ghi nhận lúc ${trip!.arrivedTime!.hour.toString().padLeft(2, '0')}:${trip.arrivedTime!.minute.toString().padLeft(2, '0')} (GPS)"
                   : "Bấm khi xe đến trạm/kho khách hàng",
-              isRecorded: trip.arrivedTime != null,
+              isRecorded: trip?.arrivedTime != null,
               buttonLabel: "Bấm ĐẾN",
-              isDisabled: isLocked || trip.arrivedTime != null,
+              isDisabled: stepDisabled || trip.arrivedTime != null,
               onPressed: () => _handleArrived(context, state),
             ),
             const SizedBox(height: 8),
@@ -754,12 +814,12 @@ class _DriverScheduleScreenState extends State<DriverScheduleScreen> {
             // Mốc 2: BƠM XONG
             _buildMilestoneStepRow(
               title: "2. BƠM XONG hàng",
-              timeText: trip.pumpedTime != null
-                  ? "Hoàn tất lúc ${trip.pumpedTime!.hour.toString().padLeft(2, '0')}:${trip.pumpedTime!.minute.toString().padLeft(2, '0')}"
-                  : (trip.arrivedTime != null ? "Đang chờ/bơm (${trip.waitDurationMinutes} phút)" : "Chờ xác nhận mốc ĐẾN"),
-              isRecorded: trip.pumpedTime != null,
+              timeText: (trip?.pumpedTime != null)
+                  ? "Hoàn tất lúc ${trip!.pumpedTime!.hour.toString().padLeft(2, '0')}:${trip.pumpedTime!.minute.toString().padLeft(2, '0')}"
+                  : (trip?.arrivedTime != null ? "Đang chờ/bơm (${trip!.waitDurationMinutes} phút)" : "Chờ xác nhận mốc ĐẾN"),
+              isRecorded: trip?.pumpedTime != null,
               buttonLabel: "BƠM XONG",
-              isDisabled: isLocked || trip.arrivedTime == null || trip.pumpedTime != null,
+              isDisabled: stepDisabled || trip.arrivedTime == null || trip.pumpedTime != null,
               onPressed: () => _handlePumped(context, state),
             ),
             const SizedBox(height: 8),
@@ -767,39 +827,34 @@ class _DriverScheduleScreenState extends State<DriverScheduleScreen> {
             // Mốc 3: GỬI PHIẾU CÂN
             _buildMilestoneStepRow(
               title: "3. Chụp & Gửi Phiếu Cân",
-              timeText: trip.weighSlipPhotoUrl != null
-                  ? "Khối lượng: ${trip.weighTonnage} Tấn (Đã đồng bộ Zalo OA)"
+              timeText: (trip?.weighSlipPhotoUrl != null)
+                  ? "Khối lượng: ${trip!.weighTonnage} Tấn (Đã đồng bộ Zalo OA)"
                   : "Chụp phiếu cân OCR khối lượng & mã lệnh",
-              isRecorded: trip.weighSlipPhotoUrl != null,
+              isRecorded: trip?.weighSlipPhotoUrl != null,
               buttonLabel: "Phiếu Cân",
-              isDisabled: isLocked,
-              onPressed: () {
-                showDialog(
-                  context: context,
-                  builder: (ctx) => const WeighSlipDialog(),
-                );
-              },
+              isDisabled: stepDisabled,
+              onPressed: () => SlipCaptureScreen.show(
+                context,
+                slipType: 'weigh',
+                orderCode: trip?.orderCode ?? '',
+              ),
             ),
             const SizedBox(height: 8),
 
             // Mốc 4: GỬI PHIẾU GIAO HÀNG
             _buildMilestoneStepRow(
               title: "4. Chụp & Gửi Phiếu Giao Hàng",
-              timeText: trip.deliverySlipPhotoUrl != null
+              timeText: (trip?.deliverySlipPhotoUrl != null)
                   ? "Đã gửi vào nhóm Zalo khách hàng"
                   : "Chụp biên bản giao nhận hàng hoàn tất chuyến",
-              isRecorded: trip.deliverySlipPhotoUrl != null,
+              isRecorded: trip?.deliverySlipPhotoUrl != null,
               buttonLabel: "Phiếu GH",
-              isDisabled: isLocked,
-              onPressed: () {
-                state.recordDeliverySlip(photoUrl: "storage/slips/pgh_${DateTime.now().millisecondsSinceEpoch}.jpg");
-                ScaffoldMessenger.of(context).showSnackBar(
-                  SnackBar(
-                    backgroundColor: Colors.green.shade700,
-                    content: const Text("Đã lưu và gửi Phiếu giao hàng vào nhóm Zalo khách hàng!"),
-                  ),
-                );
-              },
+              isDisabled: stepDisabled,
+              onPressed: () => SlipCaptureScreen.show(
+                context,
+                slipType: 'delivery',
+                orderCode: trip?.orderCode ?? '',
+              ),
             ),
           ],
         ),
@@ -871,7 +926,7 @@ class _DriverScheduleScreenState extends State<DriverScheduleScreen> {
                     Icon(Icons.event_available_outlined, size: 32, color: Colors.grey.shade400),
                     const SizedBox(height: 6),
                     Text(
-                      "Đang thực hiện theo lệnh điều động mặc định trên xe ${state.selectedPlate}.",
+                      state.isApprovedByDispatcher ? "Chưa có đơn hàng nào được Điều phối viên gắn cho xe ${state.selectedPlate}." : "Xe ${state.selectedPlate} cần được kiểm tra và Duyệt Nhận Chuyến trước khi Điều phối viên gắn đơn hàng.",
                       textAlign: TextAlign.center,
                       style: TextStyle(fontSize: 12.5, color: Colors.grey.shade700),
                     ),

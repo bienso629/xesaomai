@@ -8,7 +8,11 @@ enum TripStatus {
 }
 
 class TripMilestone {
+  int? orderId;
   final String orderCode;
+  bool hasBreakdown;
+  String? breakdownReason;
+  String? breakdownPhotoUrl;
   final String vehiclePlate;
   final String destinationName;
   final double destinationLat;
@@ -35,7 +39,11 @@ class TripMilestone {
   String? deliveryZaloStatus;
 
   TripMilestone({
+    this.orderId,
     required this.orderCode,
+    this.hasBreakdown = false,
+    this.breakdownReason,
+    this.breakdownPhotoUrl,
     required this.vehiclePlate,
     required this.destinationName,
     required this.destinationLat,

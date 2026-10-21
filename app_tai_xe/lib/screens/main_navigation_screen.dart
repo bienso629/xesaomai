@@ -10,6 +10,7 @@ import 'dispatch_supervisor_screen.dart';
 import 'vehicle_inspection_screen.dart';
 import 'driver_inspection_history_screen.dart';
 import 'driver_schedule_screen.dart';
+import 'driver_orders_screen.dart';
 import 'login_screen.dart';
 
 class MainNavigationScreen extends StatefulWidget {
@@ -53,8 +54,15 @@ class _MainNavigationScreenState extends State<MainNavigationScreen> {
           (r) => ['admin', 'manager', 'dispatcher'].contains(r.toLowerCase()),
         );
 
-    if (isDriver) {
-      // Tài xế đăng nhập thành công thì vào thẳng màn hình Lịch trình xe quản lý của riêng tài xế
+    final hasManagementAccess =
+        state.currentUsername == 'admin' ||
+        state.userRoles.any(
+          (r) => ['admin', 'manager', 'dispatcher'].contains(r.toLowerCase()),
+        );
+
+    if (isDriver || !hasManagementAccess) {
+      // Tài xế / Kỹ thuật / Cây dầu: vào thẳng màn Lịch trình xe quản lý,
+      // không nhìn thấy và không truy cập được các màn hình quản lý hệ thống
       _currentRoot = 4;
     } else {
       // Quản lý / Điều phối / Admin vào Tổng quan & Báo cáo
@@ -65,7 +73,7 @@ class _MainNavigationScreenState extends State<MainNavigationScreen> {
     WidgetsBinding.instance.addPostFrameCallback((_) {
       NotificationHelper.requestNotificationPermission();
       if (mounted) {
-        if (isDriver) {
+        if (isDriver || !hasManagementAccess) {
           state.setRole(UserRole.driver);
         } else {
           state.setRole(UserRole.manager);
@@ -98,8 +106,9 @@ class _MainNavigationScreenState extends State<MainNavigationScreen> {
   String _getAppTitle() {
     if (_currentRoot == 0) return "Bản Đồ Giám Sát GPS";
     if (_currentRoot == 1) return "Kiểm Tra Xe";
-    if (_currentRoot == 3) return "Lịch Sử Hình Chụp Kiểm Tra Xe";
-    if (_currentRoot == 4) return "Theo Dõi Lịch Trình Xe Quản Lý";
+    if (_currentRoot == 3) return "Hình Chụp Xe";
+    if (_currentRoot == 4) return "Lịch Trình Xe";
+    if (_currentRoot == 5) return "Đơn Hàng Xe Vận Chuyển";
     return _managementTitles[_activeManagementTab];
   }
 
@@ -177,7 +186,7 @@ class _MainNavigationScreenState extends State<MainNavigationScreen> {
     final state = context.read<AppState>();
     setState(() {
       _currentRoot = rootIndex;
-      if (rootIndex == 1 || rootIndex == 3 || rootIndex == 4) {
+      if (rootIndex == 1 || rootIndex == 3 || rootIndex == 4 || rootIndex == 5) {
         state.setRole(UserRole.driver);
       } else if (rootIndex == 2) {
         state.setRole(UserRole.manager);
@@ -190,6 +199,14 @@ class _MainNavigationScreenState extends State<MainNavigationScreen> {
 
   void _onSelectManagementTab(int tabIndex) {
     final state = context.read<AppState>();
+    final hasManagementAccess =
+        state.currentUsername == 'admin' ||
+        state.userRoles.any(
+          (r) => ['admin', 'manager', 'dispatcher'].contains(r.toLowerCase()),
+        );
+    if (!hasManagementAccess) {
+      return;
+    }
     final canManageUsers =
         state.currentUsername == 'admin' ||
         state.userRoles.any(
@@ -470,8 +487,7 @@ class _MainNavigationScreenState extends State<MainNavigationScreen> {
                       child: Divider(color: Color(0xFF1E293B), height: 1),
                     ),
                   ],
-                  if (state.userRoles.any((r) => r.toLowerCase() == 'driver') &&
-                      state.currentUsername != 'admin' &&
+                  if (state.currentUsername != 'admin' &&
                       !state.userRoles.any(
                         (r) => [
                           'admin',
@@ -484,15 +500,23 @@ class _MainNavigationScreenState extends State<MainNavigationScreen> {
                       isSelected: _currentRoot == 4,
                       icon: Icons.event_note_outlined,
                       activeIcon: Icons.event_note,
-                      title: "Lịch trình xe quản lý",
+                      title: "Lịch trình xe",
                       subtitle: "Theo dõi chuyến đi & mốc giờ xe mình",
                       onTap: () => _onSelectRoot(4),
+                    ),
+                    _buildDrawerItem(
+                      isSelected: _currentRoot == 5,
+                      icon: Icons.local_shipping_outlined,
+                      activeIcon: Icons.local_shipping,
+                      title: "Đơn hàng",
+                      subtitle: "Các đơn hàng xe đã vận chuyển",
+                      onTap: () => _onSelectRoot(5),
                     ),
                     _buildDrawerItem(
                       isSelected: _currentRoot == 3,
                       icon: Icons.photo_library_outlined,
                       activeIcon: Icons.photo_library,
-                      title: "Lịch sử hình chụp xe",
+                      title: "Hình chụp xe",
                       subtitle: "Xem lại 5 ảnh kiểm tra xe các ca",
                       onTap: () => _onSelectRoot(3),
                     ),
@@ -504,47 +528,56 @@ class _MainNavigationScreenState extends State<MainNavigationScreen> {
                       child: Divider(color: Color(0xFF1E293B), height: 1),
                     ),
                   ],
-                  _buildSectionHeader("HỆ THỐNG QUẢN TRỊ DỰ ÁN"),
-                  _buildDrawerItem(
-                    isSelected: _currentRoot == 2 && _activeManagementTab == 0,
-                    icon: Icons.dashboard_outlined,
-                    activeIcon: Icons.dashboard,
-                    title: "Tổng quan & Báo cáo",
-                    subtitle: "Chỉ số vận hành, tỷ lệ tuân thủ",
-                    onTap: () => _onSelectManagementTab(0),
-                  ),
-                  _buildDrawerItem(
-                    isSelected: _currentRoot == 2 && _activeManagementTab == 1,
-                    icon: Icons.assignment_outlined,
-                    activeIcon: Icons.assignment,
-                    title: "Đơn hàng vận tải",
-                    subtitle: "Danh sách đơn, tuyến đường giao",
-                    onTap: () => _onSelectManagementTab(1),
-                  ),
-                  _buildDrawerItem(
-                    isSelected: _currentRoot == 2 && _activeManagementTab == 2,
-                    icon: Icons.directions_car_outlined,
-                    activeIcon: Icons.directions_car,
-                    title: "Đội xe & Tài xế",
-                    subtitle: "Xe nội bộ, xe thuê ngoài, phân bổ",
-                    onTap: () => _onSelectManagementTab(2),
-                  ),
-                  _buildDrawerItem(
-                    isSelected: _currentRoot == 2 && _activeManagementTab == 4,
-                    icon: Icons.ev_station_outlined,
-                    activeIcon: Icons.ev_station,
-                    title: "Cây dầu & Đối soát",
-                    subtitle: "Định mức tiêu hao, công nợ cấp phát",
-                    onTap: () => _onSelectManagementTab(4),
-                  ),
-                  _buildDrawerItem(
-                    isSelected: _currentRoot == 2 && _activeManagementTab == 5,
-                    icon: Icons.inventory_2_outlined,
-                    activeIcon: Icons.inventory_2,
-                    title: "Sản phẩm & Vật liệu",
-                    subtitle: "Xi măng rời, xi măng bao, phụ gia",
-                    onTap: () => _onSelectManagementTab(5),
-                  ),
+                  if (state.currentUsername == 'admin' ||
+                      state.userRoles.any(
+                        (r) => [
+                          'admin',
+                          'manager',
+                          'dispatcher',
+                        ].contains(r.toLowerCase()),
+                      )) ...[
+                    _buildSectionHeader("HỆ THỐNG QUẢN TRỊ DỰ ÁN"),
+                    _buildDrawerItem(
+                      isSelected: _currentRoot == 2 && _activeManagementTab == 0,
+                      icon: Icons.dashboard_outlined,
+                      activeIcon: Icons.dashboard,
+                      title: "Tổng quan & Báo cáo",
+                      subtitle: "Chỉ số vận hành, tỷ lệ tuân thủ",
+                      onTap: () => _onSelectManagementTab(0),
+                    ),
+                    _buildDrawerItem(
+                      isSelected: _currentRoot == 2 && _activeManagementTab == 1,
+                      icon: Icons.assignment_outlined,
+                      activeIcon: Icons.assignment,
+                      title: "Đơn hàng vận tải",
+                      subtitle: "Danh sách đơn, tuyến đường giao",
+                      onTap: () => _onSelectManagementTab(1),
+                    ),
+                    _buildDrawerItem(
+                      isSelected: _currentRoot == 2 && _activeManagementTab == 2,
+                      icon: Icons.directions_car_outlined,
+                      activeIcon: Icons.directions_car,
+                      title: "Đội xe & Tài xế",
+                      subtitle: "Xe nội bộ, xe thuê ngoài, phân bổ",
+                      onTap: () => _onSelectManagementTab(2),
+                    ),
+                    _buildDrawerItem(
+                      isSelected: _currentRoot == 2 && _activeManagementTab == 4,
+                      icon: Icons.ev_station_outlined,
+                      activeIcon: Icons.ev_station,
+                      title: "Cây dầu & Đối soát",
+                      subtitle: "Định mức tiêu hao, công nợ cấp phát",
+                      onTap: () => _onSelectManagementTab(4),
+                    ),
+                    _buildDrawerItem(
+                      isSelected: _currentRoot == 2 && _activeManagementTab == 5,
+                      icon: Icons.inventory_2_outlined,
+                      activeIcon: Icons.inventory_2,
+                      title: "Sản phẩm & Vật liệu",
+                      subtitle: "Xi măng rời, xi măng bao, phụ gia",
+                      onTap: () => _onSelectManagementTab(5),
+                    ),
+                  ],
                   if (state.currentUsername == 'admin' ||
                       state.userRoles.any(
                         (r) => ['admin', 'manager'].contains(r.toLowerCase()),
@@ -765,7 +798,6 @@ class _MainNavigationScreenState extends State<MainNavigationScreen> {
     } else if (_currentRoot == 3) {
       final state = context.watch<AppState>();
       final isDriver =
-          state.userRoles.any((r) => r.toLowerCase() == 'driver') &&
           state.currentUsername != 'admin' &&
           !state.userRoles.any(
             (r) => ['admin', 'manager', 'dispatcher'].contains(r.toLowerCase()),
@@ -801,7 +833,7 @@ class _MainNavigationScreenState extends State<MainNavigationScreen> {
                 ),
                 const SizedBox(height: 8),
                 const Text(
-                  "Màn hình Lịch sử hình chụp kiểm tra xe chỉ dành riêng cho Tài xế.",
+                  "Màn hình Hình chụp xe chỉ dành riêng cho Tài xế.",
                   textAlign: TextAlign.center,
                   style: TextStyle(
                     fontSize: 13,
@@ -817,7 +849,58 @@ class _MainNavigationScreenState extends State<MainNavigationScreen> {
       return const DriverInspectionHistoryScreen();
     } else if (_currentRoot == 4) {
       return const DriverScheduleScreen();
+    } else if (_currentRoot == 5) {
+      return const DriverOrdersScreen();
     } else {
+      final state = context.watch<AppState>();
+      final hasManagementAccess =
+          state.currentUsername == 'admin' ||
+          state.userRoles.any(
+            (r) => ['admin', 'manager', 'dispatcher'].contains(r.toLowerCase()),
+          );
+      if (!hasManagementAccess) {
+        return Center(
+          child: Container(
+            constraints: const BoxConstraints(maxWidth: 480),
+            margin: const EdgeInsets.all(24),
+            padding: const EdgeInsets.all(24),
+            decoration: BoxDecoration(
+              color: Colors.white,
+              borderRadius: BorderRadius.circular(4),
+              border: Border.all(color: Colors.red.shade200, width: 1),
+            ),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Icon(
+                  Icons.gpp_bad_outlined,
+                  size: 48,
+                  color: Colors.red.shade700,
+                ),
+                const SizedBox(height: 16),
+                const Text(
+                  "Từ Chối Quyền Truy Cập",
+                  style: TextStyle(
+                    fontSize: 18,
+                    fontWeight: FontWeight.bold,
+                    color: Colors.red,
+                  ),
+                ),
+                const SizedBox(height: 8),
+                const Text(
+                  "Các màn hình quản lý (Đơn hàng vận tải, Đội xe & Tài xế, Cây dầu & Đối soát, Sản phẩm & Vật liệu) chỉ dành cho Điều phối viên, Quản lý và Quản trị viên.",
+                  textAlign: TextAlign.center,
+                  style: TextStyle(
+                    fontSize: 13,
+                    color: Colors.black87,
+                    height: 1.4,
+                  ),
+                ),
+              ],
+            ),
+          ),
+        );
+      }
       return DispatchSupervisorScreen(
         activeTab: _activeManagementTab,
         onTabChanged: (index) {

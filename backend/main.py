@@ -1,3 +1,4 @@
+import base64
 import os
 import math
 import uuid
@@ -1568,5 +1569,137 @@ def checkout_shift(req: ShiftCheckout, current_user: dict = Depends(get_current_
         return {"status": "success", "message": "Kết thúc ca trực thành công", "shift": updated}
     except Exception as e:
         conn.rollback()
+        conn.close()
+        raise HTTPException(status_code=400, detail=str(e))
+
+
+def _save_order_photo(order_id: int, photo_type: str, img_data: str) -> str:
+    if not img_data:
+        return ""
+    if img_data.startswith("/uploads/") or img_data.startswith("uploads/") or img_data.startswith("http"):
+        return img_data
+    base_upload = globals().get("UPLOAD_DIR", "uploads")
+    upload_dir = os.path.join(base_upload, "orders")
+    os.makedirs(upload_dir, exist_ok=True)
+    raw = img_data.split(",")[1] if "," in img_data else img_data
+    filename = f"order_{order_id}_{photo_type}_{int(datetime.now().timestamp())}.jpg"
+    filepath = os.path.join(upload_dir, filename)
+    with open(filepath, "wb") as f:
+        f.write(base64.b64decode(raw))
+    return f"/uploads/orders/{filename}"
+
+@app.post("/api/v1/orders/{order_id}/attachment")
+def submit_order_attachment(
+    order_id: int,
+    payload: OrderAttachmentSubmit,
+    current_user: dict = Depends(get_current_user),
+):
+    conn = get_db()
+    cur = conn.cursor()
+    cur.execute("SELECT * FROM orders WHERE id = %s", (order_id,))
+    existing = cur.fetchone()
+    if not existing:
+        cur.close()
+        conn.close()
+        raise HTTPException(status_code=404, detail="Không tìm thấy đơn hàng")
+
+    actor = current_user.get("full_name") or current_user.get("username") or "Người dùng"
+    ptype = (payload.photo_type or "").strip().lower()
+    try:
+        saved_path = _save_order_photo(order_id, ptype, payload.photo_base64)
+        if ptype == "pump_slip":
+            cur.execute(
+                """
+                UPDATE orders
+                SET pump_slip_photo_url = %s,
+                    pump_slip_time = CURRENT_TIMESTAMP,
+                    pump_slip_by = %s,
+                    pump_slip_note = COALESCE(%s, pump_slip_note),
+                    status = CASE WHEN status IN ('waiting', 'assigned') THEN 'in_progress' ELSE status END,
+                    updated_at = CURRENT_TIMESTAMP
+                WHERE id = %s
+                RETURNING *
+                """,
+                (saved_path, actor, payload.note, order_id),
+            )
+        elif ptype == "weigh_slip":
+            cur.execute(
+                """
+                UPDATE orders
+                SET weigh_slip_photo_url = %s,
+                    weigh_slip_time = CURRENT_TIMESTAMP,
+                    weigh_slip_tonnage = COALESCE(%s, weigh_slip_tonnage),
+                    weigh_slip_code = COALESCE(%s, weigh_slip_code),
+                    status = CASE WHEN status IN ('waiting', 'assigned') THEN 'in_progress' ELSE status END,
+                    updated_at = CURRENT_TIMESTAMP
+                WHERE id = %s
+                RETURNING *
+                """,
+                (saved_path, payload.tonnage, payload.slip_code, order_id),
+            )
+        elif ptype == "delivery_slip":
+            cur.execute(
+                """
+                UPDATE orders
+                SET delivery_slip_photo_url = %s,
+                    delivery_slip_time = CURRENT_TIMESTAMP,
+                    delivery_slip_note = COALESCE(%s, delivery_slip_note),
+                    status = 'completed',
+                    updated_at = CURRENT_TIMESTAMP
+                WHERE id = %s
+                RETURNING *
+                """,
+                (saved_path, payload.note, order_id),
+            )
+        elif ptype == "breakdown":
+            cur.execute(
+                """
+                UPDATE orders
+                SET has_breakdown = TRUE,
+                    breakdown_status = 'reported',
+                    breakdown_photo_url = %s,
+                    breakdown_reason = COALESCE(%s, breakdown_reason),
+                    breakdown_location = COALESCE(%s, breakdown_location),
+                    breakdown_time = CURRENT_TIMESTAMP,
+                    breakdown_reported_by = %s,
+                    updated_at = CURRENT_TIMESTAMP
+                WHERE id = %s
+                RETURNING *
+                """,
+                (saved_path, payload.note, payload.location, actor, order_id),
+            )
+        elif ptype == "repair":
+            r_status = payload.repair_status or "fixed"
+            b_status = "resolved" if r_status == "fixed" else "repairing"
+            cur.execute(
+                """
+                UPDATE orders
+                SET repair_photo_url = %s,
+                    repair_status = %s,
+                    repair_note = COALESCE(%s, repair_note),
+                    repair_time = CURRENT_TIMESTAMP,
+                    repair_by = %s,
+                    breakdown_status = %s,
+                    updated_at = CURRENT_TIMESTAMP
+                WHERE id = %s
+                RETURNING *
+                """,
+                (saved_path, r_status, payload.note, actor, b_status, order_id),
+            )
+        else:
+            cur.close()
+            conn.close()
+            raise HTTPException(status_code=400, detail=f"Loại hình chụp không hợp lệ: {ptype}")
+
+        updated = cur.fetchone()
+        conn.commit()
+        cur.close()
+        conn.close()
+        return dict(updated)
+    except HTTPException:
+        raise
+    except Exception as e:
+        conn.rollback()
+        cur.close()
         conn.close()
         raise HTTPException(status_code=400, detail=str(e))

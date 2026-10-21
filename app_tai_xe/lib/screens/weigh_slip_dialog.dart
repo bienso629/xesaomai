@@ -10,7 +10,7 @@ class WeighSlipDialog extends StatefulWidget {
 }
 
 class _WeighSlipDialogState extends State<WeighSlipDialog> {
-  final TextEditingController _codeController = TextEditingController(text: "DH-XI-MANG-2026-092");
+  final TextEditingController _codeController = TextEditingController();
   final TextEditingController _tonsController = TextEditingController(text: "28.45");
   DateTime _weighTime = DateTime.now();
 
