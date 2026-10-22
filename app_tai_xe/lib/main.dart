@@ -26,7 +26,7 @@ class TaxiDriverApp extends StatelessWidget {
     return MultiProvider(
       providers: [ChangeNotifierProvider(create: (_) => AppState())],
       child: MaterialApp(
-        title: 'Tài xế Sao Mai',
+        title: 'Vận tải Sao Mai',
         theme: ThemeData(
           colorScheme: ColorScheme.fromSeed(seedColor: Colors.blue),
           useMaterial3: true,

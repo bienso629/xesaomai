@@ -8,7 +8,7 @@
 PRODUCT_NAME = app_tai_xe
 
 // The application's bundle identifier
-PRODUCT_BUNDLE_IDENTIFIER = com.taxilogistics.driver.appTaiXe
+PRODUCT_BUNDLE_IDENTIFIER = com.taxilogistics.driver.saomai
 
 // The copyright displayed in application information
 PRODUCT_COPYRIGHT = Copyright © 2026 com.taxilogistics.driver. All rights reserved.
