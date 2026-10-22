@@ -1,0 +1,101 @@
+name: Build iOS & macOS
+
+on:
+  push:
+    branches: [ "main" ]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  build-ios:
+    name: Build iOS (.ipa chưa ký)
+    runs-on: macos-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup Flutter
+        uses: subosito/flutter-action@v2
+        with:
+          channel: 'stable'
+          cache: true
+
+      - name: Install dependencies
+        working-directory: ./app_tai_xe
+        run: flutter pub get
+
+      - name: Build iOS Release (no codesign)
+        working-directory: ./app_tai_xe
+        run: flutter build ios --release --no-codesign
+
+      - name: Package unsigned IPA
+        working-directory: ./app_tai_xe/build/ios/iphoneos
+        run: |
+          mkdir -p Payload
+          cp -R Runner.app Payload/
+          zip -qry "$GITHUB_WORKSPACE/SaoMai_TaiXe_iOS_unsigned.ipa" Payload
+
+      - name: Upload iOS Artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: SaoMai_TaiXe_iOS_unsigned
+          path: SaoMai_TaiXe_iOS_unsigned.ipa
+          retention-days: 30
+
+  build-macos:
+    name: Build macOS (.app)
+    runs-on: macos-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup Flutter
+        uses: subosito/flutter-action@v2
+        with:
+          channel: 'stable'
+          cache: true
+
+      - name: Install dependencies
+        working-directory: ./app_tai_xe
+        run: flutter pub get
+
+      - name: Build macOS Release
+        working-directory: ./app_tai_xe
+        run: flutter build macos --release
+
+      - name: Package macOS app into ZIP
+        working-directory: ./app_tai_xe/build/macos/Build/Products/Release
+        run: ditto -c -k --sequesterRsrc --keepParent app_tai_xe.app "$GITHUB_WORKSPACE/SaoMai_TaiXe_macOS.zip"
+
+      - name: Upload macOS Artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: SaoMai_TaiXe_macOS
+          path: SaoMai_TaiXe_macOS.zip
+          retention-days: 30
+
+  release:
+    name: Đính kèm bản iOS & macOS vào GitHub Release
+    needs: [ build-ios, build-macos ]
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Download artifacts
+        uses: actions/download-artifact@v4
+        with:
+          path: dist
+          merge-multiple: true
+
+      - name: Upload to GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: v1.0.0-latest
+          files: |
+            dist/SaoMai_TaiXe_iOS_unsigned.ipa
+            dist/SaoMai_TaiXe_macOS.zip
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
