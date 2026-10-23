@@ -4,6 +4,7 @@ import 'package:provider/provider.dart';
 import '../services/admin_service.dart';
 import '../services/app_state.dart';
 import 'camera_inspection_screen.dart';
+import '../config/api_config.dart';
 
 class DriverInspectionHistoryScreen extends StatefulWidget {
   const DriverInspectionHistoryScreen({super.key});
@@ -85,7 +86,7 @@ class _DriverInspectionHistoryScreenState extends State<DriverInspectionHistoryS
       if (file.existsSync()) {
         return Image.file(file, fit: BoxFit.cover, errorBuilder: (ctx, err, stack) => _buildPlaceholderIcon());
       }
-      final fullUrl = url.startsWith('http') ? url : 'https://saomai-api.type.vn/${url.startsWith('/') ? url.substring(1) : url}';
+      final fullUrl = url.startsWith('http') ? url : '${ApiConfig.host}/${url.startsWith('/') ? url.substring(1) : url}';
       return Image.network(fullUrl, fit: BoxFit.cover, errorBuilder: (ctx, err, stack) => _buildPlaceholderIcon());
     }
   }

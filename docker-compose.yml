@@ -46,6 +46,9 @@ services:
       DATABASE_URL: postgres://taxi_user:taxi_password_2026@postgres:5432/taxi_logistics
       REDIS_URL: redis://redis:6379/0
       PORT: 8000
+      BINHANH_CUSTOMER_CODE: ${BINHANH_CUSTOMER_CODE:-}
+      BINHANH_KEY: ${BINHANH_KEY:-}
+      QUANLYXE_API_KEY: ${QUANLYXE_API_KEY:-}
     ports:
       - "1133:8000"
     volumes:

@@ -2,14 +2,20 @@
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <plist version="1.0">
 <dict>
+		<key>NSLocationWhenInUseUsageDescription</key>
+	<string>Vận tải VinTrans cần vị trí GPS để ghi nhận tọa độ thực tế khi tài xế chụp ảnh kiểm tra xe và phiếu giao nhận hàng.</string>
 	<key>NSCameraUsageDescription</key>
 	<string>Ứng dụng cần quyền Camera để tài xế chụp 5 ảnh kiểm tra xe đầu ngày, phiếu cân và phiếu giao hàng.</string>
+	<key>NSMicrophoneUsageDescription</key>
+	<string>Ứng dụng không ghi âm. Quyền micro chỉ được thư viện camera yêu cầu khai báo khi chụp ảnh kiểm tra xe và phiếu giao hàng.</string>
+	<key>ITSAppUsesNonExemptEncryption</key>
+	<false/>
 	<key>CADisableMinimumFrameDurationOnPhone</key>
 	<true/>
 	<key>CFBundleDevelopmentRegion</key>
 	<string>$(DEVELOPMENT_LANGUAGE)</string>
 	<key>CFBundleDisplayName</key>
-	<string>Vận tải Sao Mai</string>
+	<string>Vận tải VinTrans</string>
 	<key>CFBundleExecutable</key>
 	<string>$(EXECUTABLE_NAME)</string>
 	<key>CFBundleIdentifier</key>
@@ -17,7 +23,7 @@
 	<key>CFBundleInfoDictionaryVersion</key>
 	<string>6.0</string>
 	<key>CFBundleName</key>
-	<string>Vận tải Sao Mai</string>
+	<string>Vận tải VinTrans</string>
 	<key>CFBundlePackageType</key>
 	<string>APPL</string>
 	<key>CFBundleShortVersionString</key>
@@ -58,15 +64,12 @@
 	<key>UISupportedInterfaceOrientations</key>
 	<array>
 		<string>UIInterfaceOrientationPortrait</string>
-		<string>UIInterfaceOrientationLandscapeLeft</string>
-		<string>UIInterfaceOrientationLandscapeRight</string>
 	</array>
 	<key>UISupportedInterfaceOrientations~ipad</key>
 	<array>
 		<string>UIInterfaceOrientationPortrait</string>
-		<string>UIInterfaceOrientationPortraitUpsideDown</string>
-		<string>UIInterfaceOrientationLandscapeLeft</string>
-		<string>UIInterfaceOrientationLandscapeRight</string>
 	</array>
+	<key>UIRequiresFullScreen</key>
+	<true/>
 </dict>
 </plist>

@@ -811,15 +811,63 @@ class _DriverScheduleScreenState extends State<DriverScheduleScreen> {
             ),
             const SizedBox(height: 8),
 
-            // Mốc 2: BƠM XONG
+            // Mốc 2a: ẢNH BƠM HÀNG - TRƯỚC KHI BƠM (bắt buộc, Tài xế chụp, có GPS)
+            _buildMilestoneStepRow(
+              title: "2a. Chụp ảnh TRƯỚC KHI BƠM",
+              timeText: (trip?.pumpBeforePhotoUrl != null)
+                  ? "Đã gửi Điều phối (kèm GPS)"
+                  : (trip?.arrivedTime != null
+                      ? "Bắt buộc: chụp đồng hồ/vòi bơm trước khi bơm"
+                      : "Chờ xác nhận mốc ĐẾN"),
+              isRecorded: trip?.pumpBeforePhotoUrl != null,
+              buttonLabel: trip?.pumpBeforePhotoUrl != null ? "Chụp lại" : "Trước bơm",
+              isDisabled: stepDisabled || trip.arrivedTime == null || trip.pumpedTime != null,
+              onPressed: () => SlipCaptureScreen.show(
+                context,
+                slipType: 'pump_before',
+                orderId: trip?.orderId,
+                orderCode: trip?.orderCode ?? '',
+              ),
+            ),
+            const SizedBox(height: 8),
+
+            // Mốc 2b: ẢNH BƠM HÀNG - ĐÃ BƠM XONG (bắt buộc, Tài xế chụp, có GPS)
+            _buildMilestoneStepRow(
+              title: "2b. Chụp ảnh ĐÃ BƠM XONG",
+              timeText: (trip?.pumpAfterPhotoUrl != null)
+                  ? "Đã gửi Điều phối (kèm GPS)"
+                  : (trip?.pumpBeforePhotoUrl != null
+                      ? "Bắt buộc: chụp đồng hồ/phiếu sau khi bơm xong"
+                      : "Chụp ảnh TRƯỚC KHI BƠM trước"),
+              isRecorded: trip?.pumpAfterPhotoUrl != null,
+              buttonLabel: trip?.pumpAfterPhotoUrl != null ? "Chụp lại" : "Đã bơm",
+              isDisabled: stepDisabled || trip.pumpBeforePhotoUrl == null || trip.pumpedTime != null,
+              onPressed: () => SlipCaptureScreen.show(
+                context,
+                slipType: 'pump_after',
+                orderId: trip?.orderId,
+                orderCode: trip?.orderCode ?? '',
+              ),
+            ),
+            const SizedBox(height: 8),
+
+            // Mốc 2: BƠM XONG (chỉ mở khi đã đủ 2 ảnh bơm hàng)
             _buildMilestoneStepRow(
               title: "2. BƠM XONG hàng",
               timeText: (trip?.pumpedTime != null)
                   ? "Hoàn tất lúc ${trip!.pumpedTime!.hour.toString().padLeft(2, '0')}:${trip.pumpedTime!.minute.toString().padLeft(2, '0')}"
-                  : (trip?.arrivedTime != null ? "Đang chờ/bơm (${trip!.waitDurationMinutes} phút)" : "Chờ xác nhận mốc ĐẾN"),
+                  : (trip?.arrivedTime == null
+                      ? "Chờ xác nhận mốc ĐẾN"
+                      : (trip!.pumpAfterPhotoUrl == null
+                          ? "Cần đủ 2 ảnh bơm hàng (Trước khi bơm, Đã bơm xong)"
+                          : "Đang chờ/bơm (${trip.waitDurationMinutes} phút)")),
               isRecorded: trip?.pumpedTime != null,
               buttonLabel: "BƠM XONG",
-              isDisabled: stepDisabled || trip.arrivedTime == null || trip.pumpedTime != null,
+              isDisabled: stepDisabled ||
+                  trip.arrivedTime == null ||
+                  trip.pumpBeforePhotoUrl == null ||
+                  trip.pumpAfterPhotoUrl == null ||
+                  trip.pumpedTime != null,
               onPressed: () => _handlePumped(context, state),
             ),
             const SizedBox(height: 8),

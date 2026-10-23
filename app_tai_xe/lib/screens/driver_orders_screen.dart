@@ -724,6 +724,10 @@ class _DriverOrdersScreenState extends State<DriverOrdersScreen> {
   }
 
   Widget _buildAttachmentBadgesRow(Map<String, dynamic> order) {
+    final hasPumpBefore = (order['pump_slip_before_photo_url'] ?? '')
+        .toString()
+        .trim()
+        .isNotEmpty;
     final hasPump =
         (order['pump_slip_photo_url'] ?? '').toString().trim().isNotEmpty;
     final hasWeigh =
@@ -774,10 +778,16 @@ class _DriverOrdersScreenState extends State<DriverOrdersScreen> {
       runSpacing: 4,
       children: [
         chip(
-          "Phiếu bơm",
-          hasPump,
+          "Trước bơm",
+          hasPumpBefore,
           const Color(0xFF0284C7),
           Icons.local_gas_station_outlined,
+        ),
+        chip(
+          "Bơm xong",
+          hasPump,
+          const Color(0xFF0284C7),
+          Icons.local_gas_station,
         ),
         chip(
           "Phiếu cân",

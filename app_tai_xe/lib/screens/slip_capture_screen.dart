@@ -7,9 +7,11 @@ import 'package:permission_handler/permission_handler.dart';
 import 'package:provider/provider.dart';
 import '../services/app_state.dart';
 import '../services/admin_service.dart';
+import '../services/gps_service.dart';
 
 /// Màn hình chụp ảnh chứng từ & sự cố gắn vào Đơn hàng vận tải:
-/// - 'pump_slip'     : Phiếu bơm hàng (tài khoản Cây dầu chụp)
+/// - 'pump_before'   : Ảnh bơm hàng TRƯỚC KHI BƠM (tài khoản Tài xế chụp, bắt buộc)
+/// - 'pump_slip'     : Ảnh bơm hàng ĐÃ BƠM XONG (tài khoản Tài xế chụp, bắt buộc)
 /// - 'weigh'         : Phiếu cân (tài khoản Tài xế chụp ở Bước 3)
 /// - 'delivery'      : Phiếu giao hàng (tài khoản Tài xế chụp ở Bước 4)
 /// - 'breakdown'     : Báo hỏng xe trong lúc vận chuyển (tài khoản Tài xế chụp)
@@ -72,15 +74,20 @@ class _SlipCaptureScreenState extends State<SlipCaptureScreen>
 
   String get _normalizedType {
     switch (widget.slipType) {
+      case 'pump_before':
+      case 'pump_slip_before':
+        return 'pump_slip_before';
+      case 'pump':
+      case 'pump_slip':
+      case 'pump_after':
+      case 'pump_slip_after':
+        return 'pump_slip';
       case 'weigh':
       case 'weigh_slip':
         return 'weigh_slip';
       case 'delivery':
       case 'delivery_slip':
         return 'delivery_slip';
-      case 'pump':
-      case 'pump_slip':
-        return 'pump_slip';
       case 'breakdown':
         return 'breakdown';
       case 'repair':
@@ -92,8 +99,10 @@ class _SlipCaptureScreenState extends State<SlipCaptureScreen>
 
   String get _screenTitle {
     switch (_normalizedType) {
+      case 'pump_slip_before':
+        return "Chụp Ảnh Bơm Hàng - Trước Khi Bơm";
       case 'pump_slip':
-        return "Chụp Phiếu Bơm Hàng (Cây Dầu)";
+        return "Chụp Ảnh Bơm Hàng - Đã Bơm Xong";
       case 'weigh_slip':
         return "Chụp Phiếu Cân (Bước 3)";
       case 'delivery_slip':
@@ -109,8 +118,10 @@ class _SlipCaptureScreenState extends State<SlipCaptureScreen>
 
   String get _guideText {
     switch (_normalizedType) {
+      case 'pump_slip_before':
+        return "Căn chỉnh đồng hồ cây dầu / vòi bơm TRƯỚC KHI BƠM vào khung (hiển thị số 0 hoặc số ban đầu).";
       case 'pump_slip':
-        return "Căn chỉnh Phiếu bơm hàng / đồng hồ cây dầu vào khung, đảm bảo rõ số lượng và biển số xe.";
+        return "Căn chỉnh Phiếu bơm hàng / đồng hồ cây dầu SAU KHI BƠM vào khung (hiển thị rõ số lượng bơm và biển số).";
       case 'weigh_slip':
         return "Căn chỉnh giấy Phiếu cân vào khung, đảm bảo đọc rõ khối lượng và mã lệnh.";
       case 'delivery_slip':
@@ -121,6 +132,27 @@ class _SlipCaptureScreenState extends State<SlipCaptureScreen>
         return "Chụp rõ hiện trạng bộ phận xe sau khi kiểm tra / khắc phục sửa chữa.";
       default:
         return "Căn chỉnh hình chụp rõ nét vào khung.";
+    }
+  }
+
+  /// Tọa độ GPS lấy NGAY lúc bấm chụp. Bắt buộc phải có mới cho gửi ảnh.
+  GpsFix? _gpsFix;
+  bool _isLocating = false;
+  GpsException? _gpsError;
+
+  Future<void> _captureGpsFix() async {
+    setState(() {
+      _isLocating = true;
+      _gpsError = null;
+      _gpsFix = null;
+    });
+    try {
+      final fix = await GpsService.getCurrentFix();
+      if (mounted) setState(() => _gpsFix = fix);
+    } on GpsException catch (e) {
+      if (mounted) setState(() => _gpsError = e);
+    } finally {
+      if (mounted) setState(() => _isLocating = false);
     }
   }
 
@@ -215,6 +247,7 @@ class _SlipCaptureScreenState extends State<SlipCaptureScreen>
       final file = await controller.takePicture();
       if (!mounted) return;
       setState(() => _capturedPath = file.path);
+      _captureGpsFix();
     } on CameraException catch (e) {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
@@ -244,6 +277,21 @@ class _SlipCaptureScreenState extends State<SlipCaptureScreen>
       return;
     }
 
+    final gps = _gpsFix;
+    if (gps == null) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          backgroundColor: Colors.orange.shade800,
+          content: Text(
+            _isLocating
+                ? "Đang lấy tọa độ GPS, vui lòng chờ vài giây..."
+                : "Ảnh chưa có tọa độ GPS. Bấm \"Lấy lại GPS\" rồi gửi lại.",
+          ),
+        ),
+      );
+      return;
+    }
+
     setState(() => _isSubmitting = true);
     final state = context.read<AppState>();
     final now = DateTime.now();
@@ -266,6 +314,10 @@ class _SlipCaptureScreenState extends State<SlipCaptureScreen>
           tonnage: tonnageVal,
           slipCode: _codeController.text.trim(),
           location: _locationController.text.trim(),
+          gpsLat: gps.lat,
+          gpsLng: gps.lng,
+          gpsAccuracy: gps.accuracy,
+          gpsCapturedAt: gps.capturedAt.toIso8601String(),
           repairStatus: _normalizedType == 'repair' ? _repairStatus : null,
         );
         if (updatedOrder == null) {
@@ -296,6 +348,10 @@ class _SlipCaptureScreenState extends State<SlipCaptureScreen>
         );
       } else if (_normalizedType == 'delivery_slip') {
         state.recordDeliverySlip(photoUrl: remoteUrl);
+      } else if (_normalizedType == 'pump_slip_before') {
+        state.recordPumpBeforePhoto(photoUrl: remoteUrl);
+      } else if (_normalizedType == 'pump_slip') {
+        state.recordPumpAfterPhoto(photoUrl: remoteUrl);
       } else if (_normalizedType == 'breakdown') {
         if (state.currentTrip != null) {
           state.currentTrip!.hasBreakdown = true;
@@ -313,9 +369,13 @@ class _SlipCaptureScreenState extends State<SlipCaptureScreen>
 
     String successMsg;
     switch (_normalizedType) {
+      case 'pump_slip_before':
+        successMsg =
+            "Đã gửi ảnh TRƯỚC KHI BƠM cho Điều phối (đơn ${widget.orderCode ?? ''})!";
+        break;
       case 'pump_slip':
         successMsg =
-            "Đã chụp và lưu Phiếu Bơm Hàng cho đơn ${widget.orderCode ?? ''}!";
+            "Đã gửi ảnh ĐÃ BƠM XONG cho Điều phối (đơn ${widget.orderCode ?? ''})!";
         break;
       case 'weigh_slip':
         successMsg =
@@ -509,10 +569,16 @@ class _SlipCaptureScreenState extends State<SlipCaptureScreen>
                 ),
               ],
             ),
+          ] else if (_normalizedType == 'pump_slip_before') ...[
+            _buildDarkTextField(
+              controller: _noteController,
+              label: "Ghi chú trước khi bơm (nếu có)",
+              hint: "VD: Bồn rỗng, đồng hồ về 0...",
+            ),
           ] else if (_normalizedType == 'pump_slip') ...[
             _buildDarkTextField(
               controller: _noteController,
-              label: "Ghi chú Phiếu bơm hàng (Số lượng xuất / Bồn / Ghi chú)",
+              label: "Ghi chú sau khi bơm (Số lượng xuất / Bồn / Ghi chú)",
               hint: "VD: Đã bơm đủ theo lệnh...",
             ),
           ] else if (_normalizedType == 'delivery_slip') ...[
@@ -625,6 +691,83 @@ class _SlipCaptureScreenState extends State<SlipCaptureScreen>
     );
   }
 
+  Widget _buildGpsStatusBar() {
+    final fix = _gpsFix;
+    final err = _gpsError;
+    Color bg;
+    Widget content;
+    if (fix != null) {
+      bg = const Color(0xFF14532D);
+      content = Text(
+        "GPS: ${fix.display}",
+        style: const TextStyle(color: Colors.white, fontSize: 12),
+      );
+    } else if (_isLocating) {
+      bg = const Color(0xFF1E3A8A);
+      content = const Row(
+        children: [
+          SizedBox(
+            width: 14,
+            height: 14,
+            child: CircularProgressIndicator(
+              color: Colors.white,
+              strokeWidth: 2,
+            ),
+          ),
+          SizedBox(width: 8),
+          Text(
+            "Đang lấy tọa độ GPS...",
+            style: TextStyle(color: Colors.white, fontSize: 12),
+          ),
+        ],
+      );
+    } else {
+      bg = const Color(0xFF7F1D1D);
+      content = Row(
+        children: [
+          Expanded(
+            child: Text(
+              err?.message ?? "Chưa có tọa độ GPS.",
+              style: const TextStyle(color: Colors.white, fontSize: 12),
+            ),
+          ),
+          if (err != null &&
+              (err.needsAppSettings || err.needsLocationSettings))
+            TextButton(
+              onPressed: () => GpsService.openSettingsFor(err),
+              child: const Text(
+                "Mở Cài đặt",
+                style: TextStyle(color: Colors.white, fontSize: 12),
+              ),
+            ),
+          TextButton(
+            onPressed: _captureGpsFix,
+            child: const Text(
+              "Lấy lại GPS",
+              style: TextStyle(
+                color: Colors.white,
+                fontSize: 12,
+                fontWeight: FontWeight.bold,
+              ),
+            ),
+          ),
+        ],
+      );
+    }
+    return Container(
+      width: double.infinity,
+      color: bg,
+      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 6),
+      child: Row(
+        children: [
+          const Icon(Icons.location_on, color: Colors.white, size: 16),
+          const SizedBox(width: 6),
+          Expanded(child: content),
+        ],
+      ),
+    );
+  }
+
   Widget _buildCameraPreview() {
     final controller = _cameraController;
     final captured = _capturedPath;
@@ -669,6 +812,7 @@ class _SlipCaptureScreenState extends State<SlipCaptureScreen>
             ],
           ),
         ),
+        if (captured != null) _buildGpsStatusBar(),
         if (captured != null) _buildExtraMetadataFields(),
         Container(
           color: Colors.black,
@@ -697,7 +841,11 @@ class _SlipCaptureScreenState extends State<SlipCaptureScreen>
                 TextButton.icon(
                   onPressed: _isSubmitting
                       ? null
-                      : () => setState(() => _capturedPath = null),
+                      : () => setState(() {
+                          _capturedPath = null;
+                          _gpsFix = null;
+                          _gpsError = null;
+                        }),
                   icon: const Icon(
                     Icons.refresh,
                     color: Colors.white,

@@ -205,6 +205,10 @@ class AppState extends ChangeNotifier {
     } else if (currentTrip!.orderId == null && oid != null) {
       currentTrip!.orderId = oid;
     }
+    final pBefore = (order['pump_slip_before_photo_url'] ?? '').toString().trim();
+    if (pBefore.isNotEmpty) currentTrip!.pumpBeforePhotoUrl = pBefore;
+    final pAfter = (order['pump_slip_photo_url'] ?? '').toString().trim();
+    if (pAfter.isNotEmpty) currentTrip!.pumpAfterPhotoUrl = pAfter;
     final wPhoto = (order['weigh_slip_photo_url'] ?? '').toString().trim();
     if (wPhoto.isNotEmpty) {
       currentTrip!.weighSlipPhotoUrl = wPhoto;
@@ -393,6 +397,20 @@ class AppState extends ChangeNotifier {
     currentTrip!.pumpedLng = lng;
     currentTrip!.pumpedSource = "app";
     currentTrip!.waitingReason = reason;
+    notifyListeners();
+  }
+
+  // Ảnh bơm hàng TRƯỚC KHI BƠM (Tài xế chụp, có GPS)
+  void recordPumpBeforePhoto({required String photoUrl}) {
+    if (currentTrip == null) return;
+    currentTrip!.pumpBeforePhotoUrl = photoUrl;
+    notifyListeners();
+  }
+
+  // Ảnh bơm hàng ĐÃ BƠM XONG (Tài xế chụp, có GPS)
+  void recordPumpAfterPhoto({required String photoUrl}) {
+    if (currentTrip == null) return;
+    currentTrip!.pumpAfterPhotoUrl = photoUrl;
     notifyListeners();
   }
 

@@ -46,6 +46,8 @@ env/
 # Uploads and temporary screen dumps
 /uploads/
 *.xml
+# Ngoai le: file cau hinh Android cua app (AndroidManifest, styles, launcher icon...)
+!app_tai_xe/android/app/src/**/*.xml
 page_screenshot.png
 mobile_screenshot*.png
 screen_*.png

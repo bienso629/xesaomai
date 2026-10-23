@@ -45,7 +45,7 @@ static void my_application_activate(GApplication* application) {
   if (use_header_bar) {
     GtkHeaderBar* header_bar = GTK_HEADER_BAR(gtk_header_bar_new());
     gtk_widget_show(GTK_WIDGET(header_bar));
-    gtk_header_bar_set_title(header_bar, "Tài xế Sao Mai");
+    gtk_header_bar_set_title(header_bar, "Vận tải VinTrans");
     gtk_header_bar_set_show_close_button(header_bar, TRUE);
     gtk_window_set_titlebar(window, GTK_WIDGET(header_bar));
 
@@ -59,7 +59,7 @@ static void my_application_activate(GApplication* application) {
     gtk_style_context_add_provider(context, GTK_STYLE_PROVIDER(provider), GTK_STYLE_PROVIDER_PRIORITY_APPLICATION);
     g_object_unref(provider);
   } else {
-    gtk_window_set_title(window, "Tài xế Sao Mai");
+    gtk_window_set_title(window, "Vận tải VinTrans");
   }
 
   // Set application icon from bundle data/app_icon.png

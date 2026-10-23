@@ -1,3 +1,4 @@
+import 'customers_screen.dart';
 import 'dart:async';
 import 'dart:io';
 import 'package:flutter/material.dart';
@@ -12,6 +13,7 @@ import '../widgets/assign_order_approve_dialog.dart';
 import '../widgets/order_attachments_section.dart';
 import '../models/reminder_model.dart';
 import '../models/breakdown_model.dart';
+import '../config/api_config.dart';
 
 class DispatchSupervisorScreen extends StatefulWidget {
   final int activeTab;
@@ -53,6 +55,17 @@ class _DispatchSupervisorScreenState extends State<DispatchSupervisorScreen> {
   Map<String, dynamic> _summary = {};
   List<dynamic> _orders = [];
   List<dynamic> _vehicles = [];
+  bool _isSyncingFleet = false;
+
+  /// Xe đang Tạm ngừng hoạt động (không còn trên Vietmap / Bình Anh)
+  bool _isVehicleInactive(dynamic v) =>
+      v is Map &&
+      (v['in_fleet'] == false ||
+          (v['status'] ?? '').toString() == 'inactive');
+
+  /// Xe đang hoạt động: dùng cho các ô chọn xe của đơn hàng
+  List<dynamic> get _activeVehicles =>
+      _vehicles.where((v) => !_isVehicleInactive(v)).toList();
   List<dynamic> _products = [];
   List<dynamic> _gasStations = [];
   final String _vietMapApiKey =
@@ -152,7 +165,7 @@ class _DispatchSupervisorScreenState extends State<DispatchSupervisorScreen> {
     try {
       final results = await Future.wait([
         AdminService.fetchOrders(),
-        AdminService.fetchVehicles(),
+        AdminService.fetchVehicles(includeInactive: true),
         AdminService.fetchInspections(),
         AdminService.fetchActiveShifts(),
       ]);
@@ -254,12 +267,71 @@ class _DispatchSupervisorScreenState extends State<DispatchSupervisorScreen> {
     super.dispose();
   }
 
+  /// Nút "Tải lại danh sách" ở Đội xe: đối chiếu với Vietmap + Bình Anh rồi tải lại.
+  Future<void> _syncFleetAndReload() async {
+    if (_isSyncingFleet) return;
+    setState(() => _isSyncingFleet = true);
+    final res = await AdminService.syncFleetVehicles();
+    await _loadAllManagementData();
+    if (!mounted) return;
+    setState(() => _isSyncingFleet = false);
+
+    final messenger = ScaffoldMessenger.of(context);
+    if (res['success'] != true) {
+      messenger.showSnackBar(
+        SnackBar(
+          backgroundColor: Colors.red.shade700,
+          content: Text("Đồng bộ đội xe thất bại: ${res['message'] ?? ''}"),
+        ),
+      );
+      return;
+    }
+    final data = Map<String, dynamic>.from(res['data'] as Map);
+    List<String> plates(String key) => ((data[key] as List?) ?? [])
+        .map((e) => (e is Map ? e['plate_number'] : e).toString())
+        .toList();
+    final added = plates('added');
+    final deactivated = plates('deactivated');
+    final reactivated = plates('reactivated');
+    final providers =
+        Map<String, dynamic>.from((data['providers'] as Map?) ?? {});
+    final failed = <String>[];
+    providers.forEach((k, val) {
+      if (val is Map && val['ok'] != true) {
+        failed.add(k == 'vietmap' ? 'Vietmap' : (k == 'binhanh' ? 'Bình Anh' : k));
+      }
+    });
+    final inactiveCount = data['total_inactive'] ?? 0;
+
+    final lines = <String>[
+      "Đang hoạt động: ${data['total_active'] ?? 0} xe"
+          "${inactiveCount != 0 ? ' • Tạm ngừng: $inactiveCount xe' : ''}",
+      if (added.isNotEmpty) "Thêm mới ${added.length} xe: ${added.join(', ')}",
+      if (deactivated.isNotEmpty)
+        "Chuyển Tạm ngừng hoạt động ${deactivated.length} xe: ${deactivated.join(', ')}",
+      if (reactivated.isNotEmpty)
+        "Hoạt động trở lại ${reactivated.length} xe: ${reactivated.join(', ')}",
+      if (added.isEmpty && deactivated.isEmpty && reactivated.isEmpty)
+        "Không có thay đổi so với Vietmap và Bình Anh",
+      if (failed.isNotEmpty)
+        "Không kết nối được ${failed.join(', ')}: giữ nguyên các xe của nguồn này",
+    ];
+    messenger.showSnackBar(
+      SnackBar(
+        backgroundColor:
+            failed.isNotEmpty ? Colors.orange.shade800 : Colors.green.shade700,
+        duration: const Duration(seconds: 6),
+        content: Text("Đã đồng bộ đội xe\n${lines.join('\n')}"),
+      ),
+    );
+  }
+
   Future<void> _loadAllManagementData() async {
     setState(() => _isLoading = true);
     final results = await Future.wait([
       AdminService.fetchSummary(),
       AdminService.fetchOrders(),
-      AdminService.fetchVehicles(),
+      AdminService.fetchVehicles(includeInactive: true),
       AdminService.fetchProducts(),
       AdminService.fetchGasStations(),
       AdminService.fetchUsers(),
@@ -336,8 +408,10 @@ class _DispatchSupervisorScreenState extends State<DispatchSupervisorScreen> {
       case 1:
         return _buildOrdersTab(state);
       case 2:
-        return _buildVehiclesTab();
       case 3:
+      case 4:
+      case 5:
+        // Đội xe, Tài khoản, Cây dầu, Sản phẩm: chỉ Admin và Quản lý / Giám đốc
         final canManageUsers =
             state.currentUsername == 'admin' ||
             state.userRoles.any(
@@ -346,10 +420,9 @@ class _DispatchSupervisorScreenState extends State<DispatchSupervisorScreen> {
         if (!canManageUsers) {
           return _buildOverviewTab(state);
         }
-        return _buildUserListSubtab();
-      case 4:
-        return _buildGasStationsTab();
-      case 5:
+        if (widget.activeTab == 2) return _buildVehiclesTab();
+        if (widget.activeTab == 3) return _buildUserListSubtab();
+        if (widget.activeTab == 4) return _buildGasStationsTab();
         return _buildProductsTab();
       case 6:
         return _buildRolesSubtab();
@@ -357,6 +430,17 @@ class _DispatchSupervisorScreenState extends State<DispatchSupervisorScreen> {
         return _buildRemindersConfigTab(state);
       case 8:
         return _buildProxyAiConfigTab(state);
+      case 9:
+        // Khách hàng: Điều phối, Quản lý / Giám đốc, Admin
+        final canManageCustomers =
+            state.currentUsername == 'admin' ||
+            state.userRoles.any(
+              (r) => ['admin', 'manager', 'dispatcher'].contains(r.toLowerCase()),
+            );
+        if (!canManageCustomers) {
+          return _buildOverviewTab(state);
+        }
+        return const CustomersScreen();
       default:
         return _buildOverviewTab(state);
     }
@@ -576,7 +660,7 @@ class _DispatchSupervisorScreenState extends State<DispatchSupervisorScreen> {
           if (name.isNotEmpty) productOptions.add(name);
         }
         final vehicleOptions = <String>{};
-        for (final v in _vehicles) {
+        for (final v in _activeVehicles) {
           final plate = (v['plate_number'] ?? '').toString().trim();
           if (plate.isNotEmpty) vehicleOptions.add(plate);
         }
@@ -2447,15 +2531,21 @@ class _DispatchSupervisorScreenState extends State<DispatchSupervisorScreen> {
                           borderRadius: BorderRadius.circular(4),
                         ),
                       ),
-                      icon: const Icon(Icons.refresh, size: 15),
-                      label: const Text(
-                        "Tải lại danh sách",
-                        style: TextStyle(
+                      icon: _isSyncingFleet
+                          ? const SizedBox(
+                              width: 14,
+                              height: 14,
+                              child: CircularProgressIndicator(strokeWidth: 2),
+                            )
+                          : const Icon(Icons.refresh, size: 15),
+                      label: Text(
+                        _isSyncingFleet ? "Đang đồng bộ..." : "Tải lại danh sách",
+                        style: const TextStyle(
                           fontWeight: FontWeight.w600,
                           fontSize: 12.5,
                         ),
                       ),
-                      onPressed: _loadAllManagementData,
+                      onPressed: _isSyncingFleet ? null : _syncFleetAndReload,
                     ),
                   ),
                 ],
@@ -2648,6 +2738,43 @@ class _DispatchSupervisorScreenState extends State<DispatchSupervisorScreen> {
                                                 color: Colors.blueGrey.shade900,
                                               ),
                                             ),
+                                            if (v['gps_provider'] ==
+                                                'binhanh') ...[
+                                              const SizedBox(width: 6),
+                                              Tooltip(
+                                                message:
+                                                    "Xe lấy từ dịch vụ GPS Bình Anh",
+                                                child: Container(
+                                                  padding:
+                                                      const EdgeInsets.symmetric(
+                                                    horizontal: 6,
+                                                    vertical: 2,
+                                                  ),
+                                                  decoration: BoxDecoration(
+                                                    color:
+                                                        Colors.green.shade50,
+                                                    borderRadius:
+                                                        BorderRadius.circular(
+                                                      4,
+                                                    ),
+                                                    border: Border.all(
+                                                      color: Colors
+                                                          .green.shade300,
+                                                    ),
+                                                  ),
+                                                  child: Text(
+                                                    "Bình Anh",
+                                                    style: TextStyle(
+                                                      color: Colors
+                                                          .green.shade800,
+                                                      fontSize: 10.5,
+                                                      fontWeight:
+                                                          FontWeight.bold,
+                                                    ),
+                                                  ),
+                                                ),
+                                              ),
+                                            ],
                                           ],
                                         ),
                                       ),
@@ -2850,6 +2977,7 @@ class _DispatchSupervisorScreenState extends State<DispatchSupervisorScreen> {
                                         ),
                                       ),
                                       // Cột 6: Trạng thái
+                                      // (Tạm ngừng hoạt động = không còn trên Vietmap / Bình Anh)
                                       makeCell(
                                         Container(
                                           padding: const EdgeInsets.symmetric(
@@ -2857,18 +2985,26 @@ class _DispatchSupervisorScreenState extends State<DispatchSupervisorScreen> {
                                             vertical: 3,
                                           ),
                                           decoration: BoxDecoration(
-                                            color: Colors.green.shade50,
+                                            color: _isVehicleInactive(v)
+                                                ? Colors.grey.shade100
+                                                : Colors.green.shade50,
                                             borderRadius: BorderRadius.circular(
                                               4,
                                             ),
                                             border: Border.all(
-                                              color: Colors.green.shade200,
+                                              color: _isVehicleInactive(v)
+                                                  ? Colors.grey.shade400
+                                                  : Colors.green.shade200,
                                             ),
                                           ),
                                           child: Text(
-                                            "Sẵn sàng hoạt động",
+                                            _isVehicleInactive(v)
+                                                ? "Tạm ngừng hoạt động"
+                                                : "Sẵn sàng hoạt động",
                                             style: TextStyle(
-                                              color: Colors.green.shade800,
+                                              color: _isVehicleInactive(v)
+                                                  ? Colors.grey.shade700
+                                                  : Colors.green.shade800,
                                               fontSize: 11,
                                               fontWeight: FontWeight.bold,
                                             ),
@@ -2880,43 +3016,6 @@ class _DispatchSupervisorScreenState extends State<DispatchSupervisorScreen> {
                                         Row(
                                           mainAxisSize: MainAxisSize.min,
                                           children: [
-                                            ElevatedButton.icon(
-                                              style: ElevatedButton.styleFrom(
-                                                backgroundColor:
-                                                    Colors.teal.shade700,
-                                                foregroundColor: Colors.white,
-                                                elevation: 0,
-                                                padding:
-                                                    const EdgeInsets.symmetric(
-                                                      horizontal: 10,
-                                                    ),
-                                                minimumSize: const Size(0, 32),
-                                                tapTargetSize:
-                                                    MaterialTapTargetSize
-                                                        .shrinkWrap,
-                                                shape: RoundedRectangleBorder(
-                                                  borderRadius:
-                                                      BorderRadius.circular(4),
-                                                ),
-                                              ),
-                                              icon: const Icon(
-                                                Icons.photo_library_outlined,
-                                                size: 14,
-                                              ),
-                                              label: const Text(
-                                                "5 Ảnh",
-                                                style: TextStyle(
-                                                  fontSize: 11.5,
-                                                  fontWeight: FontWeight.bold,
-                                                ),
-                                              ),
-                                              onPressed: () =>
-                                                  _showVehicleInspectionsDialog(
-                                                    plate,
-                                                    v,
-                                                  ),
-                                            ),
-                                            const SizedBox(width: 6),
                                             OutlinedButton.icon(
                                               style: OutlinedButton.styleFrom(
                                                 foregroundColor:
@@ -4704,34 +4803,6 @@ class _DispatchSupervisorScreenState extends State<DispatchSupervisorScreen> {
                       onPressed: () => _showGasStationFormDialog(),
                     ),
                   ),
-                  const SizedBox(width: 10),
-                  // Nút làm mới dữ liệu
-                  SizedBox(
-                    height: 36,
-                    child: OutlinedButton.icon(
-                      style: OutlinedButton.styleFrom(
-                        foregroundColor: Colors.blue.shade800,
-                        side: BorderSide(color: Colors.blue.shade300),
-                        minimumSize: const Size(0, 36),
-                        fixedSize: const Size.fromHeight(36),
-                        visualDensity: VisualDensity.standard,
-                        tapTargetSize: MaterialTapTargetSize.shrinkWrap,
-                        padding: const EdgeInsets.symmetric(horizontal: 12),
-                        shape: RoundedRectangleBorder(
-                          borderRadius: BorderRadius.circular(4),
-                        ),
-                      ),
-                      icon: const Icon(Icons.refresh, size: 15),
-                      label: const Text(
-                        "Tải lại danh sách",
-                        style: TextStyle(
-                          fontWeight: FontWeight.w600,
-                          fontSize: 12.5,
-                        ),
-                      ),
-                      onPressed: _loadAllManagementData,
-                    ),
-                  ),
                 ],
               ),
             ),
@@ -5999,34 +6070,6 @@ class _DispatchSupervisorScreenState extends State<DispatchSupervisorScreen> {
                         ),
                       ),
                       onPressed: () => _showProductFormDialog(),
-                    ),
-                  ),
-                  const SizedBox(width: 10),
-                  // Nút làm mới dữ liệu
-                  SizedBox(
-                    height: 36,
-                    child: OutlinedButton.icon(
-                      style: OutlinedButton.styleFrom(
-                        foregroundColor: Colors.blue.shade800,
-                        side: BorderSide(color: Colors.blue.shade300),
-                        minimumSize: const Size(0, 36),
-                        fixedSize: const Size.fromHeight(36),
-                        visualDensity: VisualDensity.standard,
-                        tapTargetSize: MaterialTapTargetSize.shrinkWrap,
-                        padding: const EdgeInsets.symmetric(horizontal: 12),
-                        shape: RoundedRectangleBorder(
-                          borderRadius: BorderRadius.circular(4),
-                        ),
-                      ),
-                      icon: const Icon(Icons.refresh, size: 15),
-                      label: const Text(
-                        "Tải lại danh sách",
-                        style: TextStyle(
-                          fontWeight: FontWeight.w600,
-                          fontSize: 12.5,
-                        ),
-                      ),
-                      onPressed: _loadAllManagementData,
                     ),
                   ),
                 ],
@@ -9718,6 +9761,16 @@ class _DispatchSupervisorScreenState extends State<DispatchSupervisorScreen> {
 
     // Lọc danh sách các tài khoản tài xế có thể gán (kết hợp _users và _drivers, khử trùng id)
     final driverUsers = _getAvailableDriverUsers();
+    // Tài xế nào đang gắn với xe nào (mỗi tài xế chỉ đi kèm 1 phương tiện)
+    final driverPlateMap = <int, String>{};
+    for (final other in _vehicles) {
+      if (other is! Map) continue;
+      final did = other['default_driver_id'];
+      final id = did is int ? did : int.tryParse((did ?? '').toString());
+      if (id != null) {
+        driverPlateMap[id] = (other['plate_number'] ?? '').toString();
+      }
+    }
     // Nếu xe đang gán cho một tài xế chưa có trong danh sách thì bổ sung hoặc fallback về null
     // để tránh lỗi assertion của DropdownButtonFormField khi value không tồn tại trong items
     if (selectedDriverId != null &&
@@ -9842,12 +9895,22 @@ class _DispatchSupervisorScreenState extends State<DispatchSupervisorScreen> {
                         final name = (u['full_name'] ?? u['username'] ?? '')
                             .toString();
                         final phone = (u['phone'] ?? '').toString();
+                        // Mỗi xe đi kèm 1 tài xế: tài xế đã gắn xe khác thì không chọn được
+                        final otherPlate = driverPlateMap[id];
+                        final busy = otherPlate != null && otherPlate != plate;
                         final label = phone.isNotEmpty
                             ? "$name ($phone)"
                             : name;
                         return DropdownMenuItem<int?>(
                           value: id,
-                          child: Text(label, style: const TextStyle(fontSize: 13)),
+                          enabled: !busy,
+                          child: Text(
+                            busy ? "$label - đang ở xe $otherPlate" : label,
+                            style: TextStyle(
+                              fontSize: 13,
+                              color: busy ? Colors.grey : null,
+                            ),
+                          ),
                         );
                       }),
                     ],
@@ -10595,8 +10658,9 @@ class _DispatchSupervisorScreenState extends State<DispatchSupervisorScreen> {
     int? selectedProductId = _products.isNotEmpty
         ? (_products[0]['id'] as int?)
         : null;
-    String? selectedVehiclePlate = _vehicles.isNotEmpty
-        ? (_vehicles[0]['plate_number']?.toString())
+    final activeVehicles = _activeVehicles;
+    String? selectedVehiclePlate = activeVehicles.isNotEmpty
+        ? (activeVehicles[0]['plate_number']?.toString())
         : null;
     int? selectedDriverId;
 
@@ -10792,7 +10856,7 @@ class _DispatchSupervisorScreenState extends State<DispatchSupervisorScreen> {
                     isDense: true,
                     decoration: const InputDecoration(isDense: true),
                     items: [
-                      ..._vehicles.map((v) {
+                      ...activeVehicles.map((v) {
                         final plate = (v['plate_number'] ?? '').toString();
                         final vtype = (v['vehicle_type'] ?? '').toString();
                         return DropdownMenuItem<String?>(
@@ -11015,9 +11079,16 @@ class _DispatchSupervisorScreenState extends State<DispatchSupervisorScreen> {
         !_products.any((p) => p is Map && p['id'] == selectedProductId)) {
       selectedProductId = _products.isNotEmpty ? _products[0]['id'] as int? : null;
     }
+    // Xe chọn được: xe đang hoạt động + xe hiện tại của đơn (kể cả khi xe đó đã Tạm ngừng)
+    final currentPlate = selectedVehiclePlate;
+    final editVehicles = _vehicles
+        .where((v) =>
+            !_isVehicleInactive(v) ||
+            (v is Map && (v['plate_number'] ?? '').toString() == currentPlate))
+        .toList();
     if (selectedVehiclePlate != null &&
-        !_vehicles.any((v) => v is Map && (v['plate_number'] ?? '').toString() == selectedVehiclePlate)) {
-      selectedVehiclePlate = _vehicles.isNotEmpty ? (_vehicles[0]['plate_number'] ?? '').toString() : null;
+        !editVehicles.any((v) => v is Map && (v['plate_number'] ?? '').toString() == selectedVehiclePlate)) {
+      selectedVehiclePlate = editVehicles.isNotEmpty ? (editVehicles[0]['plate_number'] ?? '').toString() : null;
     }
     status = _normalizeOrderStatus(status);
 
@@ -11173,7 +11244,7 @@ class _DispatchSupervisorScreenState extends State<DispatchSupervisorScreen> {
                     isDense: true,
                     decoration: const InputDecoration(isDense: true),
                     items: [
-                      ..._vehicles.map((v) {
+                      ...editVehicles.map((v) {
                         final plate = (v['plate_number'] ?? '').toString();
                         final vtype = (v['vehicle_type'] ?? '').toString();
                         return DropdownMenuItem<String?>(
@@ -11544,6 +11615,8 @@ class _DispatchSupervisorScreenState extends State<DispatchSupervisorScreen> {
     final o = orderData is Map
         ? Map<String, dynamic>.from(orderData)
         : <String, dynamic>{};
+    final pumpBeforeUrl =
+        (o['pump_slip_before_photo_url'] ?? '').toString().trim();
     final pumpUrl = (o['pump_slip_photo_url'] ?? '').toString().trim();
     final weighUrl = (o['weigh_slip_photo_url'] ?? '').toString().trim();
     final delivUrl = (o['delivery_slip_photo_url'] ?? '').toString().trim();
@@ -11622,10 +11695,17 @@ class _DispatchSupervisorScreenState extends State<DispatchSupervisorScreen> {
       crossAxisAlignment: WrapCrossAlignment.center,
       children: [
         badge(
-          shortLabel: "Bơm",
-          fullTitle: "Phiếu bơm hàng (Cây dầu)",
-          url: pumpUrl,
+          shortLabel: "Trước bơm",
+          fullTitle: "Bơm hàng - Trước khi bơm (Tài xế)",
+          url: pumpBeforeUrl,
           icon: Icons.local_gas_station_outlined,
+          activeColor: const Color(0xFF0284C7),
+        ),
+        badge(
+          shortLabel: "Bơm xong",
+          fullTitle: "Bơm hàng - Đã bơm xong (Tài xế)",
+          url: pumpUrl,
+          icon: Icons.local_gas_station,
           activeColor: const Color(0xFF0284C7),
         ),
         badge(
@@ -12710,7 +12790,7 @@ class _DispatchSupervisorScreenState extends State<DispatchSupervisorScreen> {
         avatarUrl.startsWith('uploads/')) {
       final cleanPath = avatarUrl.startsWith('/') ? avatarUrl : '/$avatarUrl';
       imageWidget = Image.network(
-        'https://saomai-api.type.vn$cleanPath',
+        '${ApiConfig.host}$cleanPath',
         width: avatarSize,
         height: avatarSize,
         fit: BoxFit.cover,
@@ -12730,7 +12810,7 @@ class _DispatchSupervisorScreenState extends State<DispatchSupervisorScreen> {
         );
       } else {
         imageWidget = Image.network(
-          'https://saomai-api.type.vn/$avatarUrl',
+          '${ApiConfig.host}/$avatarUrl',
           width: avatarSize,
           height: avatarSize,
           fit: BoxFit.cover,
@@ -14121,7 +14201,7 @@ class _VehicleInspectionsModalState extends State<_VehicleInspectionsModal> {
       return Image.network(
         url.startsWith('http')
             ? url
-            : 'https://saomai-api.type.vn/${url.startsWith('/') ? url.substring(1) : url}',
+            : '${ApiConfig.host}/${url.startsWith('/') ? url.substring(1) : url}',
         fit: fit,
         errorBuilder: (ctx, err, stack) => _buildPlaceholderIcon(),
       );

@@ -1,4 +1,4 @@
-package com.taxilogistics.driver.app_tai_xe
+package com.taxilogistics.driver.saomai
 
 import io.flutter.embedding.android.FlutterActivity
 

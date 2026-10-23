@@ -65,6 +65,48 @@ CREATE TABLE IF NOT EXISTS products (
     updated_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
 );
 
+-- 6b. Bảng Customers (Danh sách khách hàng)
+CREATE TABLE IF NOT EXISTS customers (
+    id SERIAL PRIMARY KEY,
+    code VARCHAR(50) UNIQUE NOT NULL,
+    name VARCHAR(255) NOT NULL,
+    tax_code VARCHAR(50),
+    contact_person VARCHAR(150),
+    phone VARCHAR(30),
+    email VARCHAR(150),
+    address TEXT,
+    note TEXT,
+    source VARCHAR(20) DEFAULT 'manual',
+    zalo_user_id VARCHAR(64),
+    zalo_display_name VARCHAR(255),
+    zalo_avatar TEXT,
+    zalo_synced_at TIMESTAMP WITH TIME ZONE,
+    is_active BOOLEAN DEFAULT TRUE,
+    created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
+);
+-- Mỗi khách hàng Zalo OA có 1 ID riêng, không trùng
+CREATE UNIQUE INDEX IF NOT EXISTS ux_customers_zalo_user_id ON customers(zalo_user_id) WHERE zalo_user_id IS NOT NULL;
+
+-- 6c. Token Zalo OA (chỉ 1 dòng) và mã state OAuth tạm thời
+CREATE TABLE IF NOT EXISTS zalo_oa_tokens (
+    id INT PRIMARY KEY DEFAULT 1,
+    oa_id VARCHAR(64),
+    access_token TEXT NOT NULL,
+    refresh_token TEXT NOT NULL,
+    access_expires_at TIMESTAMP WITH TIME ZONE NOT NULL,
+    refresh_expires_at TIMESTAMP WITH TIME ZONE,
+    authorized_by VARCHAR(100),
+    updated_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
+    CHECK (id = 1)
+);
+CREATE TABLE IF NOT EXISTS zalo_oa_oauth_states (
+    state VARCHAR(100) PRIMARY KEY,
+    code_verifier VARCHAR(200) NOT NULL,
+    created_by VARCHAR(100),
+    created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
+);
+
 -- 7. Bảng Vehicles (Danh mục phương tiện)
 CREATE TABLE IF NOT EXISTS vehicles (
     plate_number VARCHAR(20) PRIMARY KEY,
@@ -76,8 +118,14 @@ CREATE TABLE IF NOT EXISTS vehicles (
     last_gps_lat DOUBLE PRECISION,
     last_gps_lng DOUBLE PRECISION,
     last_gps_time TIMESTAMP WITH TIME ZONE,
+    gps_provider VARCHAR(30),
+    gps_vehicle_id VARCHAR(50),
+    gps_driver_name VARCHAR(150),
+    in_fleet BOOLEAN DEFAULT TRUE,
     updated_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
 );
+-- Mỗi phương tiện đi kèm đúng 1 tài khoản Tài xế (một tài xế không gắn với 2 xe)
+CREATE UNIQUE INDEX IF NOT EXISTS uq_vehicles_default_driver ON vehicles(default_driver_id) WHERE default_driver_id IS NOT NULL;
 
 -- 8. Bảng Gas Stations (Cây dầu hợp đồng)
 CREATE TABLE IF NOT EXISTS gas_stations (
@@ -138,6 +186,61 @@ CREATE TABLE IF NOT EXISTS kiem_tra_dau_ngay (
     flag_resolved_at TIMESTAMP WITH TIME ZONE,
     created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
 );
+
+-- 10b. Cột ảnh chứng từ & tọa độ GPS lúc chụp (2 ảnh bơm hàng do Tài xế chụp, phiếu cân, phiếu giao hàng, báo hỏng, sửa chữa, 5 ảnh kiểm tra xe)
+ALTER TABLE orders ADD COLUMN IF NOT EXISTS updated_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP;
+ALTER TABLE orders ADD COLUMN IF NOT EXISTS pump_slip_before_photo_url TEXT;
+ALTER TABLE orders ADD COLUMN IF NOT EXISTS pump_slip_before_time TIMESTAMP WITH TIME ZONE;
+ALTER TABLE orders ADD COLUMN IF NOT EXISTS pump_slip_before_by VARCHAR(150);
+ALTER TABLE orders ADD COLUMN IF NOT EXISTS pump_slip_before_note TEXT;
+ALTER TABLE orders ADD COLUMN IF NOT EXISTS pump_slip_photo_url TEXT;
+ALTER TABLE orders ADD COLUMN IF NOT EXISTS pump_slip_time TIMESTAMP WITH TIME ZONE;
+ALTER TABLE orders ADD COLUMN IF NOT EXISTS pump_slip_by VARCHAR(150);
+ALTER TABLE orders ADD COLUMN IF NOT EXISTS pump_slip_note TEXT;
+ALTER TABLE orders ADD COLUMN IF NOT EXISTS weigh_slip_photo_url TEXT;
+ALTER TABLE orders ADD COLUMN IF NOT EXISTS weigh_slip_time TIMESTAMP WITH TIME ZONE;
+ALTER TABLE orders ADD COLUMN IF NOT EXISTS weigh_slip_tonnage DOUBLE PRECISION;
+ALTER TABLE orders ADD COLUMN IF NOT EXISTS weigh_slip_code VARCHAR(100);
+ALTER TABLE orders ADD COLUMN IF NOT EXISTS delivery_slip_photo_url TEXT;
+ALTER TABLE orders ADD COLUMN IF NOT EXISTS delivery_slip_time TIMESTAMP WITH TIME ZONE;
+ALTER TABLE orders ADD COLUMN IF NOT EXISTS delivery_slip_note TEXT;
+ALTER TABLE orders ADD COLUMN IF NOT EXISTS has_breakdown BOOLEAN DEFAULT FALSE;
+ALTER TABLE orders ADD COLUMN IF NOT EXISTS breakdown_status VARCHAR(30);
+ALTER TABLE orders ADD COLUMN IF NOT EXISTS breakdown_photo_url TEXT;
+ALTER TABLE orders ADD COLUMN IF NOT EXISTS breakdown_reason TEXT;
+ALTER TABLE orders ADD COLUMN IF NOT EXISTS breakdown_location TEXT;
+ALTER TABLE orders ADD COLUMN IF NOT EXISTS breakdown_time TIMESTAMP WITH TIME ZONE;
+ALTER TABLE orders ADD COLUMN IF NOT EXISTS breakdown_reported_by VARCHAR(150);
+ALTER TABLE orders ADD COLUMN IF NOT EXISTS repair_photo_url TEXT;
+ALTER TABLE orders ADD COLUMN IF NOT EXISTS repair_status VARCHAR(30);
+ALTER TABLE orders ADD COLUMN IF NOT EXISTS repair_note TEXT;
+ALTER TABLE orders ADD COLUMN IF NOT EXISTS repair_time TIMESTAMP WITH TIME ZONE;
+ALTER TABLE orders ADD COLUMN IF NOT EXISTS repair_by VARCHAR(150);
+ALTER TABLE orders ADD COLUMN IF NOT EXISTS pump_slip_before_gps_lat DOUBLE PRECISION;
+ALTER TABLE orders ADD COLUMN IF NOT EXISTS pump_slip_before_gps_lng DOUBLE PRECISION;
+ALTER TABLE orders ADD COLUMN IF NOT EXISTS pump_slip_before_gps_accuracy DOUBLE PRECISION;
+ALTER TABLE orders ADD COLUMN IF NOT EXISTS pump_slip_before_gps_captured_at TIMESTAMP WITH TIME ZONE;
+ALTER TABLE orders ADD COLUMN IF NOT EXISTS pump_slip_gps_lat DOUBLE PRECISION;
+ALTER TABLE orders ADD COLUMN IF NOT EXISTS pump_slip_gps_lng DOUBLE PRECISION;
+ALTER TABLE orders ADD COLUMN IF NOT EXISTS pump_slip_gps_accuracy DOUBLE PRECISION;
+ALTER TABLE orders ADD COLUMN IF NOT EXISTS pump_slip_gps_captured_at TIMESTAMP WITH TIME ZONE;
+ALTER TABLE orders ADD COLUMN IF NOT EXISTS weigh_slip_gps_lat DOUBLE PRECISION;
+ALTER TABLE orders ADD COLUMN IF NOT EXISTS weigh_slip_gps_lng DOUBLE PRECISION;
+ALTER TABLE orders ADD COLUMN IF NOT EXISTS weigh_slip_gps_accuracy DOUBLE PRECISION;
+ALTER TABLE orders ADD COLUMN IF NOT EXISTS weigh_slip_gps_captured_at TIMESTAMP WITH TIME ZONE;
+ALTER TABLE orders ADD COLUMN IF NOT EXISTS delivery_slip_gps_lat DOUBLE PRECISION;
+ALTER TABLE orders ADD COLUMN IF NOT EXISTS delivery_slip_gps_lng DOUBLE PRECISION;
+ALTER TABLE orders ADD COLUMN IF NOT EXISTS delivery_slip_gps_accuracy DOUBLE PRECISION;
+ALTER TABLE orders ADD COLUMN IF NOT EXISTS delivery_slip_gps_captured_at TIMESTAMP WITH TIME ZONE;
+ALTER TABLE orders ADD COLUMN IF NOT EXISTS breakdown_gps_lat DOUBLE PRECISION;
+ALTER TABLE orders ADD COLUMN IF NOT EXISTS breakdown_gps_lng DOUBLE PRECISION;
+ALTER TABLE orders ADD COLUMN IF NOT EXISTS breakdown_gps_accuracy DOUBLE PRECISION;
+ALTER TABLE orders ADD COLUMN IF NOT EXISTS breakdown_gps_captured_at TIMESTAMP WITH TIME ZONE;
+ALTER TABLE orders ADD COLUMN IF NOT EXISTS repair_gps_lat DOUBLE PRECISION;
+ALTER TABLE orders ADD COLUMN IF NOT EXISTS repair_gps_lng DOUBLE PRECISION;
+ALTER TABLE orders ADD COLUMN IF NOT EXISTS repair_gps_accuracy DOUBLE PRECISION;
+ALTER TABLE orders ADD COLUMN IF NOT EXISTS repair_gps_captured_at TIMESTAMP WITH TIME ZONE;
+ALTER TABLE kiem_tra_dau_ngay ADD COLUMN IF NOT EXISTS photo_gps JSONB;
 
 -- 11. Bảng CapDau (Vai trò Cây Dầu)
 CREATE TABLE IF NOT EXISTS cap_dau (
@@ -283,3 +386,16 @@ ON CONFLICT (code) DO NOTHING;
 INSERT INTO role_permissions (role_id, permission_id)
 SELECT r.id, p.id FROM roles r, permissions p WHERE r.code = 'admin'
 ON CONFLICT DO NOTHING;
+
+-- Bảng đăng ký thiết bị (device token) phục vụ push notification
+CREATE TABLE IF NOT EXISTS device_tokens (
+    id SERIAL PRIMARY KEY,
+    user_id INT NOT NULL REFERENCES users(id),
+    device_token TEXT UNIQUE NOT NULL,
+    platform VARCHAR(20) DEFAULT 'android',
+    device_name VARCHAR(100),
+    app_version VARCHAR(20),
+    last_seen_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
+    is_active BOOLEAN DEFAULT TRUE,
+    created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
+);

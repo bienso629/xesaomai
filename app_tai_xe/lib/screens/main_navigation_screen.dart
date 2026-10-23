@@ -101,6 +101,7 @@ class _MainNavigationScreenState extends State<MainNavigationScreen> {
     "Cấu Hình Vai Trò & Quyền",
     "Cấu Hình Nhắc Nhở & Kịch Bản Nền",
     "Cấu Hình Proxy AI & Trợ Lý Thông Minh",
+    "Quản Lý Khách Hàng",
   ];
 
   String _getAppTitle() {
@@ -212,7 +213,9 @@ class _MainNavigationScreenState extends State<MainNavigationScreen> {
         state.userRoles.any(
           (r) => ['admin', 'manager'].contains(r.toLowerCase()),
         );
-    if (tabIndex == 3 && !canManageUsers) {
+    // Đội xe & Tài xế (2), Quản lý Tài khoản (3), Cây dầu & Đối soát (4),
+    // Sản phẩm & Vật liệu (5): chỉ Admin và Quản lý / Giám đốc (manager)
+    if (const [2, 3, 4, 5].contains(tabIndex) && !canManageUsers) {
       return;
     }
     setState(() {
@@ -479,6 +482,14 @@ class _MainNavigationScreenState extends State<MainNavigationScreen> {
                       subtitle: "Kiểm tra chất lượng xe qua ảnh giao ca",
                       onTap: () => _onSelectRoot(1),
                     ),
+                    _buildDrawerItem(
+                      isSelected: _currentRoot == 2 && _activeManagementTab == 1,
+                      icon: Icons.assignment_outlined,
+                      activeIcon: Icons.assignment,
+                      title: "Đơn hàng vận tải",
+                      subtitle: "Danh sách đơn, tuyến đường giao",
+                      onTap: () => _onSelectManagementTab(1),
+                    ),
                     const Padding(
                       padding: EdgeInsets.symmetric(
                         horizontal: 16.0,
@@ -545,14 +556,21 @@ class _MainNavigationScreenState extends State<MainNavigationScreen> {
                       subtitle: "Chỉ số vận hành, tỷ lệ tuân thủ",
                       onTap: () => _onSelectManagementTab(0),
                     ),
+                    // Khách hàng: Điều phối, Quản lý / Giám đốc, Admin
                     _buildDrawerItem(
-                      isSelected: _currentRoot == 2 && _activeManagementTab == 1,
-                      icon: Icons.assignment_outlined,
-                      activeIcon: Icons.assignment,
-                      title: "Đơn hàng vận tải",
-                      subtitle: "Danh sách đơn, tuyến đường giao",
-                      onTap: () => _onSelectManagementTab(1),
+                      isSelected: _currentRoot == 2 && _activeManagementTab == 9,
+                      icon: Icons.groups_outlined,
+                      activeIcon: Icons.groups,
+                      title: "Khách hàng",
+                      subtitle: "Danh sách khách hàng, liên hệ",
+                      onTap: () => _onSelectManagementTab(9),
                     ),
+                  ],
+                  // Chỉ Admin và Quản lý / Giám đốc (manager) được thấy các mục dưới
+                  if (state.currentUsername == 'admin' ||
+                      state.userRoles.any(
+                        (r) => ['admin', 'manager'].contains(r.toLowerCase()),
+                      )) ...[
                     _buildDrawerItem(
                       isSelected: _currentRoot == 2 && _activeManagementTab == 2,
                       icon: Icons.directions_car_outlined,
@@ -577,11 +595,6 @@ class _MainNavigationScreenState extends State<MainNavigationScreen> {
                       subtitle: "Xi măng rời, xi măng bao, phụ gia",
                       onTap: () => _onSelectManagementTab(5),
                     ),
-                  ],
-                  if (state.currentUsername == 'admin' ||
-                      state.userRoles.any(
-                        (r) => ['admin', 'manager'].contains(r.toLowerCase()),
-                      )) ...[
                     _buildDrawerItem(
                       isSelected:
                           _currentRoot == 2 && _activeManagementTab == 3,

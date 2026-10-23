@@ -7,7 +7,7 @@ import '../services/admin_service.dart';
 import '../screens/slip_capture_screen.dart';
 
 /// Khối hiển thị & thao tác đầy đủ 5 nhóm hình chụp của một Đơn hàng vận tải:
-/// 1. Phiếu bơm hàng (do tài khoản Cây dầu chụp)
+/// 1. Ảnh bơm hàng: 2 ảnh bắt buộc Trước khi bơm và Đã bơm xong (do Tài xế chụp, có GPS)
 /// 2. Phiếu cân (do Tài xế chụp ở Bước 3)
 /// 3. Phiếu giao hàng (do Tài xế chụp ở Bước 4)
 /// 4. Tình trạng Báo hỏng xe (do Tài xế chụp ảnh & báo hỏng trong lúc vận chuyển)
@@ -165,7 +165,6 @@ class OrderAttachmentsSection extends StatelessWidget {
         roles.contains('dispatcher');
     // Quan ly / Dieu phoi / Admin chi xem hinh chup cua cac bo phan, khong hien nut bat phai chup
     final allowCapture = !readOnly && !isAdminOrManager;
-    final isGasStation = allowCapture && roles.contains('gas_station');
     final isDriver = allowCapture && roles.contains('driver');
     final isMechanic = allowCapture && roles.contains('mechanic');
 
@@ -176,6 +175,14 @@ class OrderAttachmentsSection extends StatelessWidget {
     final plate =
         (order['assigned_vehicle_plate'] ?? order['vehicle_plate'] ?? '')
             .toString();
+
+    final pumpBeforePhoto = (order['pump_slip_before_photo_url'] ??
+            order['pump_before_photo_url'] ??
+            '')
+        .toString()
+        .trim();
+    final pumpBeforeTime = _fmtTime(order['pump_slip_before_time'] ?? order['pump_before_time']);
+    final pumpBeforeBy = (order['pump_slip_before_by'] ?? order['pump_before_by'] ?? '').toString().trim();
 
     final pumpPhoto = (order['pump_slip_photo_url'] ?? '').toString().trim();
     final pumpTime = _fmtTime(order['pump_slip_time']);
@@ -243,16 +250,33 @@ class OrderAttachmentsSection extends StatelessWidget {
           context,
           icon: Icons.local_gas_station_outlined,
           accentColor: const Color(0xFF0284C7),
-          title: "1. Phiếu bơm hàng (Tài khoản Cây dầu)",
+          title: "1a. Bơm hàng - Trước khi bơm (Tài xế, bắt buộc)",
+          photoUrl: pumpBeforePhoto,
+          statusText: pumpBeforePhoto.isNotEmpty
+              ? "Đã chụp${pumpBeforeTime.isNotEmpty ? ' • $pumpBeforeTime' : ''}${pumpBeforeBy.isNotEmpty ? ' • $pumpBeforeBy' : ''}"
+              : "Chưa có ảnh TRƯỚC khi bơm",
+          canCapture: isDriver && orderId != null,
+          captureLabel: pumpBeforePhoto.isNotEmpty
+              ? "Chụp lại (Trước khi bơm)"
+              : "Chụp ảnh Trước khi bơm",
+          onCapture: () => captureType('pump_before'),
+        ),
+        const SizedBox(height: 8),
+        _buildAttachmentCard(
+          context,
+          icon: Icons.local_gas_station_outlined,
+          accentColor: const Color(0xFF0284C7),
+          title: "1b. Bơm hàng - Đã bơm xong (Tài xế, bắt buộc)",
           photoUrl: pumpPhoto,
           statusText: pumpPhoto.isNotEmpty
               ? "Đã chụp${pumpTime.isNotEmpty ? ' • $pumpTime' : ''}${pumpBy.isNotEmpty ? ' • $pumpBy' : ''}"
-              : "Chưa có ảnh Phiếu bơm hàng",
+              : "Chưa có ảnh ĐÃ BƠM XONG",
           detailText: pumpNote.isNotEmpty ? "Ghi chú: $pumpNote" : null,
-          canCapture: isGasStation && orderId != null,
+          // Ảnh "Đã bơm xong" chỉ mở khi đã có ảnh "Trước khi bơm"
+          canCapture: isDriver && orderId != null && pumpBeforePhoto.isNotEmpty,
           captureLabel: pumpPhoto.isNotEmpty
-              ? "Chụp lại Phiếu bơm"
-              : "Chụp Phiếu bơm hàng",
+              ? "Chụp lại (Đã bơm xong)"
+              : "Chụp ảnh Đã bơm xong",
           onCapture: () => captureType('pump_slip'),
         ),
         const SizedBox(height: 8),

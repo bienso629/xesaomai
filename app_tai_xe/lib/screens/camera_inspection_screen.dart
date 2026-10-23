@@ -6,6 +6,7 @@ import 'package:provider/provider.dart';
 import '../models/inspection_model.dart';
 import '../services/app_state.dart';
 import '../services/admin_service.dart';
+import '../services/gps_service.dart';
 import '../widgets/camera_overlay_painter.dart';
 import 'breakdown_dialog.dart';
 
@@ -29,10 +30,10 @@ class _CameraInspectionScreenState extends State<CameraInspectionScreen> with Wi
   bool _userFlashOverride = false;
   final List<PhotoMetadata> _capturedPhotos = [];
 
-  // Giả lập GPS máy
-  final double _mockLat = 10.762622;
-  final double _mockLng = 106.660172;
-  final double _mockAccuracy = 4.2;
+  // GPS thật của thiết bị: mỗi ảnh lấy tọa độ ngay lúc bấm chụp, không có thì không cho chụp tiếp
+  GpsFix? _lastGpsFix;
+  bool _isLocating = false;
+  String? _gpsErrorMessage;
 
   final TextEditingController _kmController = TextEditingController();
   final double _mockOcrKm = 124580.0;
@@ -71,9 +72,49 @@ class _CameraInspectionScreenState extends State<CameraInspectionScreen> with Wi
     },
   ];
 
+  /// Lấy GPS lúc mở màn để tài xế thấy ngay tình trạng định vị (và xin quyền sớm).
+  Future<void> _initGpsLocation() async {
+    await _fetchGps();
+  }
+
+  Future<GpsFix?> _fetchGps() async {
+    if (mounted) {
+      setState(() {
+        _isLocating = true;
+        _gpsErrorMessage = null;
+      });
+    }
+    try {
+      final fix = await GpsService.getCurrentFix();
+      if (mounted) setState(() => _lastGpsFix = fix);
+      return fix;
+    } on GpsException catch (e) {
+      if (mounted) setState(() => _gpsErrorMessage = e.message);
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            backgroundColor: Colors.red.shade700,
+            content: Text(e.message),
+            action: (e.needsAppSettings || e.needsLocationSettings)
+                ? SnackBarAction(
+                    label: "Mở Cài đặt",
+                    textColor: Colors.white,
+                    onPressed: () => GpsService.openSettingsFor(e),
+                  )
+                : null,
+          ),
+        );
+      }
+      return null;
+    } finally {
+      if (mounted) setState(() => _isLocating = false);
+    }
+  }
+
   @override
   void initState() {
     super.initState();
+    _initGpsLocation();
     _flashOn = _stepsConfig[_currentStepIndex]['flashDefault'];
     _kmController.text = _mockOcrKm.toStringAsFixed(0);
     WidgetsBinding.instance.addObserver(this);
@@ -158,10 +199,16 @@ class _CameraInspectionScreenState extends State<CameraInspectionScreen> with Wi
       // Android (Vivo, Oppo, Xiaomi...) tự đặt lại flash mode sau mỗi lần chụp
       // khiến lệnh tắt flash bị bỏ qua, nên phải gọi lại trước mỗi lần chụp.
       await _applyFlash(controller);
+      final gpsFuture = _fetchGps();
       final file = await controller.takePicture();
       // Áp dụng lại sau khi chụp để đèn preview khớp với chế độ đã chọn.
       await _applyFlash(controller);
-      _onStepCaptured(file.path);
+      final gps = await gpsFuture;
+      if (gps == null) {
+        // Ảnh không có GPS thì không được tính, tài xế phải chụp lại bước này.
+        return;
+      }
+      _onStepCaptured(file.path, gps);
     } on CameraException catch (e) {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
@@ -173,7 +220,7 @@ class _CameraInspectionScreenState extends State<CameraInspectionScreen> with Wi
     }
   }
 
-  void _onStepCaptured(String capturedPath) {
+  void _onStepCaptured(String capturedPath, GpsFix gps) {
     final state = context.read<AppState>();
     final currentConfig = _stepsConfig[_currentStepIndex];
 
@@ -200,10 +247,10 @@ class _CameraInspectionScreenState extends State<CameraInspectionScreen> with Wi
     final metadata = PhotoMetadata(
       stepName: currentConfig['title'],
       imagePath: capturedPath,
-      timestamp: DateTime.now(),
-      latitude: _mockLat,
-      longitude: _mockLng,
-      accuracy: _mockAccuracy,
+      timestamp: gps.capturedAt,
+      latitude: gps.lat,
+      longitude: gps.lng,
+      accuracy: gps.accuracy,
       vehiclePlate: state.selectedPlate,
       driverId: state.currentDriverId,
       deviceId: "DEV-VIVO-Y21-9982",
@@ -406,12 +453,24 @@ class _CameraInspectionScreenState extends State<CameraInspectionScreen> with Wi
                       imgLeft: img3,
                       imgRight: img4,
                       imgDashboard: img5,
-                      gpsLat: _mockLat,
-                      gpsLng: _mockLng,
-                      gpsAccuracy: _mockAccuracy,
+                      // Tọa độ chung lấy theo ảnh cuối, kèm GPS riêng của từng ảnh
+                      gpsLat: _capturedPhotos.last.latitude,
+                      gpsLng: _capturedPhotos.last.longitude,
+                      gpsAccuracy: _capturedPhotos.last.accuracy,
                       deviceId: "DEV-VIVO-Y21-9982",
                       kmOcr: _mockOcrKm,
                       kmConfirmed: confirmed,
+                      photoGps: [
+                        for (int i = 0; i < _capturedPhotos.length; i++)
+                          {
+                            'step': i + 1,
+                            'name': _capturedPhotos[i].stepName,
+                            'lat': _capturedPhotos[i].latitude,
+                            'lng': _capturedPhotos[i].longitude,
+                            'accuracy': _capturedPhotos[i].accuracy,
+                            'captured_at': _capturedPhotos[i].timestamp.toIso8601String(),
+                          },
+                      ],
                     );
 
                     if (mounted) {
@@ -612,8 +671,15 @@ class _CameraInspectionScreenState extends State<CameraInspectionScreen> with Wi
                         const SizedBox(height: 2),
                         Text("Giờ: ${DateTime.now().toLocal().toString().substring(0, 19)} (UTC+7)",
                             style: const TextStyle(color: Colors.white70, fontSize: 10)),
-                        Text("GPS: $_mockLat, $_mockLng (±${_mockAccuracy}m) | DEV-VIVO-Y21-9982",
-                            style: const TextStyle(color: Colors.white70, fontSize: 9)),
+                        Text(
+                            _lastGpsFix != null
+                                ? "GPS: ${_lastGpsFix!.display} | DEV-VIVO-Y21-9982"
+                                : (_isLocating
+                                    ? "GPS: đang lấy tọa độ..."
+                                    : "GPS: ${_gpsErrorMessage ?? 'chưa có tọa độ'}"),
+                            style: TextStyle(
+                                color: _lastGpsFix != null ? Colors.white70 : Colors.orangeAccent,
+                                fontSize: 9)),
                       ],
                     ),
                   ),

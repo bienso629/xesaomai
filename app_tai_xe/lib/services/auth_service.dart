@@ -4,11 +4,12 @@ import 'package:flutter/foundation.dart';
 import 'package:http/http.dart' as http;
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:uuid/uuid.dart';
+import '../config/api_config.dart';
 
 class AuthService {
   // Đường dẫn Backend API thực tế
-  static const String baseUrl = 'https://saomai-api.type.vn/api/v1/auth';
-  static const String apiV1Url = 'https://saomai-api.type.vn/api/v1';
+  static const String baseUrl = '${ApiConfig.apiV1}/auth';
+  static const String apiV1Url = ApiConfig.apiV1;
 
   /// Khởi tạo hoặc lấy Device Token cố định của thiết bị hiện tại
   static Future<Map<String, String>> getOrCreateDeviceMetadata() async {

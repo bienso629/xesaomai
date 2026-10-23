@@ -3,14 +3,23 @@ import os
 import math
 import uuid
 import shutil
+import hashlib
+import html
+import json
+import asyncio
+import secrets
+import threading
+from urllib.parse import urlencode
+import requests
 from datetime import datetime, timedelta, timezone
-from typing import Optional, List
+from typing import Optional, List, Any
 import psycopg2
 from psycopg2.extras import RealDictCursor
-from fastapi import FastAPI, HTTPException, Depends, status, UploadFile, File
+from fastapi import FastAPI, HTTPException, Depends, status, UploadFile, File, WebSocket, WebSocketDisconnect
 from fastapi.staticfiles import StaticFiles
+from fastapi.responses import HTMLResponse
 from fastapi.security import OAuth2PasswordBearer, OAuth2PasswordRequestForm
-from pydantic import BaseModel
+from pydantic import BaseModel, ConfigDict, model_validator
 from jose import JWTError, jwt
 import bcrypt
 
@@ -89,8 +98,48 @@ class Token(BaseModel):
     driver_type: Optional[str] = None
 
 class LoginRequest(BaseModel):
+    model_config = ConfigDict(extra="allow")
+
     username: str
     password: str
+    device_token: Optional[str] = None
+    platform: Optional[str] = "android"
+    device_name: Optional[str] = None
+    app_version: Optional[str] = None
+
+    @model_validator(mode="before")
+    @classmethod
+    def extract_aliases(cls, data: Any) -> Any:
+        if isinstance(data, dict):
+            # Tự động nhận diện device_token từ mọi kiểu đặt tên phổ biến
+            if not data.get("device_token"):
+                for key in ["deviceToken", "fcm_token", "fcmToken", "push_token", "pushToken", "registration_token", "registrationToken", "token"]:
+                    val = data.get(key)
+                    if val and isinstance(val, str) and val.strip():
+                        data["device_token"] = val.strip()
+                        break
+            # Tự động nhận diện platform
+            if not data.get("platform"):
+                for key in ["os", "os_name", "osName", "device_os"]:
+                    val = data.get(key)
+                    if val and isinstance(val, str) and val.strip():
+                        data["platform"] = val.strip().lower()
+                        break
+            # Tự động nhận diện device_name
+            if not data.get("device_name"):
+                for key in ["deviceName", "device_model", "deviceModel", "model"]:
+                    val = data.get(key)
+                    if val and isinstance(val, str) and val.strip():
+                        data["device_name"] = val.strip()
+                        break
+            # Tự động nhận diện app_version
+            if not data.get("app_version"):
+                for key in ["appVersion", "version", "buildNumber"]:
+                    val = data.get(key)
+                    if val and isinstance(val, str) and val.strip():
+                        data["app_version"] = val.strip()
+                        break
+        return data
 
 class UserCreate(BaseModel):
     username: str
@@ -140,6 +189,26 @@ class ProductUpdate(BaseModel):
     unit: Optional[str] = None
     standard_pump_time_minutes: Optional[int] = None
     requires_air_pump: Optional[bool] = None
+
+class CustomerCreate(BaseModel):
+    code: str
+    name: str
+    tax_code: Optional[str] = None
+    contact_person: Optional[str] = None
+    phone: Optional[str] = None
+    email: Optional[str] = None
+    address: Optional[str] = None
+    note: Optional[str] = None
+
+class CustomerUpdate(BaseModel):
+    code: Optional[str] = None
+    name: Optional[str] = None
+    tax_code: Optional[str] = None
+    contact_person: Optional[str] = None
+    phone: Optional[str] = None
+    email: Optional[str] = None
+    address: Optional[str] = None
+    note: Optional[str] = None
 
 class VehicleCreate(BaseModel):
     plate_number: str
@@ -219,6 +288,8 @@ class InspectionSubmit(BaseModel):
     device_id: str
     km_ocr: float
     km_confirmed: float
+    # GPS riêng của từng ảnh: [{"step": 1, "lat":..., "lng":..., "accuracy":..., "captured_at": "..."}]
+    photo_gps: Optional[List[dict]] = None
 
 class InspectionReview(BaseModel):
     flag_status: str # 'approved', 'rejected', 'monitored'
@@ -256,6 +327,22 @@ class MilestonePumpDone(BaseModel):
     pump_done_lng: float
     wait_reason_code: Optional[str] = None
     wait_reason_note: Optional[str] = None
+
+class OrderAttachmentSubmit(BaseModel):
+    # Hình chụp chứng từ / sự cố gắn vào đơn hàng (POST /api/v1/orders/{order_id}/attachment)
+    # pump_slip_before (Trước khi bơm) | pump_slip (Đã bơm xong) | weigh_slip | delivery_slip | breakdown | repair
+    photo_type: str
+    photo_base64: str
+    note: Optional[str] = None
+    tonnage: Optional[float] = None
+    slip_code: Optional[str] = None
+    location: Optional[str] = None
+    repair_status: Optional[str] = None  # fixed | repairing
+    # Tọa độ GPS thực tế của thiết bị lúc chụp ảnh
+    gps_lat: Optional[float] = None
+    gps_lng: Optional[float] = None
+    gps_accuracy: Optional[float] = None
+    gps_captured_at: Optional[str] = None
 
 # ----------------- XÁC THỰC PHIÊN ĐĂNG NHẬP VỚI JWT -----------------
 def get_current_user(token: str = Depends(oauth2_scheme)):
@@ -324,6 +411,359 @@ def require_admin_or_manager(current_user: dict = Depends(get_current_user)):
         )
     return current_user
 
+def require_dispatch_staff(current_user: dict = Depends(get_current_user)):
+    # Điều phối viên (dispatcher), Quản lý / Giám đốc (manager) và Admin
+    user_roles = [r.lower() for r in current_user.get("roles", [])]
+    if current_user["username"] != "admin" and not any(r in ("admin", "manager", "dispatcher") for r in user_roles):
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Chỉ Điều phối viên, Quản lý và Quản trị viên mới có quyền thực hiện thao tác này"
+        )
+    return current_user
+
+CUSTOMERS_DDL = """
+CREATE TABLE IF NOT EXISTS customers (
+    id SERIAL PRIMARY KEY,
+    code VARCHAR(50) UNIQUE NOT NULL,
+    name VARCHAR(255) NOT NULL,
+    tax_code VARCHAR(50),
+    contact_person VARCHAR(150),
+    phone VARCHAR(30),
+    email VARCHAR(150),
+    address TEXT,
+    note TEXT,
+    is_active BOOLEAN DEFAULT TRUE,
+    created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
+)
+"""
+
+ZALO_OA_DDL = [
+    # Mỗi khách hàng đồng bộ từ Zalo OA giữ 1 ID riêng (user_id của Zalo), không trùng
+    "ALTER TABLE customers ADD COLUMN IF NOT EXISTS zalo_user_id VARCHAR(64)",
+    "ALTER TABLE customers ADD COLUMN IF NOT EXISTS zalo_display_name VARCHAR(255)",
+    "ALTER TABLE customers ADD COLUMN IF NOT EXISTS zalo_avatar TEXT",
+    "ALTER TABLE customers ADD COLUMN IF NOT EXISTS zalo_synced_at TIMESTAMP WITH TIME ZONE",
+    "ALTER TABLE customers ADD COLUMN IF NOT EXISTS source VARCHAR(20) DEFAULT 'manual'",
+    "CREATE UNIQUE INDEX IF NOT EXISTS ux_customers_zalo_user_id ON customers(zalo_user_id) WHERE zalo_user_id IS NOT NULL",
+    """CREATE TABLE IF NOT EXISTS zalo_oa_tokens (
+        id INT PRIMARY KEY DEFAULT 1,
+        oa_id VARCHAR(64),
+        access_token TEXT NOT NULL,
+        refresh_token TEXT NOT NULL,
+        access_expires_at TIMESTAMP WITH TIME ZONE NOT NULL,
+        refresh_expires_at TIMESTAMP WITH TIME ZONE,
+        authorized_by VARCHAR(100),
+        updated_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
+        CHECK (id = 1)
+    )""",
+    """CREATE TABLE IF NOT EXISTS zalo_oa_oauth_states (
+        state VARCHAR(100) PRIMARY KEY,
+        code_verifier VARCHAR(200) NOT NULL,
+        created_by VARCHAR(100),
+        created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
+    )""",
+]
+
+# Loại ảnh gắn vào đơn hàng -> tiền tố cột trong bảng orders
+ORDER_PHOTO_PREFIX = {
+    "pump_slip_before": "pump_slip_before",  # Bơm hàng - Trước khi bơm (Tài xế)
+    "pump_slip": "pump_slip",                # Bơm hàng - Đã bơm xong (Tài xế)
+    "weigh_slip": "weigh_slip",
+    "delivery_slip": "delivery_slip",
+    "breakdown": "breakdown",
+    "repair": "repair",
+}
+
+ORDER_ATTACHMENT_DDL = [
+    "ALTER TABLE orders ADD COLUMN IF NOT EXISTS updated_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP",
+    # Phiếu bơm hàng: 2 ảnh bắt buộc do Tài xế chụp
+    "ALTER TABLE orders ADD COLUMN IF NOT EXISTS pump_slip_before_photo_url TEXT",
+    "ALTER TABLE orders ADD COLUMN IF NOT EXISTS pump_slip_before_time TIMESTAMP WITH TIME ZONE",
+    "ALTER TABLE orders ADD COLUMN IF NOT EXISTS pump_slip_before_by VARCHAR(150)",
+    "ALTER TABLE orders ADD COLUMN IF NOT EXISTS pump_slip_before_note TEXT",
+    "ALTER TABLE orders ADD COLUMN IF NOT EXISTS pump_slip_photo_url TEXT",
+    "ALTER TABLE orders ADD COLUMN IF NOT EXISTS pump_slip_time TIMESTAMP WITH TIME ZONE",
+    "ALTER TABLE orders ADD COLUMN IF NOT EXISTS pump_slip_by VARCHAR(150)",
+    "ALTER TABLE orders ADD COLUMN IF NOT EXISTS pump_slip_note TEXT",
+    # Phiếu cân
+    "ALTER TABLE orders ADD COLUMN IF NOT EXISTS weigh_slip_photo_url TEXT",
+    "ALTER TABLE orders ADD COLUMN IF NOT EXISTS weigh_slip_time TIMESTAMP WITH TIME ZONE",
+    "ALTER TABLE orders ADD COLUMN IF NOT EXISTS weigh_slip_tonnage DOUBLE PRECISION",
+    "ALTER TABLE orders ADD COLUMN IF NOT EXISTS weigh_slip_code VARCHAR(100)",
+    # Phiếu giao hàng
+    "ALTER TABLE orders ADD COLUMN IF NOT EXISTS delivery_slip_photo_url TEXT",
+    "ALTER TABLE orders ADD COLUMN IF NOT EXISTS delivery_slip_time TIMESTAMP WITH TIME ZONE",
+    "ALTER TABLE orders ADD COLUMN IF NOT EXISTS delivery_slip_note TEXT",
+    # Báo hỏng xe
+    "ALTER TABLE orders ADD COLUMN IF NOT EXISTS has_breakdown BOOLEAN DEFAULT FALSE",
+    "ALTER TABLE orders ADD COLUMN IF NOT EXISTS breakdown_status VARCHAR(30)",
+    "ALTER TABLE orders ADD COLUMN IF NOT EXISTS breakdown_photo_url TEXT",
+    "ALTER TABLE orders ADD COLUMN IF NOT EXISTS breakdown_reason TEXT",
+    "ALTER TABLE orders ADD COLUMN IF NOT EXISTS breakdown_location TEXT",
+    "ALTER TABLE orders ADD COLUMN IF NOT EXISTS breakdown_time TIMESTAMP WITH TIME ZONE",
+    "ALTER TABLE orders ADD COLUMN IF NOT EXISTS breakdown_reported_by VARCHAR(150)",
+    # Sửa chữa
+    "ALTER TABLE orders ADD COLUMN IF NOT EXISTS repair_photo_url TEXT",
+    "ALTER TABLE orders ADD COLUMN IF NOT EXISTS repair_status VARCHAR(30)",
+    "ALTER TABLE orders ADD COLUMN IF NOT EXISTS repair_note TEXT",
+    "ALTER TABLE orders ADD COLUMN IF NOT EXISTS repair_time TIMESTAMP WITH TIME ZONE",
+    "ALTER TABLE orders ADD COLUMN IF NOT EXISTS repair_by VARCHAR(150)",
+]
+# Tọa độ GPS thực tế lúc chụp cho từng loại ảnh
+for _prefix in ORDER_PHOTO_PREFIX.values():
+    ORDER_ATTACHMENT_DDL += [
+        f"ALTER TABLE orders ADD COLUMN IF NOT EXISTS {_prefix}_gps_lat DOUBLE PRECISION",
+        f"ALTER TABLE orders ADD COLUMN IF NOT EXISTS {_prefix}_gps_lng DOUBLE PRECISION",
+        f"ALTER TABLE orders ADD COLUMN IF NOT EXISTS {_prefix}_gps_accuracy DOUBLE PRECISION",
+        f"ALTER TABLE orders ADD COLUMN IF NOT EXISTS {_prefix}_gps_captured_at TIMESTAMP WITH TIME ZONE",
+    ]
+# GPS riêng của từng ảnh trong 5 ảnh kiểm tra xe
+ORDER_ATTACHMENT_DDL.append(
+    "ALTER TABLE kiem_tra_dau_ngay ADD COLUMN IF NOT EXISTS photo_gps JSONB"
+)
+
+def ensure_order_attachment_columns():
+    # Bổ sung các cột ảnh chứng từ & GPS cho DB cũ. Mỗi lệnh chạy riêng để
+    # một lệnh lỗi (VD bảng chưa tồn tại) không chặn các lệnh khác.
+    try:
+        conn = get_db()
+    except Exception as e:
+        print(f"[orders] Không kết nối được DB để bổ sung cột: {e}")
+        return
+    cur = conn.cursor()
+    for ddl in ORDER_ATTACHMENT_DDL:
+        try:
+            cur.execute(ddl)
+            conn.commit()
+        except Exception as e:
+            conn.rollback()
+            print(f"[orders] Lỗi bổ sung cột ({ddl}): {e}")
+    cur.close()
+    conn.close()
+
+def _validate_gps(lat, lng, label: str = "Ảnh"):
+    # Mọi ảnh của tài xế bắt buộc phải có tọa độ GPS thật
+    if lat is None or lng is None:
+        raise HTTPException(
+            status_code=400,
+            detail=f"{label} thiếu tọa độ GPS. Vui lòng bật định vị và chụp lại.",
+        )
+    if not (-90 <= lat <= 90 and -180 <= lng <= 180) or (lat == 0 and lng == 0):
+        raise HTTPException(status_code=400, detail=f"{label} có tọa độ GPS không hợp lệ.")
+
+def _parse_gps_time(value: Optional[str]):
+    if not value:
+        return None
+    try:
+        return datetime.fromisoformat(value.replace("Z", "+00:00"))
+    except ValueError:
+        return None
+
+def ensure_customers_table():
+    # Tự tạo bảng customers khi server khởi động (DB cũ chưa có bảng này)
+    try:
+        conn = get_db()
+        cur = conn.cursor()
+        cur.execute(CUSTOMERS_DDL)
+        for ddl in ZALO_OA_DDL:
+            cur.execute(ddl)
+        conn.commit()
+        cur.close()
+        conn.close()
+    except Exception as e:
+        print(f"[customers] Không tạo được bảng customers: {e}")
+
+VEHICLE_GPS_DDL = [
+    "ALTER TABLE vehicles ADD COLUMN IF NOT EXISTS gps_provider VARCHAR(30)",
+    "ALTER TABLE vehicles ADD COLUMN IF NOT EXISTS gps_vehicle_id VARCHAR(50)",
+    "ALTER TABLE vehicles ADD COLUMN IF NOT EXISTS gps_driver_name VARCHAR(150)",
+    # TRUE = xe đang có trên Vietmap hoặc Bình Anh; FALSE = đã ẩn (giữ lại vì có lịch sử)
+    "ALTER TABLE vehicles ADD COLUMN IF NOT EXISTS in_fleet BOOLEAN DEFAULT TRUE",
+    # Mỗi phương tiện đi kèm đúng 1 tài khoản Tài xế: một tài xế không được gắn với 2 xe
+    "CREATE UNIQUE INDEX IF NOT EXISTS uq_vehicles_default_driver ON vehicles(default_driver_id) WHERE default_driver_id IS NOT NULL",
+]
+
+def ensure_vehicle_gps_columns():
+    try:
+        conn = get_db()
+        cur = conn.cursor()
+        for ddl in VEHICLE_GPS_DDL:
+            cur.execute(ddl)
+        conn.commit()
+        cur.close()
+        conn.close()
+    except Exception as e:
+        print(f"[vehicles] Không thêm được cột GPS cho bảng vehicles: {e}")
+
+@app.on_event("startup")
+def _startup_ensure_customers():
+    ensure_customers_table()
+    ensure_order_attachment_columns()
+    ensure_vehicle_gps_columns()
+
+# ----------------- REALTIME WEBSOCKET & DEVICE TOKEN (PUSH NOTIFICATION) -----------------
+
+class ConnectionManager:
+    # Quan ly ket noi WebSocket theo user_id de day su kien realtime
+    def __init__(self):
+        self.active = {}
+
+    async def connect(self, user_id, ws):
+        global main_loop
+        if main_loop is None or not main_loop.is_running():
+            try:
+                main_loop = asyncio.get_running_loop()
+            except RuntimeError:
+                pass
+        await ws.accept()
+        self.active.setdefault(user_id, set()).add(ws)
+
+    def disconnect(self, user_id, ws):
+        try:
+            self.active.get(user_id, set()).discard(ws)
+            if user_id in self.active and not self.active[user_id]:
+                self.active.pop(user_id, None)
+        except Exception:
+            pass
+
+    async def send_to_user(self, user_id, payload):
+        for ws in list(self.active.get(user_id, set())):
+            try:
+                await ws.send_text(json.dumps(payload, ensure_ascii=False, default=str))
+            except Exception:
+                self.disconnect(user_id, ws)
+
+    async def broadcast(self, payload):
+        for uid in list(self.active.keys()):
+            await self.send_to_user(uid, payload)
+
+manager = ConnectionManager()
+
+main_loop = None
+
+@app.on_event("startup")
+async def startup_event():
+    global main_loop
+    main_loop = asyncio.get_running_loop()
+
+def _emit_event(event, data, target_user_id=None):
+    payload = {"event": event, "data": data, "sent_at": datetime.now(timezone.utc).isoformat()}
+    global main_loop
+    coro = manager.broadcast(payload) if target_user_id is None else manager.send_to_user(target_user_id, payload)
+    try:
+        loop = asyncio.get_running_loop()
+        loop.create_task(coro)
+    except RuntimeError:
+        if main_loop and main_loop.is_running():
+            asyncio.run_coroutine_threadsafe(coro, main_loop)
+
+class DeviceRegister(BaseModel):
+    model_config = ConfigDict(extra="allow")
+
+    device_token: str
+    platform: Optional[str] = "android"
+    device_name: Optional[str] = None
+    app_version: Optional[str] = None
+
+    @model_validator(mode="before")
+    @classmethod
+    def extract_aliases(cls, data: Any) -> Any:
+        if isinstance(data, dict):
+            if not data.get("device_token"):
+                for key in ["deviceToken", "fcm_token", "fcmToken", "push_token", "pushToken", "registration_token", "registrationToken", "token"]:
+                    val = data.get(key)
+                    if val and isinstance(val, str) and val.strip():
+                        data["device_token"] = val.strip()
+                        break
+            if not data.get("platform"):
+                for key in ["os", "os_name", "osName", "device_os"]:
+                    val = data.get(key)
+                    if val and isinstance(val, str) and val.strip():
+                        data["platform"] = val.strip().lower()
+                        break
+            if not data.get("device_name"):
+                for key in ["deviceName", "device_model", "deviceModel", "model"]:
+                    val = data.get(key)
+                    if val and isinstance(val, str) and val.strip():
+                        data["device_name"] = val.strip()
+                        break
+            if not data.get("app_version"):
+                for key in ["appVersion", "version", "buildNumber"]:
+                    val = data.get(key)
+                    if val and isinstance(val, str) and val.strip():
+                        data["app_version"] = val.strip()
+                        break
+        return data
+
+_DEVICE_UPSERT_SQL = (
+    "INSERT INTO device_tokens (user_id, device_token, platform, device_name, app_version, last_seen_at, is_active) "
+    "VALUES (%s, %s, %s, %s, %s, CURRENT_TIMESTAMP, TRUE) "
+    "ON CONFLICT (device_token) DO UPDATE "
+    "SET user_id = EXCLUDED.user_id, platform = EXCLUDED.platform, device_name = EXCLUDED.device_name, "
+    "app_version = EXCLUDED.app_version, last_seen_at = CURRENT_TIMESTAMP, is_active = TRUE "
+    "RETURNING id, user_id, device_token, platform, last_seen_at"
+)
+
+@app.post("/api/v1/devices/register")
+def register_device(dev: DeviceRegister, current_user: dict = Depends(get_current_user)):
+    # Dang ky device token cua thiet bi de push notification (goi khi mo app)
+    conn = get_db()
+    cur = conn.cursor()
+    try:
+        cur.execute(_DEVICE_UPSERT_SQL, (current_user["id"], dev.device_token, dev.platform, dev.device_name, dev.app_version))
+        conn.commit()
+        row = cur.fetchone()
+        cur.close()
+        conn.close()
+        print(f"[DEVICE_REGISTER] User {current_user['id']} ('{current_user.get('username')}') successfully registered device_token='{dev.device_token[:15]}...', platform='{dev.platform}', device_name='{dev.device_name}'", flush=True)
+        return {"status": "success", "device": row}
+    except Exception as e:
+        conn.rollback()
+        cur.close()
+        conn.close()
+        print(f"[DEVICE_REGISTER] Error registering device for user {current_user['id']}: {e}", flush=True)
+        raise HTTPException(status_code=400, detail=str(e))
+
+@app.websocket("/api/v1/ws/{user_id}")
+async def ws_endpoint(ws: WebSocket, user_id: int, token: Optional[str] = None):
+    # Xac thuc JWT truoc khi chap nhan ket noi
+    try:
+        payload_jwt = jwt.decode(token, SECRET_KEY, algorithms=[ALGORITHM])
+        if payload_jwt.get("sub") is None:
+            raise JWTError()
+    except JWTError:
+        await ws.close(code=4401)
+        return
+    await manager.connect(user_id, ws)
+    try:
+        while True:
+            raw = await ws.receive_text()
+            try:
+                msg = json.loads(raw)
+            except Exception:
+                continue
+            if msg.get("type") == "register_device":
+                try:
+                    conn = get_db()
+                    cur = conn.cursor()
+                    cur.execute(_DEVICE_UPSERT_SQL, (user_id, msg.get("device_token"), msg.get("platform"), msg.get("device_name"), msg.get("app_version")))
+                    conn.commit()
+                    cur.close()
+                    conn.close()
+                    await ws.send_text(json.dumps({"event": "register_device_ok", "data": {"device_token": msg.get("device_token")}}, ensure_ascii=False))
+                except Exception as e:
+                    try:
+                        await ws.send_text(json.dumps({"event": "register_device_error", "data": {"detail": str(e)}}, ensure_ascii=False))
+                    except Exception:
+                        pass
+            elif msg.get("type") == "ping":
+                await ws.send_text(json.dumps({"event": "pong"}))
+    except WebSocketDisconnect:
+        manager.disconnect(user_id, ws)
+    except Exception:
+        manager.disconnect(user_id, ws)
+
 # ----------------- API ENDPOINTS -----------------
 
 @app.get("/")
@@ -363,6 +803,15 @@ async def upload_image(file: UploadFile = File(...)):
 # 1. API Đăng nhập cấp Token cho mỗi phiên
 @app.post("/api/v1/auth/login", response_model=Token)
 def login(creds: LoginRequest):
+    extra_info = creds.__pydantic_extra__ if creds.__pydantic_extra__ else {}
+    print(
+        f"[AUTH_LOGIN] Attempt login for username='{creds.username}' | "
+        f"device_token={'YES (' + creds.device_token[:15] + '...)' if creds.device_token else 'NONE'} | "
+        f"platform='{creds.platform}' | device_name='{creds.device_name}' | app_version='{creds.app_version}' | "
+        f"extra_keys={list(extra_info.keys())}",
+        flush=True
+    )
+
     conn = get_db()
     cur = conn.cursor()
     cur.execute("SELECT * FROM users WHERE username = %s AND is_active = TRUE", (creds.username,))
@@ -370,6 +819,7 @@ def login(creds: LoginRequest):
     if not user or not verify_password(creds.password, user["password_hash"]):
         cur.close()
         conn.close()
+        print(f"[AUTH_LOGIN] FAILED login for username='{creds.username}' (invalid credentials)", flush=True)
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Tên đăng nhập hoặc mật khẩu không chính xác"
@@ -383,6 +833,22 @@ def login(creds: LoginRequest):
         WHERE ur.user_id = %s
     """, (user["id"],))
     roles = [r["code"] for r in cur.fetchall()]
+
+    # Tự động lưu / cập nhật device token nếu client gửi kèm khi đăng nhập
+    if creds.device_token:
+        try:
+            cur.execute(
+                _DEVICE_UPSERT_SQL,
+                (user["id"], creds.device_token, creds.platform or "android", creds.device_name, creds.app_version)
+            )
+            conn.commit()
+            print(f"[AUTH_LOGIN] SUCCESS: Upserted device token for user_id={user['id']} ('{user['username']}').", flush=True)
+        except Exception as e:
+            conn.rollback()
+            print(f"[AUTH_LOGIN] ERROR: Failed to upsert device token for user_id={user['id']}: {e}", flush=True)
+    else:
+        print(f"[AUTH_LOGIN] NOTICE: No device token provided for user_id={user['id']} ('{user['username']}').", flush=True)
+
     cur.close()
     conn.close()
 
@@ -659,78 +1125,529 @@ def create_product(product: ProductCreate, current_user: dict = Depends(get_curr
         cur.close()
         conn.close()
         return created
+    except HTTPException:
+        conn.rollback()
+        conn.close()
+        raise
     except Exception as e:
         conn.rollback()
         conn.close()
         raise HTTPException(status_code=400, detail=str(e))
 
 @app.put("/api/v1/products/{product_id}")
-def update_product(product_id: int, product: ProductUpdate, current_user: dict = Depends(require_admin)):
+def update_product(product_id: int, product: ProductUpdate, current_user: dict = Depends(get_current_user)):
+    roles = current_user.get("roles", [])
+    username = current_user.get("username", "")
+    allowed = (username == "admin" or any(r in ["admin", "manager", "dispatcher"] for r in roles))
+    if not allowed:
+        raise HTTPException(status_code=403, detail="Chi Quan ly va Dieu phoi vi moi co quyen cap nhat san pham")
+
     conn = get_db()
     cur = conn.cursor()
     try:
-        cur.execute("SELECT id, name, code FROM products WHERE id = %s", (product_id,))
+        cur.execute("SELECT * FROM products WHERE id = %s", (product_id,))
         existing = cur.fetchone()
         if not existing:
-            cur.close()
-            conn.close()
-            raise HTTPException(status_code=404, detail="Không tìm thấy sản phẩm")
+            raise HTTPException(status_code=404, detail="Khong tim thay san pham")
 
-        fields, params = [], []
-        for col, val in [("code", product.code), ("name", product.name), ("category", product.category),
-                         ("unit", product.unit), ("standard_pump_time_minutes", product.standard_pump_time_minutes),
-                         ("requires_air_pump", product.requires_air_pump)]:
-            if val is not None:
-                fields.append(f"{col} = %s")
-                params.append(val)
-        params.append(product_id)
+        fields = []
+        values = []
+        if product.code is not None:
+            fields.append("code = %s"); values.append(product.code.strip())
+        if product.name is not None:
+            fields.append("name = %s"); values.append(product.name.strip())
+        if product.category is not None:
+            fields.append("category = %s"); values.append(product.category)
+        if product.unit is not None:
+            fields.append("unit = %s"); values.append(product.unit)
+        if product.standard_pump_time_minutes is not None:
+            fields.append("standard_pump_time_minutes = %s"); values.append(product.standard_pump_time_minutes)
+        if product.requires_air_pump is not None:
+            fields.append("requires_air_pump = %s"); values.append(product.requires_air_pump)
 
-        cur.execute(f"UPDATE products SET {', '.join(fields)}, updated_at = CURRENT_TIMESTAMP WHERE id = %s RETURNING *", params)
+        if not fields:
+            raise HTTPException(status_code=400, detail="Khong co du lieu cap nhat")
+        fields.append("updated_at = NOW()")
+        values.append(product_id)
+
+        cur.execute(f"UPDATE products SET {', '.join(fields)} WHERE id = %s RETURNING *", values)
         conn.commit()
         updated = cur.fetchone()
         cur.close()
         conn.close()
         return updated
     except HTTPException:
-        raise
+        conn.rollback(); conn.close(); raise
     except Exception as e:
-        conn.rollback()
-        conn.close()
+        conn.rollback(); conn.close()
         raise HTTPException(status_code=400, detail=str(e))
 
 @app.delete("/api/v1/products/{product_id}")
-def delete_product(product_id: int, current_user: dict = Depends(require_admin)):
+def delete_product(product_id: int, current_user: dict = Depends(get_current_user)):
+    roles = current_user.get("roles", [])
+    username = current_user.get("username", "")
+    allowed = (username == "admin" or any(r in ["admin", "manager", "dispatcher"] for r in roles))
+    if not allowed:
+        raise HTTPException(status_code=403, detail="Chi Quan ly va Dieu phoi vi moi co quyen xoa san pham")
+
     conn = get_db()
     cur = conn.cursor()
     try:
-        cur.execute("SELECT id, name FROM products WHERE id = %s", (product_id,))
+        cur.execute("SELECT COUNT(*) AS cnt FROM orders WHERE product_id = %s", (product_id,))
+        order_count = cur.fetchone()["cnt"]
+        if order_count > 0:
+            raise HTTPException(status_code=400, detail=f"Khong the xoa: san pham dang co {order_count} don hang lien quan. Hay su dung trang thai 'Ngung hoat dong' thay vi xoa.")
+
+        cur.execute("SELECT name FROM products WHERE id = %s", (product_id,))
         existing = cur.fetchone()
         if not existing:
-            cur.close()
-            conn.close()
-            raise HTTPException(status_code=404, detail="Không tìm thấy sản phẩm")
-
-        # Soft delete nếu đang có đơn hàng tham chiếu, hard delete nếu trơn tru
-        cur.execute("SELECT COUNT(*) AS cnt FROM orders WHERE product_id = %s", (product_id,))
-        used = cur.fetchone()["cnt"]
-        if used and used > 0:
-            cur.execute("UPDATE products SET is_active = FALSE, updated_at = CURRENT_TIMESTAMP WHERE id = %s", (product_id,))
-            conn.commit()
-            cur.close()
-            conn.close()
-            return {"message": f"Sản phẩm '{existing['name']}' đang có {used} đơn hàng nên đã được chuyển trạng thái ẩn (soft delete)"}
+            raise HTTPException(status_code=404, detail="Khong tim thay san pham")
 
         cur.execute("DELETE FROM products WHERE id = %s", (product_id,))
         conn.commit()
         cur.close()
         conn.close()
-        return {"message": f"Đã xóa sản phẩm '{existing['name']}'"}
+        return {"success": True, "message": f"Da xoa san pham '{existing['name']}'", "deleted_id": product_id}
     except HTTPException:
+        conn.rollback(); conn.close(); raise
+    except Exception as e:
+        conn.rollback(); conn.close()
+        raise HTTPException(status_code=400, detail=str(e))
+
+@app.get("/api/v1/customers")
+def get_customers(current_user: dict = Depends(require_dispatch_staff)):
+    conn = get_db()
+    cur = conn.cursor()
+    cur.execute("SELECT * FROM customers WHERE is_active = TRUE ORDER BY name ASC, id ASC")
+    rows = cur.fetchall()
+    cur.close()
+    conn.close()
+    return rows
+
+@app.post("/api/v1/customers", status_code=status.HTTP_201_CREATED)
+def create_customer(customer: CustomerCreate, current_user: dict = Depends(require_dispatch_staff)):
+    code = _clean(customer.code)
+    name = _clean(customer.name)
+    if not code or not name:
+        raise HTTPException(status_code=400, detail="Mã khách hàng và Tên khách hàng là bắt buộc")
+    conn = get_db()
+    cur = conn.cursor()
+    try:
+        cur.execute("SELECT id, is_active FROM customers WHERE LOWER(code) = LOWER(%s)", (code,))
+        dup = cur.fetchone()
+        values = [code, name] + [_clean(getattr(customer, f)) for f in CUSTOMER_FIELDS[2:]]
+        if dup and dup["is_active"]:
+            raise HTTPException(status_code=400, detail=f"Mã khách hàng '{code}' đã tồn tại")
+        if dup:
+            # Mã từng bị xóa mềm: kích hoạt lại với thông tin mới
+            cur.execute(
+                f"""UPDATE customers SET {', '.join(f + ' = %s' for f in CUSTOMER_FIELDS)},
+                    is_active = TRUE, updated_at = CURRENT_TIMESTAMP WHERE id = %s RETURNING *""",
+                values + [dup["id"]]
+            )
+        else:
+            cur.execute(
+                f"""INSERT INTO customers ({', '.join(CUSTOMER_FIELDS)})
+                    VALUES ({', '.join(['%s'] * len(CUSTOMER_FIELDS))}) RETURNING *""",
+                values
+            )
+        created = cur.fetchone()
+        conn.commit()
+        cur.close()
+        conn.close()
+        return created
+    except HTTPException:
+        conn.rollback()
+        conn.close()
         raise
     except Exception as e:
         conn.rollback()
         conn.close()
         raise HTTPException(status_code=400, detail=str(e))
+
+@app.put("/api/v1/customers/{customer_id}")
+def update_customer(customer_id: int, customer: CustomerUpdate, current_user: dict = Depends(require_dispatch_staff)):
+    conn = get_db()
+    cur = conn.cursor()
+    try:
+        cur.execute("SELECT id FROM customers WHERE id = %s AND is_active = TRUE", (customer_id,))
+        if not cur.fetchone():
+            raise HTTPException(status_code=404, detail="Không tìm thấy khách hàng")
+        fields, params = [], []
+        for f in CUSTOMER_FIELDS:
+            raw = getattr(customer, f)
+            if raw is None:
+                continue
+            val = _clean(raw)
+            if f in ("code", "name") and not val:
+                raise HTTPException(status_code=400, detail="Mã khách hàng và Tên khách hàng không được để trống")
+            fields.append(f"{f} = %s")
+            params.append(val)
+        if "code = %s" in fields:
+            new_code = params[fields.index("code = %s")]
+            cur.execute("SELECT id FROM customers WHERE LOWER(code) = LOWER(%s) AND id <> %s", (new_code, customer_id))
+            if cur.fetchone():
+                raise HTTPException(status_code=400, detail=f"Mã khách hàng '{new_code}' đã tồn tại")
+        if not fields:
+            cur.execute("SELECT * FROM customers WHERE id = %s", (customer_id,))
+        else:
+            params.append(customer_id)
+            cur.execute(
+                f"UPDATE customers SET {', '.join(fields)}, updated_at = CURRENT_TIMESTAMP WHERE id = %s RETURNING *",
+                params
+            )
+        updated = cur.fetchone()
+        conn.commit()
+        cur.close()
+        conn.close()
+        return updated
+    except HTTPException:
+        conn.rollback()
+        conn.close()
+        raise
+    except Exception as e:
+        conn.rollback()
+        conn.close()
+        raise HTTPException(status_code=400, detail=str(e))
+
+@app.delete("/api/v1/customers/{customer_id}")
+def delete_customer(customer_id: int, current_user: dict = Depends(require_dispatch_staff)):
+    conn = get_db()
+    cur = conn.cursor()
+    try:
+        cur.execute("SELECT id, name FROM customers WHERE id = %s AND is_active = TRUE", (customer_id,))
+        existing = cur.fetchone()
+        if not existing:
+            raise HTTPException(status_code=404, detail="Không tìm thấy khách hàng")
+        # Xóa mềm để giữ lịch sử
+        cur.execute("UPDATE customers SET is_active = FALSE, updated_at = CURRENT_TIMESTAMP WHERE id = %s", (customer_id,))
+        conn.commit()
+        cur.close()
+        conn.close()
+        return {"message": f"Đã xóa khách hàng '{existing['name']}'"}
+    except HTTPException:
+        conn.rollback()
+        conn.close()
+        raise
+    except Exception as e:
+        conn.rollback()
+        conn.close()
+        raise HTTPException(status_code=400, detail=str(e))
+
+# 3c. Đồng bộ Khách hàng từ Zalo OA (Điều phối, Quản lý, Admin)
+# Cấu hình bằng biến môi trường:
+#   ZALO_APP_ID, ZALO_APP_SECRET : lấy ở developers.zalo.me
+#   ZALO_REDIRECT_URI            : https://saomai-api.type.vn/api/v1/zalo-oa/callback (phải khai báo y hệt trên Zalo)
+ZALO_APP_ID = os.getenv("ZALO_APP_ID", "").strip()
+ZALO_APP_SECRET = os.getenv("ZALO_APP_SECRET", "").strip()
+ZALO_REDIRECT_URI = os.getenv("ZALO_REDIRECT_URI", "https://saomai-api.type.vn/api/v1/zalo-oa/callback").strip()
+ZALO_OAUTH_BASE = os.getenv("ZALO_OAUTH_BASE", "https://oauth.zaloapp.com").rstrip("/")
+ZALO_OPENAPI_BASE = os.getenv("ZALO_OPENAPI_BASE", "https://openapi.zalo.me").rstrip("/")
+ZALO_PAGE_SIZE = 50  # Zalo cho tối đa 50 người mỗi trang
+
+_zalo_lock = threading.Lock()
+_zalo_sync = {"running": False}
+
+
+class ZaloAuthRequired(Exception):
+    pass
+
+
+def _zalo_configured() -> bool:
+    return bool(ZALO_APP_ID and ZALO_APP_SECRET and ZALO_REDIRECT_URI)
+
+
+def _zalo_token_row(cur):
+    cur.execute("SELECT * FROM zalo_oa_tokens WHERE id = 1")
+    return cur.fetchone()
+
+
+def _zalo_save_token(cur, data: dict, oa_id=None, authorized_by=None):
+    access = data.get("access_token")
+    refresh = data.get("refresh_token")
+    if not access or not refresh:
+        raise ZaloAuthRequired(data.get("error_description") or data.get("error_name") or "Zalo không trả về token")
+    try:
+        ttl = int(data.get("expires_in") or 90000)
+    except (TypeError, ValueError):
+        ttl = 90000
+    now = datetime.now(timezone.utc)
+    cur.execute(
+        """INSERT INTO zalo_oa_tokens (id, oa_id, access_token, refresh_token, access_expires_at, refresh_expires_at, authorized_by, updated_at)
+           VALUES (1, %s, %s, %s, %s, %s, %s, CURRENT_TIMESTAMP)
+           ON CONFLICT (id) DO UPDATE SET
+             oa_id = COALESCE(EXCLUDED.oa_id, zalo_oa_tokens.oa_id),
+             access_token = EXCLUDED.access_token,
+             refresh_token = EXCLUDED.refresh_token,
+             access_expires_at = EXCLUDED.access_expires_at,
+             refresh_expires_at = EXCLUDED.refresh_expires_at,
+             authorized_by = COALESCE(EXCLUDED.authorized_by, zalo_oa_tokens.authorized_by),
+             updated_at = CURRENT_TIMESTAMP""",
+        (oa_id, access, refresh, now + timedelta(seconds=max(ttl - 300, 60)), now + timedelta(days=90), authorized_by),
+    )
+
+
+def _zalo_access_token() -> str:
+    """Lấy access token còn hạn, tự làm mới bằng refresh token nếu đã hết hạn."""
+    conn = get_db()
+    cur = conn.cursor()
+    try:
+        row = _zalo_token_row(cur)
+        if not row:
+            raise ZaloAuthRequired("OA chưa được cấp quyền")
+        if row["access_expires_at"] > datetime.now(timezone.utc):
+            return row["access_token"]
+        res = requests.post(
+            f"{ZALO_OAUTH_BASE}/v4/oa/access_token",
+            headers={"secret_key": ZALO_APP_SECRET},
+            data={"refresh_token": row["refresh_token"], "app_id": ZALO_APP_ID, "grant_type": "refresh_token"},
+            timeout=20,
+        )
+        data = res.json()
+        if not data.get("access_token"):
+            # Refresh token hết hạn hoặc đã bị thu hồi: phải cấp quyền lại
+            cur.execute("DELETE FROM zalo_oa_tokens WHERE id = 1")
+            conn.commit()
+            raise ZaloAuthRequired(data.get("error_description") or "Refresh token Zalo không còn hiệu lực")
+        _zalo_save_token(cur, data)  # Refresh token của Zalo chỉ dùng được 1 lần, phải lưu bản mới
+        conn.commit()
+        return data["access_token"]
+    finally:
+        cur.close()
+        conn.close()
+
+
+def _zalo_get(path: str, payload: dict, token: str) -> dict:
+    res = requests.get(
+        f"{ZALO_OPENAPI_BASE}{path}",
+        headers={"access_token": token},
+        params={"data": json.dumps(payload)},
+        timeout=20,
+    )
+    body = res.json()
+    err = body.get("error", 0)
+    if err in (-216, -124, -14014):  # token không hợp lệ / hết hạn / bị thu hồi
+        raise ZaloAuthRequired(body.get("message") or "Access token Zalo không hợp lệ")
+    if err != 0:
+        raise RuntimeError(f"Zalo trả lỗi {err}: {body.get('message')}")
+    return body.get("data") or {}
+
+
+def _norm_phone(p) -> str:
+    digits = "".join(ch for ch in str(p or "") if ch.isdigit())
+    if digits.startswith("84") and len(digits) >= 11:
+        digits = "0" + digits[2:]
+    return digits
+
+
+def _zalo_upsert_customer(cur, info: dict) -> str:
+    uid = str(info.get("user_id") or "").strip()
+    if not uid:
+        return "skipped"
+    shared = info.get("shared_info") or {}
+    display = _clean(info.get("display_name")) or _clean(info.get("user_alias"))
+    name = _clean(shared.get("name")) or display or f"Zalo {uid[-6:]}"
+    phone = _norm_phone(shared.get("phone")) or None
+    address = ", ".join(x for x in [_clean(shared.get("address")), _clean(shared.get("district")), _clean(shared.get("city"))] if x) or None
+    avatar = _clean(info.get("avatar"))
+
+    cur.execute("SELECT id, is_active FROM customers WHERE zalo_user_id = %s", (uid,))
+    row = cur.fetchone()
+    if row:
+        if not row["is_active"]:
+            return "skipped"  # Khách đã bị xóa tay thì không tự hồi sinh
+        # Chỉ ghi đè thông tin Zalo, các trường người dùng đã sửa tay chỉ được điền khi đang trống
+        cur.execute(
+            """UPDATE customers SET zalo_display_name = %s, zalo_avatar = %s, zalo_synced_at = CURRENT_TIMESTAMP,
+                   phone = COALESCE(NULLIF(phone, ''), %s), address = COALESCE(NULLIF(address, ''), %s),
+                   updated_at = CURRENT_TIMESTAMP
+               WHERE id = %s""",
+            (display, avatar, phone, address, row["id"]),
+        )
+        return "updated"
+
+    if phone:
+        # Gắn ID Zalo vào khách hàng tạo tay có cùng số điện thoại (chỉ khi khớp đúng 1 khách)
+        cur.execute(
+            """SELECT id, phone FROM customers WHERE is_active = TRUE AND zalo_user_id IS NULL
+               AND phone IS NOT NULL AND phone <> ''""")
+        same = [r["id"] for r in cur.fetchall() if _norm_phone(r["phone"]) == phone]
+        if len(same) == 1:
+            cur.execute(
+                """UPDATE customers SET zalo_user_id = %s, zalo_display_name = %s, zalo_avatar = %s,
+                       zalo_synced_at = CURRENT_TIMESTAMP, address = COALESCE(NULLIF(address, ''), %s),
+                       updated_at = CURRENT_TIMESTAMP WHERE id = %s""",
+                (uid, display, avatar, address, same[0]),
+            )
+            return "linked"
+
+    code = f"ZL{uid}"[:50]
+    cur.execute("SELECT id FROM customers WHERE LOWER(code) = LOWER(%s)", (code,))
+    if cur.fetchone():
+        return "skipped"
+    cur.execute(
+        """INSERT INTO customers (code, name, phone, address, note, source, zalo_user_id, zalo_display_name, zalo_avatar, zalo_synced_at)
+           VALUES (%s, %s, %s, %s, %s, 'zalo_oa', %s, %s, %s, CURRENT_TIMESTAMP)""",
+        (code, name, phone, address, "Đồng bộ từ Zalo OA", uid, display, avatar),
+    )
+    return "created"
+
+
+def _zalo_run_sync(started_by: str):
+    stats = {"total": 0, "processed": 0, "created": 0, "updated": 0, "linked": 0, "skipped": 0, "failed": 0}
+    error = None
+    needs_auth = False
+    try:
+        token = _zalo_access_token()
+        user_ids, offset = [], 0
+        while True:
+            page = _zalo_get("/v3.0/oa/user/getlist",
+                             {"offset": offset, "count": ZALO_PAGE_SIZE, "tag_name": "", "is_follower": "true"}, token)
+            users = page.get("users") or []
+            stats["total"] = int(page.get("total") or 0)
+            user_ids += [str(u.get("user_id")) for u in users if u.get("user_id")]
+            with _zalo_lock:
+                _zalo_sync.update(stats)
+            offset += ZALO_PAGE_SIZE
+            if not users or offset >= stats["total"]:
+                break
+        stats["total"] = len(user_ids)
+        conn = get_db()
+        cur = conn.cursor()
+        try:
+            for uid in user_ids:
+                try:
+                    info = _zalo_get("/v3.0/oa/user/detail", {"user_id": uid}, token)
+                    info.setdefault("user_id", uid)
+                    result = _zalo_upsert_customer(cur, info)
+                    conn.commit()
+                    stats[result] += 1
+                except ZaloAuthRequired:
+                    raise
+                except Exception as e:
+                    conn.rollback()
+                    stats["failed"] += 1
+                    print(f"[zalo-oa] Lỗi đồng bộ user {uid}: {e}")
+                stats["processed"] += 1
+                with _zalo_lock:
+                    _zalo_sync.update(stats)
+        finally:
+            cur.close()
+            conn.close()
+    except ZaloAuthRequired as e:
+        needs_auth, error = True, f"Cần cấp quyền Zalo OA lại: {e}"
+    except Exception as e:
+        error = f"Đồng bộ thất bại: {e}"
+    with _zalo_lock:
+        _zalo_sync.update(stats)
+        _zalo_sync.update({"running": False, "error": error, "needs_auth": needs_auth,
+                           "finished_at": datetime.now(timezone.utc).isoformat(), "started_by": started_by})
+
+
+def _zalo_status_payload():
+    conn = get_db()
+    cur = conn.cursor()
+    row = _zalo_token_row(cur)
+    cur.close()
+    conn.close()
+    with _zalo_lock:
+        sync = dict(_zalo_sync)
+    return {
+        "configured": _zalo_configured(),
+        "connected": bool(row),
+        "oa_id": row["oa_id"] if row else None,
+        "authorized_by": row["authorized_by"] if row else None,
+        "sync": sync,
+    }
+
+
+@app.get("/api/v1/zalo-oa/status")
+def zalo_oa_status(current_user: dict = Depends(require_dispatch_staff)):
+    return _zalo_status_payload()
+
+
+@app.post("/api/v1/zalo-oa/authorize-url")
+def zalo_oa_authorize_url(current_user: dict = Depends(require_dispatch_staff)):
+    if not _zalo_configured():
+        raise HTTPException(status_code=503, detail="Máy chủ chưa cấu hình ZALO_APP_ID / ZALO_APP_SECRET")
+    verifier = secrets.token_urlsafe(48)[:64]
+    challenge = base64.urlsafe_b64encode(hashlib.sha256(verifier.encode("ascii")).digest()).decode().rstrip("=")
+    state = secrets.token_urlsafe(24)
+    conn = get_db()
+    cur = conn.cursor()
+    cur.execute("DELETE FROM zalo_oa_oauth_states WHERE created_at < NOW() - INTERVAL '30 minutes'")
+    cur.execute("INSERT INTO zalo_oa_oauth_states (state, code_verifier, created_by) VALUES (%s, %s, %s)",
+                (state, verifier, current_user["username"]))
+    conn.commit()
+    cur.close()
+    conn.close()
+    query = urlencode({"app_id": ZALO_APP_ID, "redirect_uri": ZALO_REDIRECT_URI,
+                       "code_challenge": challenge, "state": state})
+    return {"authorize_url": f"{ZALO_OAUTH_BASE}/v4/oa/permission?{query}", "expires_in": 1800}
+
+
+def _zalo_html(title: str, message: str, ok: bool) -> HTMLResponse:
+    color = "#15803d" if ok else "#b91c1c"
+    body = f"""<!doctype html><html lang="vi"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1"><title>{html.escape(title)}</title></head>
+<body style="font-family:sans-serif;max-width:480px;margin:60px auto;padding:0 16px;text-align:center">
+<h2 style="color:{color}">{html.escape(title)}</h2><p>{html.escape(message)}</p>
+<p style="color:#555">Bạn có thể đóng trang này và quay lại ứng dụng Vận tải VinTrans.</p></body></html>"""
+    return HTMLResponse(body, status_code=200 if ok else 400)
+
+
+@app.get("/api/v1/zalo-oa/callback", include_in_schema=False)
+def zalo_oa_callback(code: Optional[str] = None, state: Optional[str] = None, oa_id: Optional[str] = None,
+                     error: Optional[str] = None, error_description: Optional[str] = None):
+    # Zalo chuyển trình duyệt về đây sau khi chủ OA đồng ý; bảo vệ bằng mã state dùng 1 lần
+    if error or not code or not state:
+        return _zalo_html("Chưa cấp quyền Zalo OA", error_description or error or "Thiếu mã xác thực từ Zalo", False)
+    conn = get_db()
+    cur = conn.cursor()
+    try:
+        cur.execute("DELETE FROM zalo_oa_oauth_states WHERE state = %s AND created_at > NOW() - INTERVAL '30 minutes' RETURNING *",
+                    (state,))
+        st = cur.fetchone()
+        conn.commit()
+        if not st:
+            return _zalo_html("Liên kết đã hết hạn", "Hãy bấm lại nút Đồng bộ Zalo OA trong ứng dụng.", False)
+        res = requests.post(
+            f"{ZALO_OAUTH_BASE}/v4/oa/access_token",
+            headers={"secret_key": ZALO_APP_SECRET},
+            data={"code": code, "app_id": ZALO_APP_ID, "grant_type": "authorization_code",
+                  "code_verifier": st["code_verifier"]},
+            timeout=20,
+        )
+        _zalo_save_token(cur, res.json(), oa_id=oa_id, authorized_by=st["created_by"])
+        conn.commit()
+        return _zalo_html("Đã cấp quyền Zalo OA", "Ứng dụng sẽ tự bắt đầu đồng bộ danh sách khách hàng.", True)
+    except Exception as e:
+        conn.rollback()
+        return _zalo_html("Cấp quyền thất bại", str(e), False)
+    finally:
+        cur.close()
+        conn.close()
+
+
+@app.post("/api/v1/zalo-oa/sync", status_code=status.HTTP_202_ACCEPTED)
+def zalo_oa_sync(current_user: dict = Depends(require_dispatch_staff)):
+    if not _zalo_configured():
+        raise HTTPException(status_code=503, detail="Máy chủ chưa cấu hình ZALO_APP_ID / ZALO_APP_SECRET")
+    status_now = _zalo_status_payload()
+    if not status_now["connected"]:
+        raise HTTPException(status_code=409, detail="Zalo OA chưa được cấp quyền")
+    with _zalo_lock:
+        if _zalo_sync.get("running"):
+            return {"message": "Đang đồng bộ", "sync": dict(_zalo_sync)}
+        _zalo_sync.clear()
+        _zalo_sync.update({"running": True, "total": 0, "processed": 0, "created": 0, "updated": 0, "linked": 0,
+                           "skipped": 0, "failed": 0, "error": None, "needs_auth": False,
+                           "started_at": datetime.now(timezone.utc).isoformat(),
+                           "started_by": current_user["username"]})
+        snapshot = dict(_zalo_sync)
+    threading.Thread(target=_zalo_run_sync, args=(current_user["username"],), daemon=True).start()
+    return {"message": "Đã bắt đầu đồng bộ", "sync": snapshot}
+
 
 # 4. Quản lý Roles & Permissions (Dynamic RBAC - Chỉ Admin tối cao)
 @app.get("/api/v1/rbac/roles")
@@ -881,26 +1798,76 @@ def delete_role(role_id: int, current_user: dict = Depends(require_admin)):
         raise HTTPException(status_code=400, detail=str(e))
 
 # 5. Quản lý Phương tiện & Cây dầu
+def _validate_vehicle_driver(cur, driver_id: int, plate_number: Optional[str]):
+    """Tài khoản phải có vai trò Tài xế, đang hoạt động và chưa gắn với xe khác."""
+    cur.execute("""
+        SELECT u.id, u.full_name, u.is_active FROM users u
+        JOIN user_roles ur ON ur.user_id = u.id
+        JOIN roles r ON r.id = ur.role_id
+        WHERE u.id = %s AND r.code = 'driver'
+    """, (driver_id,))
+    drv = cur.fetchone()
+    if not drv:
+        raise HTTPException(status_code=400, detail="Tài khoản được chọn không phải tài khoản Tài xế")
+    if drv.get("is_active") is False:
+        raise HTTPException(status_code=400, detail="Tài khoản Tài xế này đang bị khóa")
+    cur.execute(
+        "SELECT plate_number FROM vehicles WHERE default_driver_id = %s AND plate_number <> %s",
+        (driver_id, plate_number or ""),
+    )
+    other = cur.fetchone()
+    if other:
+        raise HTTPException(
+            status_code=409,
+            detail=f"Tài xế {drv['full_name']} đã được gắn với xe {other['plate_number']}. "
+                   f"Mỗi tài xế chỉ đi kèm 1 phương tiện, hãy bỏ gán ở xe đó trước.",
+        )
+
 @app.get("/api/v1/vehicles")
-def get_vehicles(current_user: dict = Depends(get_current_user)):
+def get_vehicles(include_inactive: bool = False, current_user: dict = Depends(get_current_user)):
+    # Đội xe = đúng các xe trên Vietmap + Bình Anh (lỗi nhà cung cấp không làm hỏng danh sách).
+    # include_inactive=true (màn Đội xe): trả thêm xe Tạm ngừng hoạt động (đã từng có trên
+    # Vietmap / Bình Anh nhưng nay không còn). Mặc định chỉ trả xe đang hoạt động,
+    # để các ô chọn xe khi tạo đơn hàng không hiện xe đã ngừng.
+    sync_fleet_vehicles()
     conn = get_db()
     cur = conn.cursor()
-    cur.execute("""
+    where = ("v.gps_provider IS NOT NULL" if include_inactive
+             else "COALESCE(v.in_fleet, TRUE) = TRUE")
+    cur.execute(f"""
         SELECT v.*, u.full_name as driver_name, u.username as driver_username, u.phone as driver_phone 
         FROM vehicles v 
         LEFT JOIN users u ON v.default_driver_id = u.id 
-        ORDER BY v.plate_number ASC
+        WHERE {where}
+        ORDER BY COALESCE(v.in_fleet, TRUE) DESC, v.plate_number ASC
     """)
     vehicles = cur.fetchall()
     cur.close()
     conn.close()
     return vehicles
 
+@app.post("/api/v1/vehicles/sync")
+def sync_vehicles_now(current_user: dict = Depends(get_current_user)):
+    """Nút "Tải lại danh sách": gọi ngay Vietmap + Bình Anh để đối chiếu và đồng bộ đội xe."""
+    roles = current_user.get("roles") or []
+    if current_user["username"] != "admin" and not any(r in ("admin", "manager") for r in roles):
+        raise HTTPException(status_code=403, detail="Chỉ Admin và Quản lý được đồng bộ đội xe")
+    stats = sync_fleet_vehicles(force=True)
+    if stats is None:
+        raise HTTPException(status_code=409, detail="Đang có lượt đồng bộ khác, vui lòng thử lại sau ít giây")
+    if not any(p.get("ok") for p in stats["providers"].values()):
+        raise HTTPException(status_code=502, detail="Không kết nối được Vietmap và Bình Anh, danh sách xe giữ nguyên")
+    return stats
+
 @app.post("/api/v1/vehicles", status_code=status.HTTP_201_CREATED)
 def create_vehicle(v: VehicleCreate, current_user: dict = Depends(get_current_user)):
     conn = get_db()
     cur = conn.cursor()
     try:
+        if v.default_driver_id and v.default_driver_id > 0:
+            _validate_vehicle_driver(cur, v.default_driver_id, v.plate_number)
+        else:
+            v.default_driver_id = None
         cur.execute(
             "INSERT INTO vehicles (plate_number, vehicle_type, ownership_type, default_driver_id, owner_company, status) VALUES (%s, %s, %s, %s, %s, %s) RETURNING *",
             (v.plate_number, v.vehicle_type, v.ownership_type, v.default_driver_id, v.owner_company or "Sao Mai Logistics", v.status or "ready")
@@ -910,6 +1877,10 @@ def create_vehicle(v: VehicleCreate, current_user: dict = Depends(get_current_us
         cur.close()
         conn.close()
         return created
+    except HTTPException:
+        conn.rollback()
+        conn.close()
+        raise
     except Exception as e:
         conn.rollback()
         conn.close()
@@ -939,6 +1910,7 @@ def update_vehicle(plate_number: str, v: VehicleUpdate, current_user: dict = Dep
             if v.default_driver_id == 0 or v.default_driver_id == -1:
                 updates.append("default_driver_id = NULL")
             else:
+                _validate_vehicle_driver(cur, v.default_driver_id, plate_number)
                 updates.append("default_driver_id = %s")
                 params.append(v.default_driver_id)
         if v.owner_company is not None:
@@ -968,6 +1940,424 @@ def update_vehicle(plate_number: str, v: VehicleUpdate, current_user: dict = Dep
         conn.close()
         raise HTTPException(status_code=400, detail=str(e))
 
+# ----------------- DỊCH VỤ GPS BÌNH ANH -----------------
+# Tài liệu: docs/Vintrans.pdf. Xác thực Basic Auth: CustomerCode / Key.
+# Thông tin đăng nhập lấy từ biến môi trường, không ghi cứng trong code.
+BINHANH_BASE_URL = os.getenv("BINHANH_BASE_URL", "https://apigps.binhanh.vn/apiwba/gps").rstrip("/")
+BINHANH_CUSTOMER_CODE = os.getenv("BINHANH_CUSTOMER_CODE", "").strip()
+BINHANH_KEY = os.getenv("BINHANH_KEY", "").strip()
+BINHANH_TRACKING_CACHE_SECONDS = 20
+_binhanh_tracking_cache = {"at": None, "data": None}
+_binhanh_lock = threading.Lock()
+
+BINHANH_STATE_LABELS = {
+    0: "Không xác định",
+    1: "Dừng đỗ tắt máy",
+    2: "Dừng đỗ bật máy",
+    3: "Di chuyển",
+    4: "Quá tốc độ",
+    5: "Mất GPS",
+    6: "Mất tín hiệu",
+}
+
+def _normalize_plate(plate) -> str:
+    # 50H-166.27 và 50H16627 được coi là cùng một xe
+    return "".join(ch for ch in str(plate or "").upper() if ch.isalnum())
+
+def _binhanh_post(path: str, payload: dict, timeout: int = 40) -> dict:
+    if not BINHANH_CUSTOMER_CODE or not BINHANH_KEY:
+        raise HTTPException(
+            status_code=503,
+            detail="Máy chủ chưa cấu hình tài khoản Bình Anh (BINHANH_CUSTOMER_CODE, BINHANH_KEY).",
+        )
+    try:
+        res = requests.post(
+            f"{BINHANH_BASE_URL}/{path}",
+            json=payload,
+            auth=(BINHANH_CUSTOMER_CODE, BINHANH_KEY),
+            timeout=timeout,
+        )
+    except requests.RequestException as e:
+        raise HTTPException(status_code=502, detail=f"Không kết nối được dịch vụ Bình Anh: {e}")
+    if res.status_code != 200:
+        raise HTTPException(status_code=502, detail=f"Dịch vụ Bình Anh trả về lỗi HTTP {res.status_code}")
+    try:
+        data = res.json()
+    except ValueError:
+        raise HTTPException(status_code=502, detail="Dịch vụ Bình Anh trả về dữ liệu không hợp lệ")
+    message = str(data.get("MessageResult") or "").strip()
+    # Bình Anh trả về các biến thể "Success", "Success!", "Success with no data"...
+    if not message.lower().startswith("success"):
+        raise HTTPException(status_code=502, detail=f"Bình Anh: {message or 'Lỗi không xác định'}")
+    return data
+
+def _fleet_plate_map() -> dict:
+    # Biển số chuẩn hóa -> biển số trong bảng vehicles
+    conn = get_db()
+    cur = conn.cursor()
+    cur.execute("SELECT plate_number FROM vehicles")
+    rows = cur.fetchall()
+    cur.close()
+    conn.close()
+    return {_normalize_plate(r["plate_number"]): r["plate_number"] for r in rows}
+
+QUANLYXE_BASE_URL = os.getenv("QUANLYXE_BASE_URL", "https://client-api.quanlyxe.vn/v3/tracking").rstrip("/")
+QUANLYXE_API_KEY = os.getenv("QUANLYXE_API_KEY", "").strip()
+
+FLEET_SYNC_SECONDS = 60
+_fleet_sync = {"at": None}
+_fleet_sync_lock = threading.Lock()
+
+def _format_binhanh_plate(plate: str) -> str:
+    # 50H16627 -> 50H-166.27 (cùng kiểu biển số đang dùng trong Đội xe)
+    p = _normalize_plate(plate)
+    i = 0
+    while i < len(p) and p[i].isdigit():
+        i += 1
+    j = i
+    while j < len(p) and p[j].isalpha():
+        j += 1
+    head, digits = p[:j], p[j:]
+    if i == 2 and j > i and digits.isdigit() and len(digits) == 5:
+        return f"{head}-{digits[:3]}.{digits[3:]}"
+    return p
+
+def _fetch_vietmap_vehicles() -> list:
+    """Danh sách xe trên Vietmap (quanlyxe.vn). Lỗi thì ném exception."""
+    if not QUANLYXE_API_KEY:
+        raise RuntimeError("chưa cấu hình QUANLYXE_API_KEY")
+    res = requests.get(f"{QUANLYXE_BASE_URL}/getvehicles", params={"apikey": QUANLYXE_API_KEY}, timeout=6)
+    res.raise_for_status()
+    data = res.json()
+    rows = data.get("Data")
+    if not isinstance(rows, list) or not rows:
+        raise RuntimeError("Vietmap trả về danh sách rỗng hoặc không hợp lệ")
+    out = []
+    for v in rows:
+        plate = str(v.get("Plate") or "").strip()
+        if not plate:
+            continue
+        out.append({
+            "plate": plate,
+            "vehicle_id": str(v.get("Id") or ""),
+            "vehicle_type": (v.get("VehicleTypeName") or "").strip() or None,
+            "driver_name": None,
+            "lat": None,
+            "lng": None,
+            "gps_time": None,
+        })
+    return out
+
+def _fetch_binhanh_vehicles() -> list:
+    """Danh sách xe trên Bình Anh. Lỗi thì ném exception."""
+    if not BINHANH_CUSTOMER_CODE or not BINHANH_KEY:
+        raise RuntimeError("chưa cấu hình BINHANH_CUSTOMER_CODE / BINHANH_KEY")
+    raw = _binhanh_post("tracking", {"IsFuel": True}, timeout=6).get("Vehicles") or []
+    if not raw:
+        raise RuntimeError("Bình Anh trả về danh sách rỗng")
+    now = datetime.now(timezone.utc)
+    with _binhanh_lock:
+        _binhanh_tracking_cache["at"] = now
+        _binhanh_tracking_cache["data"] = raw
+    out = []
+    for v in raw:
+        provider_plate = v.get("VehiclePlate")
+        if not provider_plate:
+            continue
+        gps_time = None
+        if v.get("UTCTime"):
+            try:
+                gps_time = datetime.fromisoformat(str(v["UTCTime"])).replace(tzinfo=timezone.utc)
+            except ValueError:
+                gps_time = None
+        out.append({
+            "plate": _format_binhanh_plate(provider_plate),
+            "vehicle_id": str(v.get("VehicleID") or ""),
+            "vehicle_type": None,
+            "driver_name": v.get("DriverName"),
+            "lat": v.get("Latitude"),
+            "lng": v.get("Longitude"),
+            "gps_time": gps_time,
+        })
+    return out
+
+VEHICLE_STATUS_INACTIVE = "inactive"  # Tạm ngừng hoạt động (không còn trên Vietmap / Bình Anh)
+
+def sync_fleet_vehicles(force: bool = False):
+    """Đối chiếu đội xe với Vietmap + Bình Anh.
+    - Xe có trên nhà cung cấp mà chưa có trong bảng vehicles: thêm mới.
+    - Xe không còn trên nhà cung cấp nào: in_fleet = FALSE, status = 'inactive'
+      (Tạm ngừng hoạt động). Không xóa để giữ lịch sử đơn hàng, kiểm tra xe.
+    - Xe đang Tạm ngừng mà xuất hiện lại: chuyển về 'ready'.
+    - Nhà cung cấp nào lỗi thì giữ nguyên các xe của nhà cung cấp đó, không đổi nhầm.
+    Tự động: tối đa 1 lần mỗi 60 giây. force=True (nút Tải lại danh sách): chạy ngay.
+    Trả về thống kê, hoặc None nếu bỏ qua do chưa tới lượt / đang có lượt khác chạy."""
+    if not _fleet_sync_lock.acquire(blocking=force, timeout=30 if force else -1):
+        return None
+    try:
+        now = datetime.now(timezone.utc)
+        last = _fleet_sync["at"]
+        if not force and last is not None and (now - last).total_seconds() < FLEET_SYNC_SECONDS:
+            return None
+        _fleet_sync["at"] = now
+
+        stats = {
+            "providers": {},
+            "added": [],
+            "deactivated": [],
+            "reactivated": [],
+            "total_active": 0,
+            "total_inactive": 0,
+        }
+        fetched = {}
+        for provider, fetch in (("vietmap", _fetch_vietmap_vehicles), ("binhanh", _fetch_binhanh_vehicles)):
+            try:
+                fetched[provider] = fetch()
+                stats["providers"][provider] = {"ok": True, "count": len(fetched[provider])}
+            except Exception as e:
+                detail = getattr(e, "detail", None) or str(e)
+                print(f"[fleet] Không lấy được xe {provider}: {detail}")
+                stats["providers"][provider] = {"ok": False, "error": str(detail)}
+
+        if not fetched:
+            return stats  # cả hai nguồn đều lỗi: giữ nguyên danh sách hiện tại
+
+        conn = get_db()
+        cur = conn.cursor()
+        try:
+            cur.execute("SELECT plate_number, gps_provider, in_fleet, status FROM vehicles")
+            existing = {_normalize_plate(r["plate_number"]): r for r in cur.fetchall()}
+            seen = set()  # biển số chuẩn hóa đã có trên nhà cung cấp lấy được
+            for provider in ("vietmap", "binhanh"):
+                for v in fetched.get(provider, []):
+                    key = _normalize_plate(v["plate"])
+                    if not key or key in seen:
+                        continue  # trùng biển giữa 2 nguồn: ưu tiên Vietmap
+                    seen.add(key)
+                    row = existing.get(key)
+                    if row is None:
+                        cur.execute(
+                            """INSERT INTO vehicles (plate_number, vehicle_type, ownership_type, status)
+                               VALUES (%s, %s, 'INTERNAL', 'ready')
+                               ON CONFLICT (plate_number) DO NOTHING""",
+                            (v["plate"], v["vehicle_type"] or "Chưa phân loại"),
+                        )
+                        plate = v["plate"]
+                        if cur.rowcount:
+                            stats["added"].append({"plate_number": plate, "provider": provider})
+                        existing[key] = {"plate_number": plate, "gps_provider": provider,
+                                         "in_fleet": True, "status": "ready"}
+                    else:
+                        plate = row["plate_number"]
+                        if row.get("in_fleet") is False or row.get("status") == VEHICLE_STATUS_INACTIVE:
+                            stats["reactivated"].append({"plate_number": plate, "provider": provider})
+                    cur.execute(
+                        """UPDATE vehicles SET in_fleet = TRUE, gps_provider = %s, gps_vehicle_id = %s,
+                               status = CASE WHEN COALESCE(in_fleet, TRUE) = FALSE AND status = 'inactive' THEN 'ready' ELSE status END,
+                               gps_driver_name = COALESCE(%s, gps_driver_name),
+                               last_gps_lat = COALESCE(%s, last_gps_lat),
+                               last_gps_lng = COALESCE(%s, last_gps_lng),
+                               last_gps_time = COALESCE(%s, last_gps_time)
+                           WHERE plate_number = %s""",
+                        (provider, v["vehicle_id"], v["driver_name"], v["lat"], v["lng"], v["gps_time"], plate),
+                    )
+
+            # Xe không còn trên nhà cung cấp nào: Tạm ngừng hoạt động
+            for key, row in existing.items():
+                if key in seen:
+                    continue
+                prov = row.get("gps_provider")
+                if len(fetched) == 2 or (prov in fetched):
+                    # Đủ 2 nguồn: mọi xe thừa đều Tạm ngừng.
+                    # Thiếu 1 nguồn: chỉ xét xe thuộc nguồn lấy được, xe của nguồn lỗi giữ nguyên.
+                    if prov and (row.get("in_fleet") is not False or row.get("status") != VEHICLE_STATUS_INACTIVE):
+                        stats["deactivated"].append({"plate_number": row["plate_number"], "provider": prov})
+                    cur.execute(
+                        "UPDATE vehicles SET in_fleet = FALSE, status = %s WHERE plate_number = %s",
+                        (VEHICLE_STATUS_INACTIVE, row["plate_number"]),
+                    )
+            conn.commit()
+            cur.execute(
+                """SELECT COUNT(*) FILTER (WHERE in_fleet = TRUE) AS active,
+                          COUNT(*) FILTER (WHERE in_fleet = FALSE) AS inactive
+                   FROM vehicles WHERE gps_provider IS NOT NULL"""
+            )
+            cnt = cur.fetchone()
+            stats["total_active"] = cnt["active"]
+            stats["total_inactive"] = cnt["inactive"]
+            return stats
+        except Exception as e:
+            conn.rollback()
+            print(f"[fleet] Đồng bộ đội xe lỗi: {e}")
+            stats["error"] = str(e)
+            return stats
+        finally:
+            cur.close()
+            conn.close()
+    finally:
+        _fleet_sync_lock.release()
+
+def _parse_binhanh_range(from_date: str, to_date: str, max_hours: int):
+    try:
+        start = datetime.fromisoformat(from_date.strip())
+        end = datetime.fromisoformat(to_date.strip())
+    except (ValueError, AttributeError):
+        raise HTTPException(status_code=400, detail="Thời gian không hợp lệ, dùng định dạng YYYY-MM-DDTHH:MM:SS")
+    start = start.replace(tzinfo=None)
+    end = end.replace(tzinfo=None)
+    if start >= end:
+        raise HTTPException(status_code=400, detail="Thời gian bắt đầu phải nhỏ hơn thời gian kết thúc")
+    if end - start > timedelta(hours=max_hours):
+        raise HTTPException(status_code=400, detail=f"Chỉ được lấy dữ liệu tối đa {max_hours} giờ liên tiếp")
+    return start.strftime("%Y-%m-%dT%H:%M:%S"), end.strftime("%Y-%m-%dT%H:%M:%S")
+
+@app.get("/api/v1/binhanh/status")
+def binhanh_status(current_user: dict = Depends(require_admin_or_manager)):
+    return {
+        "configured": bool(BINHANH_CUSTOMER_CODE and BINHANH_KEY),
+        "customer_code": BINHANH_CUSTOMER_CODE or None,
+    }
+
+@app.get("/api/v1/binhanh/tracking")
+def binhanh_tracking(refresh: bool = False, current_user: dict = Depends(require_admin_or_manager)):
+    # 1. Dữ liệu trực tuyến của toàn bộ xe Bình Anh, gắn với xe trong Đội xe theo biển số
+    now = datetime.now(timezone.utc)
+    with _binhanh_lock:
+        cached_at = _binhanh_tracking_cache["at"]
+        if (
+            not refresh
+            and cached_at is not None
+            and (now - cached_at).total_seconds() < BINHANH_TRACKING_CACHE_SECONDS
+        ):
+            raw = _binhanh_tracking_cache["data"]
+        else:
+            raw = _binhanh_post("tracking", {"IsFuel": True}).get("Vehicles") or []
+            _binhanh_tracking_cache["at"] = now
+            _binhanh_tracking_cache["data"] = raw
+            cached_at = now
+
+    fleet = _fleet_plate_map()
+    vehicles = []
+    for v in raw:
+        state = v.get("State")
+        vehicles.append({
+            "provider_plate": v.get("VehiclePlate"),
+            "fleet_plate": fleet.get(_normalize_plate(v.get("VehiclePlate"))),
+            "vehicle_id": v.get("VehicleID"),
+            "utc_time": v.get("UTCTime"),
+            "local_time": v.get("LocalTime"),
+            "latitude": v.get("Latitude"),
+            "longitude": v.get("Longitude"),
+            "speed": v.get("Speed"),
+            "direction": v.get("Direction"),
+            "address": v.get("Address"),
+            "temperature": v.get("Temperature"),
+            "total_km_today": v.get("TotalKm"),
+            "state": state,
+            "state_label": BINHANH_STATE_LABELS.get(state, "Không xác định"),
+            "minutes_driving_continuous": v.get("MinutesOfDrivingTimeContinuous"),
+            "minutes_driving_today": v.get("MinutesOfDrivingTimeInDay"),
+            "driver_name": v.get("DriverName"),
+            "driver_license": v.get("DriverLicense"),
+            "fuels": v.get("Fuels") or [],
+            "door_closed": v.get("DoorClosed"),
+            "soc": v.get("SOC"),
+            "soh": v.get("SOH"),
+        })
+    return {
+        "fetched_at": cached_at.isoformat(),
+        "total": len(vehicles),
+        "matched": sum(1 for x in vehicles if x["fleet_plate"]),
+        "vehicles": vehicles,
+    }
+
+@app.get("/api/v1/binhanh/route")
+def binhanh_route(plate: str, from_date: str, to_date: str, current_user: dict = Depends(require_admin_or_manager)):
+    # 2. Dữ liệu lộ trình của 1 xe, tối đa 24 giờ liên tiếp
+    plate_code = _normalize_plate(plate)
+    if not plate_code:
+        raise HTTPException(status_code=400, detail="Thiếu biển số xe")
+    start, end = _parse_binhanh_range(from_date, to_date, 24)
+    routes = _binhanh_post("route", {"vehiclePlate": plate_code, "fromDate": start, "toDate": end}).get("Routes") or []
+    points = [
+        {
+            "utc_time": r.get("UTCTime"),
+            "local_time": r.get("LocalTime"),
+            "latitude": r.get("Latitude"),
+            "longitude": r.get("Longitude"),
+            "speed": r.get("Speed"),
+            "address": r.get("Address"),
+            "km_gps": r.get("Kmgps"),
+            "is_machine_on": r.get("IsMachineOn"),
+        }
+        for r in routes
+    ]
+    return {
+        "plate": plate_code,
+        "from_date": start,
+        "to_date": end,
+        "total_points": len(points),
+        "total_km": points[-1]["km_gps"] if points else 0,
+        "points": points,
+    }
+
+@app.get("/api/v1/binhanh/activity")
+def binhanh_activity(
+    plates: str,
+    from_date: str,
+    to_date: str,
+    is_group_km: bool = False,
+    min_time: int = 0,
+    current_user: dict = Depends(require_admin_or_manager),
+):
+    # 3. Báo cáo chi tiết hoạt động (các cuốc xe) của 1 hoặc nhiều xe
+    plate_list = [p for p in (_normalize_plate(x) for x in plates.split(",")) if p]
+    if not plate_list:
+        raise HTTPException(status_code=400, detail="Thiếu biển số xe")
+    start, end = _parse_binhanh_range(from_date, to_date, 24 * 31)
+    data = _binhanh_post(
+        "rpactdetails",
+        {
+            "VehiclePlate": ",".join(plate_list),
+            "fromDate": start,
+            "toDate": end,
+            "isGroupKm": is_group_km,
+            "minTime": max(0, min_time),
+        },
+        timeout=90,
+    )
+    rows = data.get("BAReportActivityDetails") or []
+    items = [
+        {
+            "vehicle_type_name": r.get("VehicleTypeName"),
+            "plate": r.get("VehiclePlate"),
+            "report_date": r.get("ReportDate"),
+            "start_time": r.get("StartTime"),
+            "end_time": r.get("EndTime"),
+            "total_minutes": r.get("TotalTime"),
+            "km_gps": r.get("KmGPS"),
+            "km_mechanical": r.get("KmOfPulseMechanical"),
+            "constant_norms": r.get("ConstantNorms"),
+            "norms": r.get("Norms"),
+            "start_address": r.get("StartAddress"),
+            "end_address": r.get("EndAddress"),
+            "is_supplemental": r.get("IsSupplemental"),
+            "start_latitude": r.get("StartLatitude"),
+            "start_longitude": r.get("StartLongitude"),
+            "end_latitude": r.get("EndLatitude"),
+            "end_longitude": r.get("EndLongitude"),
+        }
+        for r in rows
+    ]
+    return {
+        "message": data.get("MessageResult"),
+        "from_date": start,
+        "to_date": end,
+        "total": len(items),
+        "items": items,
+    }
+
+
 @app.get("/api/v1/gas-stations")
 def get_gas_stations(current_user: dict = Depends(get_current_user)):
     conn = get_db()
@@ -993,54 +2383,32 @@ def create_gas_station(gs: GasStationCreate, current_user: dict = Depends(get_cu
         cur.close()
         conn.close()
         return created
+    except HTTPException:
+        conn.rollback()
+        conn.close()
+        raise
     except Exception as e:
         conn.rollback()
         conn.close()
         raise HTTPException(status_code=400, detail=str(e))
 
 @app.put("/api/v1/gas-stations/{station_id}")
-def update_gas_station(station_id: int, req: GasStationUpdate, current_user: dict = Depends(require_admin)):
+def update_gas_station(station_id: int, gs: GasStationCreate, current_user: dict = Depends(get_current_user)):
     conn = get_db()
     cur = conn.cursor()
     try:
-        cur.execute("SELECT id FROM gas_stations WHERE id = %s", (station_id,))
-        if not cur.fetchone():
-            cur.close()
-            conn.close()
-            raise HTTPException(status_code=404, detail="Không tìm thấy trạm dầu")
-
-        fields = []
-        values = []
-        if req.name is not None:
-            fields.append("name = %s")
-            values.append(req.name)
-        if req.address is not None:
-            fields.append("address = %s")
-            values.append(req.address)
-        if req.lat is not None:
-            fields.append("lat = %s")
-            values.append(req.lat)
-        if req.lng is not None:
-            fields.append("lng = %s")
-            values.append(req.lng)
-        if req.allowed_radius_meters is not None:
-            fields.append("allowed_radius_meters = %s")
-            values.append(req.allowed_radius_meters)
-        if req.user_id is not None:
-            fields.append("user_id = %s")
-            values.append(req.user_id)
-
-        if not fields:
-            cur.close()
-            conn.close()
-            raise HTTPException(status_code=400, detail="Không có dữ liệu cần cập nhật")
-
-        values.append(station_id)
-        cur.execute(f"""UPDATE gas_stations SET {', '.join(fields)} WHERE id = %s RETURNING *""", values)
+        cur.execute(
+            """UPDATE gas_stations
+               SET name = %s, address = %s, lat = %s, lng = %s, allowed_radius_meters = %s
+               WHERE id = %s RETURNING *""",
+            (gs.name, gs.address, gs.lat, gs.lng, gs.allowed_radius_meters, station_id)
+        )
         conn.commit()
         updated = cur.fetchone()
         cur.close()
         conn.close()
+        if not updated:
+            raise HTTPException(status_code=404, detail="Khong tim thay cay dau")
         return updated
     except HTTPException:
         raise
@@ -1050,29 +2418,21 @@ def update_gas_station(station_id: int, req: GasStationUpdate, current_user: dic
         raise HTTPException(status_code=400, detail=str(e))
 
 @app.delete("/api/v1/gas-stations/{station_id}")
-def delete_gas_station(station_id: int, current_user: dict = Depends(require_admin)):
+def delete_gas_station(station_id: int, current_user: dict = Depends(get_current_user)):
     conn = get_db()
     cur = conn.cursor()
     try:
-        cur.execute("SELECT id, name FROM gas_stations WHERE id = %s", (station_id,))
-        station = cur.fetchone()
-        if not station:
+        cur.execute("SELECT * FROM gas_stations WHERE id = %s", (station_id,))
+        existing = cur.fetchone()
+        if not existing:
             cur.close()
             conn.close()
-            raise HTTPException(status_code=404, detail="Không tìm thấy trạm dầu")
-
-        cur.execute("SELECT COUNT(*) AS cnt FROM cap_dau WHERE gas_station_id = %s", (station_id,))
-        used = cur.fetchone()["cnt"]
-        if used and used > 0:
-            cur.close()
-            conn.close()
-            raise HTTPException(status_code=400, detail=f"Không thể xóa trạm '{station['name']}' vì đã có {used} lượt cấp dầu liên quan")
-
+            raise HTTPException(status_code=404, detail="Khong tim thay cay dau")
         cur.execute("DELETE FROM gas_stations WHERE id = %s", (station_id,))
         conn.commit()
         cur.close()
         conn.close()
-        return {"message": f"Đã xóa trạm dầu '{station['name']}'"}
+        return {"success": True, "deleted_id": station_id}
     except HTTPException:
         raise
     except Exception as e:
@@ -1082,9 +2442,10 @@ def delete_gas_station(station_id: int, current_user: dict = Depends(require_adm
 
 @app.get("/api/v1/reports/summary")
 def get_reports_summary(current_user: dict = Depends(get_current_user)):
+    sync_fleet_vehicles()
     conn = get_db()
     cur = conn.cursor()
-    cur.execute("SELECT COUNT(*) as total_vehicles FROM vehicles")
+    cur.execute("SELECT COUNT(*) as total_vehicles FROM vehicles WHERE COALESCE(in_fleet, TRUE) = TRUE")
     total_vehicles = cur.fetchone()["total_vehicles"]
     cur.execute("SELECT COUNT(*) as total_orders FROM orders")
     total_orders = cur.fetchone()["total_orders"]
@@ -1129,6 +2490,10 @@ def create_order(o: OrderCreate, current_user: dict = Depends(get_current_user))
         cur.close()
         conn.close()
         return created
+    except HTTPException:
+        conn.rollback()
+        conn.close()
+        raise
     except Exception as e:
         conn.rollback()
         conn.close()
@@ -1302,6 +2667,15 @@ def check_inspection_status(plate_number: str, current_user: dict = Depends(get_
 
 @app.post("/api/v1/inspection/submit", status_code=status.HTTP_201_CREATED)
 def submit_inspection(insp: InspectionSubmit, current_user: dict = Depends(get_current_user)):
+    # 5 ảnh kiểm tra xe bắt buộc có GPS: tọa độ chung + tọa độ riêng của từng ảnh (nếu app gửi)
+    _validate_gps(insp.gps_lat, insp.gps_lng, "Phiếu kiểm tra xe")
+    photo_gps = None
+    if insp.photo_gps is not None:
+        if len(insp.photo_gps) != 5:
+            raise HTTPException(status_code=400, detail="Phải có tọa độ GPS cho đủ 5 ảnh kiểm tra xe")
+        for idx, g in enumerate(insp.photo_gps, start=1):
+            _validate_gps(g.get("lat"), g.get("lng"), f"Ảnh kiểm tra xe số {idx}")
+        photo_gps = json.dumps(insp.photo_gps)
     conn = get_db()
     cur = conn.cursor()
     flag_deviation = (abs(insp.km_confirmed - insp.km_ocr) > 20.0)
@@ -1309,16 +2683,25 @@ def submit_inspection(insp: InspectionSubmit, current_user: dict = Depends(get_c
         cur.execute(
             """INSERT INTO kiem_tra_dau_ngay (check_date, plate_number, driver_id, completed_at,
                                              img_front_underbody, img_rear_underbody, img_left_side, img_right_side, img_dashboard,
-                                             gps_lat, gps_lng, gps_accuracy, device_id, km_ocr, km_confirmed, flag_deviation_km)
-               VALUES (%s, %s, %s, CURRENT_TIMESTAMP, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s) RETURNING *""",
+                                             gps_lat, gps_lng, gps_accuracy, device_id, km_ocr, km_confirmed, flag_deviation_km,
+                                             photo_gps)
+               VALUES (%s, %s, %s, CURRENT_TIMESTAMP, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s::jsonb) RETURNING *""",
             (insp.check_date, insp.plate_number, current_user["id"],
              insp.img_front_underbody, insp.img_rear_underbody, insp.img_left_side, insp.img_right_side, insp.img_dashboard,
-             insp.gps_lat, insp.gps_lng, insp.gps_accuracy, insp.device_id, insp.km_ocr, insp.km_confirmed, flag_deviation)
+             insp.gps_lat, insp.gps_lng, insp.gps_accuracy, insp.device_id, insp.km_ocr, insp.km_confirmed, flag_deviation,
+             photo_gps)
         )
         conn.commit()
         created = cur.fetchone()
         cur.close()
         conn.close()
+        _emit_event("inspection_submitted", {
+            "inspection_id": created["id"],
+            "plate_number": created["plate_number"],
+            "driver_id": current_user["id"],
+            "driver_name": current_user.get("full_name", ""),
+            "flag_status": created.get("flag_status", "pending"),
+        })
         return created
     except Exception as e:
         conn.rollback()
@@ -1370,6 +2753,13 @@ def review_inspection(inspection_id: int, review: InspectionReview, current_user
         conn.close()
         if not updated:
             raise HTTPException(status_code=404, detail="Khong tim thay ban ghi kiem tra xe")
+        _emit_event("inspection_reviewed", {
+            "inspection_id": updated["id"],
+            "plate_number": updated["plate_number"],
+            "driver_id": updated["driver_id"],
+            "flag_status": updated["flag_status"],
+            "flag_reason": updated["flag_reason"],
+        }, target_user_id=updated["driver_id"])
         return updated
     except Exception as e:
         conn.rollback()
@@ -1605,55 +2995,119 @@ def submit_order_attachment(
 
     actor = current_user.get("full_name") or current_user.get("username") or "Người dùng"
     ptype = (payload.photo_type or "").strip().lower()
+    if ptype in ("pump_before", "pump_slip_after", "pump_after"):
+        ptype = "pump_slip_before" if ptype == "pump_before" else "pump_slip"
+    if ptype not in ORDER_PHOTO_PREFIX:
+        cur.close()
+        conn.close()
+        raise HTTPException(status_code=400, detail=f"Loại hình chụp không hợp lệ: {ptype}")
+
+    # 2 ảnh bơm hàng (Trước khi bơm / Đã bơm xong) bắt buộc do tài khoản Tài xế chụp
+    if ptype in ("pump_slip_before", "pump_slip"):
+        user_roles = [r.lower() for r in current_user.get("roles", [])]
+        if "driver" not in user_roles:
+            cur.close()
+            conn.close()
+            raise HTTPException(
+                status_code=403,
+                detail="Ảnh bơm hàng chỉ tài khoản Tài xế mới được chụp và gửi",
+            )
+        if ptype == "pump_slip" and not (existing.get("pump_slip_before_photo_url") or "").strip():
+            cur.close()
+            conn.close()
+            raise HTTPException(
+                status_code=400,
+                detail="Phải chụp ảnh TRƯỚC KHI BƠM trước khi gửi ảnh ĐÃ BƠM XONG",
+            )
+
+    # Mọi ảnh của tài xế đều bắt buộc có tọa độ GPS lúc chụp
+    try:
+        _validate_gps(payload.gps_lat, payload.gps_lng)
+    except HTTPException:
+        cur.close()
+        conn.close()
+        raise
+
+    prefix = ORDER_PHOTO_PREFIX[ptype]
+    gps_sql = (
+        f"{prefix}_gps_lat = %s, {prefix}_gps_lng = %s, "
+        f"{prefix}_gps_accuracy = %s, "
+        f"{prefix}_gps_captured_at = COALESCE(%s, CURRENT_TIMESTAMP),"
+    )
+    gps_params = (
+        payload.gps_lat,
+        payload.gps_lng,
+        payload.gps_accuracy,
+        _parse_gps_time(payload.gps_captured_at),
+    )
     try:
         saved_path = _save_order_photo(order_id, ptype, payload.photo_base64)
-        if ptype == "pump_slip":
+        if ptype == "pump_slip_before":
             cur.execute(
-                """
+                f"""
+                UPDATE orders
+                SET pump_slip_before_photo_url = %s,
+                    pump_slip_before_time = CURRENT_TIMESTAMP,
+                    pump_slip_before_by = %s,
+                    pump_slip_before_note = COALESCE(%s, pump_slip_before_note),
+                    {gps_sql}
+                    status = CASE WHEN status IN ('waiting', 'assigned') THEN 'in_progress' ELSE status END,
+                    updated_at = CURRENT_TIMESTAMP
+                WHERE id = %s
+                RETURNING *
+                """,
+                (saved_path, actor, payload.note, *gps_params, order_id),
+            )
+        elif ptype == "pump_slip":
+            cur.execute(
+                f"""
                 UPDATE orders
                 SET pump_slip_photo_url = %s,
                     pump_slip_time = CURRENT_TIMESTAMP,
                     pump_slip_by = %s,
                     pump_slip_note = COALESCE(%s, pump_slip_note),
+                    {gps_sql}
                     status = CASE WHEN status IN ('waiting', 'assigned') THEN 'in_progress' ELSE status END,
                     updated_at = CURRENT_TIMESTAMP
                 WHERE id = %s
                 RETURNING *
                 """,
-                (saved_path, actor, payload.note, order_id),
+                (saved_path, actor, payload.note, *gps_params, order_id),
             )
         elif ptype == "weigh_slip":
             cur.execute(
-                """
+                f"""
                 UPDATE orders
                 SET weigh_slip_photo_url = %s,
                     weigh_slip_time = CURRENT_TIMESTAMP,
                     weigh_slip_tonnage = COALESCE(%s, weigh_slip_tonnage),
                     weigh_slip_code = COALESCE(%s, weigh_slip_code),
+                    {gps_sql}
                     status = CASE WHEN status IN ('waiting', 'assigned') THEN 'in_progress' ELSE status END,
                     updated_at = CURRENT_TIMESTAMP
                 WHERE id = %s
                 RETURNING *
                 """,
-                (saved_path, payload.tonnage, payload.slip_code, order_id),
+                (saved_path, payload.tonnage, payload.slip_code, *gps_params, order_id),
             )
         elif ptype == "delivery_slip":
             cur.execute(
-                """
+                f"""
                 UPDATE orders
                 SET delivery_slip_photo_url = %s,
                     delivery_slip_time = CURRENT_TIMESTAMP,
                     delivery_slip_note = COALESCE(%s, delivery_slip_note),
+                    {gps_sql}
                     status = 'completed',
                     updated_at = CURRENT_TIMESTAMP
                 WHERE id = %s
                 RETURNING *
                 """,
-                (saved_path, payload.note, order_id),
+                (saved_path, payload.note, *gps_params, order_id),
             )
         elif ptype == "breakdown":
             cur.execute(
-                """
+                f"""
                 UPDATE orders
                 SET has_breakdown = TRUE,
                     breakdown_status = 'reported',
@@ -1662,17 +3116,18 @@ def submit_order_attachment(
                     breakdown_location = COALESCE(%s, breakdown_location),
                     breakdown_time = CURRENT_TIMESTAMP,
                     breakdown_reported_by = %s,
+                    {gps_sql}
                     updated_at = CURRENT_TIMESTAMP
                 WHERE id = %s
                 RETURNING *
                 """,
-                (saved_path, payload.note, payload.location, actor, order_id),
+                (saved_path, payload.note, payload.location, actor, *gps_params, order_id),
             )
         elif ptype == "repair":
             r_status = payload.repair_status or "fixed"
             b_status = "resolved" if r_status == "fixed" else "repairing"
             cur.execute(
-                """
+                f"""
                 UPDATE orders
                 SET repair_photo_url = %s,
                     repair_status = %s,
@@ -1680,11 +3135,12 @@ def submit_order_attachment(
                     repair_time = CURRENT_TIMESTAMP,
                     repair_by = %s,
                     breakdown_status = %s,
+                    {gps_sql}
                     updated_at = CURRENT_TIMESTAMP
                 WHERE id = %s
                 RETURNING *
                 """,
-                (saved_path, r_status, payload.note, actor, b_status, order_id),
+                (saved_path, r_status, payload.note, actor, b_status, *gps_params, order_id),
             )
         else:
             cur.close()

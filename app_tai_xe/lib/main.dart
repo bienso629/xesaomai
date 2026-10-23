@@ -4,8 +4,10 @@ import 'package:flutter/services.dart';
 import 'services/app_state.dart';
 import 'screens/login_screen.dart';
 
-void main() {
+Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
+  // Khóa màn hình ở hướng dọc trên điện thoại và tablet.
+  await SystemChrome.setPreferredOrientations([DeviceOrientation.portraitUp]);
   SystemChrome.setSystemUIOverlayStyle(
     const SystemUiOverlayStyle(
       statusBarColor: Colors.transparent,
@@ -26,7 +28,7 @@ class TaxiDriverApp extends StatelessWidget {
     return MultiProvider(
       providers: [ChangeNotifierProvider(create: (_) => AppState())],
       child: MaterialApp(
-        title: 'Vận tải Sao Mai',
+        title: 'Vận tải VinTrans',
         theme: ThemeData(
           colorScheme: ColorScheme.fromSeed(seedColor: Colors.blue),
           useMaterial3: true,

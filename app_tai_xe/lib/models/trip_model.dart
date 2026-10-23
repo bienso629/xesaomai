@@ -29,6 +29,10 @@ class TripMilestone {
   String? pumpedSource;
   String? waitingReason; // 1 trong 11 muc khi > 120 phut
 
+  // 2 ảnh bơm hàng bắt buộc do Tài xế chụp (kèm GPS)
+  String? pumpBeforePhotoUrl;
+  String? pumpAfterPhotoUrl;
+
   String? weighSlipPhotoUrl;
   double? weighTonnage;
   DateTime? weighTime;

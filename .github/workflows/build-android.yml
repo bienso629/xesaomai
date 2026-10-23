@@ -1,0 +1,96 @@
+name: Build Android (AAB & APK)
+
+on:
+  push:
+    branches: [ "main" ]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  build-android:
+    name: Build Android (.aab cho Google Play, .apk cài thử)
+    runs-on: ubuntu-latest
+    env:
+      HAS_KEYSTORE: ${{ secrets.ANDROID_KEYSTORE_BASE64 != '' }}
+      HAS_PLAY: ${{ secrets.PLAY_SERVICE_ACCOUNT_JSON != '' }}
+      # Mỗi lần build tăng số build để Google Play chấp nhận bản mới.
+      BUILD_NUMBER: ${{ github.run_number }}
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup Java 17
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+
+      - name: Setup Flutter
+        uses: subosito/flutter-action@v2
+        with:
+          channel: 'stable'
+          cache: true
+
+      - name: Install dependencies
+        working-directory: ./app_tai_xe
+        run: flutter pub get
+
+      - name: Tạo keystore và key.properties từ Secrets
+        if: env.HAS_KEYSTORE == 'true'
+        working-directory: ./app_tai_xe/android
+        run: |
+          echo "${{ secrets.ANDROID_KEYSTORE_BASE64 }}" | base64 --decode > app/upload-keystore.jks
+          cat > key.properties <<PROPS
+          storeFile=upload-keystore.jks
+          storePassword=${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
+          keyAlias=${{ secrets.ANDROID_KEY_ALIAS }}
+          keyPassword=${{ secrets.ANDROID_KEY_PASSWORD }}
+          PROPS
+
+      - name: Cảnh báo chưa có keystore
+        if: env.HAS_KEYSTORE != 'true'
+        run: echo "::warning::Chưa có secret ANDROID_KEYSTORE_BASE64, bản build đang ký bằng khóa debug, Google Play sẽ không nhận."
+
+      - name: Build App Bundle (.aab)
+        working-directory: ./app_tai_xe
+        run: flutter build appbundle --release --build-number=$BUILD_NUMBER
+
+      - name: Build APK (cài thử trực tiếp)
+        working-directory: ./app_tai_xe
+        run: flutter build apk --release --build-number=$BUILD_NUMBER
+
+      - name: Đổi tên file
+        run: |
+          cp app_tai_xe/build/app/outputs/bundle/release/app-release.aab SaoMai_TaiXe_Android.aab
+          cp app_tai_xe/build/app/outputs/flutter-apk/app-release.apk SaoMai_TaiXe_Android.apk
+
+      - name: Upload Android Artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: SaoMai_TaiXe_Android
+          path: |
+            SaoMai_TaiXe_Android.aab
+            SaoMai_TaiXe_Android.apk
+          retention-days: 30
+
+      - name: Đẩy lên Google Play (track internal)
+        if: env.HAS_KEYSTORE == 'true' && env.HAS_PLAY == 'true'
+        uses: r0adkll/upload-google-play@v1
+        with:
+          serviceAccountJsonPlainText: ${{ secrets.PLAY_SERVICE_ACCOUNT_JSON }}
+          packageName: com.taxilogistics.driver.saomai
+          releaseFiles: SaoMai_TaiXe_Android.aab
+          track: internal
+          status: completed
+
+      - name: Đính kèm vào GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: v1.0.0-latest
+          files: |
+            SaoMai_TaiXe_Android.apk
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

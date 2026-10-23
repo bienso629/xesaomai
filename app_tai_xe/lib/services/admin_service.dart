@@ -1,9 +1,11 @@
+import 'dart:async';
 import 'dart:convert';
 import 'package:http/http.dart' as http;
 import 'auth_service.dart';
+import '../config/api_config.dart';
 
 class AdminService {
-  static const String baseUrl = 'https://saomai-api.type.vn/api/v1';
+  static const String baseUrl = ApiConfig.apiV1;
 
   static Future<Map<String, String>> _headers() async {
     final token = await AuthService.getToken();
@@ -132,18 +134,51 @@ class AdminService {
     }
   }
 
-  /// Lấy danh sách phương tiện thực tế
-  static Future<List<dynamic>> fetchVehicles() async {
+  /// Lấy danh sách phương tiện thực tế.
+  /// [includeInactive] = true: lấy thêm xe Tạm ngừng hoạt động (không còn trên Vietmap / Bình Anh).
+  static Future<List<dynamic>> fetchVehicles({bool includeInactive = false}) async {
     try {
+      final uri = Uri.parse(
+        includeInactive
+            ? '$baseUrl/vehicles?include_inactive=true'
+            : '$baseUrl/vehicles',
+      );
       final res = await http
-          .get(Uri.parse('$baseUrl/vehicles'), headers: await _headers())
-          .timeout(const Duration(seconds: 6));
+          .get(uri, headers: await _headers())
+          .timeout(const Duration(seconds: 12));
 
       if (res.statusCode == 200) {
         return jsonDecode(res.body) as List<dynamic>;
       }
     } catch (_) {}
     return [];
+  }
+
+  /// Nút "Tải lại danh sách" ở Đội xe: gọi ngay Vietmap + Bình Anh để đối chiếu và đồng bộ.
+  /// Trả về {'success': bool, 'data': thống kê} hoặc {'success': false, 'message': ...}.
+  static Future<Map<String, dynamic>> syncFleetVehicles() async {
+    try {
+      final res = await http
+          .post(Uri.parse('$baseUrl/vehicles/sync'), headers: await _headers())
+          .timeout(const Duration(seconds: 45));
+      final body = res.body.isNotEmpty ? jsonDecode(res.body) : null;
+      if (res.statusCode == 200 && body is Map) {
+        return {'success': true, 'data': Map<String, dynamic>.from(body)};
+      }
+      if (res.statusCode == 404) {
+        return {
+          'success': false,
+          'message': 'Máy chủ chưa có chức năng đồng bộ đội xe (cần cập nhật backend)',
+        };
+      }
+      final detail = body is Map ? body['detail'] : null;
+      return {
+        'success': false,
+        'message': (detail ?? 'Đồng bộ thất bại (HTTP ${res.statusCode})').toString(),
+      };
+    } catch (e) {
+      return {'success': false, 'message': 'Không thể kết nối API: $e'};
+    }
   }
 
   /// Cập nhật thông tin phương tiện (Loại xe, Hình thức sở hữu, Tài xế chỉ định, Đơn vị quản lý, Trạng thái)
@@ -260,6 +295,136 @@ class AdminService {
       return res.statusCode == 200 || res.statusCode == 204;
     } catch (_) {}
     return false;
+  }
+
+  /// Lấy danh sách khách hàng (Điều phối, Quản lý, Admin)
+  static Future<List<dynamic>> fetchCustomers() async {
+    try {
+      final res = await http
+          .get(Uri.parse('$baseUrl/customers'), headers: await _headers())
+          .timeout(const Duration(seconds: 6));
+      if (res.statusCode == 200) {
+        return jsonDecode(utf8.decode(res.bodyBytes)) as List<dynamic>;
+      }
+    } catch (_) {}
+    return [];
+  }
+
+  /// Tạo mới hoặc cập nhật khách hàng.
+  /// Trả về {'success': bool, 'message': String, 'data': Map?}
+  static Future<Map<String, dynamic>> saveCustomer({
+    int? id,
+    required Map<String, dynamic> data,
+  }) async {
+    try {
+      final uri = id == null
+          ? Uri.parse('$baseUrl/customers')
+          : Uri.parse('$baseUrl/customers/$id');
+      final body = jsonEncode(data);
+      final res = await (id == null
+              ? http.post(uri, headers: await _headers(), body: body)
+              : http.put(uri, headers: await _headers(), body: body))
+          .timeout(const Duration(seconds: 8));
+      final decoded = res.bodyBytes.isEmpty
+          ? null
+          : jsonDecode(utf8.decode(res.bodyBytes));
+      if (res.statusCode == 200 || res.statusCode == 201) {
+        return {'success': true, 'message': 'Đã lưu khách hàng', 'data': decoded};
+      }
+      final detail = decoded is Map ? decoded['detail'] : null;
+      return {
+        'success': false,
+        'message': detail?.toString() ?? 'Lỗi máy chủ (${res.statusCode})',
+      };
+    } catch (e) {
+      return {'success': false, 'message': 'Không thể kết nối API: $e'};
+    }
+  }
+
+  /// Xóa khách hàng (xóa mềm phía server)
+  static Future<bool> deleteCustomer(int id) async {
+    try {
+      final res = await http
+          .delete(Uri.parse('$baseUrl/customers/$id'), headers: await _headers())
+          .timeout(const Duration(seconds: 8));
+      return res.statusCode == 200 || res.statusCode == 204;
+    } catch (_) {}
+    return false;
+  }
+
+  /// Gọi API Zalo OA, trả về {'ok': bool, 'status': int, 'data': dynamic, 'message': String}
+  static Future<Map<String, dynamic>> _zaloCall(String method, String path) async {
+    try {
+      final uri = Uri.parse('$baseUrl/zalo-oa/$path');
+      final headers = await _headers();
+      final res = await (method == 'POST'
+              ? http.post(uri, headers: headers)
+              : http.get(uri, headers: headers))
+          .timeout(const Duration(seconds: 10));
+      final decoded = res.bodyBytes.isEmpty
+          ? null
+          : jsonDecode(utf8.decode(res.bodyBytes));
+      final ok = res.statusCode >= 200 && res.statusCode < 300;
+      final detail = decoded is Map ? decoded['detail'] : null;
+      return {
+        'ok': ok,
+        'status': res.statusCode,
+        'data': decoded,
+        'message': ok
+            ? ''
+            : (res.statusCode == 404
+                ? 'Máy chủ chưa có chức năng Zalo OA (cần cập nhật backend)'
+                : detail?.toString() ?? 'Lỗi máy chủ (${res.statusCode})'),
+      };
+    } catch (e) {
+      return {'ok': false, 'status': 0, 'message': 'Không thể kết nối API: $e'};
+    }
+  }
+
+  /// Trạng thái kết nối & tiến độ đồng bộ Zalo OA
+  static Future<Map<String, dynamic>> fetchZaloOaStatus() =>
+      _zaloCall('GET', 'status');
+
+  /// Xin đường link cấp quyền Zalo OA (mở bằng trình duyệt)
+  static Future<Map<String, dynamic>> requestZaloOaAuthorizeUrl() =>
+      _zaloCall('POST', 'authorize-url');
+
+  /// Bắt đầu đồng bộ toàn bộ người dùng Zalo OA vào danh sách Khách hàng
+  static Future<Map<String, dynamic>> startZaloOaSync() =>
+      _zaloCall('POST', 'sync');
+
+  /// Gọi API dịch vụ GPS Bình Anh qua backend (backend giữ tài khoản Bình Anh).
+  /// path: 'tracking' | 'route' | 'activity' | 'status'
+  static Future<Map<String, dynamic>> binhAnhCall(
+    String path, {
+    Map<String, String>? query,
+    Duration timeout = const Duration(seconds: 45),
+  }) async {
+    try {
+      final uri = Uri.parse('$baseUrl/binhanh/$path')
+          .replace(queryParameters: query);
+      final res =
+          await http.get(uri, headers: await _headers()).timeout(timeout);
+      final decoded = res.bodyBytes.isEmpty
+          ? null
+          : jsonDecode(utf8.decode(res.bodyBytes));
+      final ok = res.statusCode >= 200 && res.statusCode < 300;
+      final detail = decoded is Map ? decoded['detail'] : null;
+      return {
+        'ok': ok,
+        'status': res.statusCode,
+        'data': decoded,
+        'message': ok
+            ? ''
+            : (res.statusCode == 404
+                ? 'Máy chủ chưa có dịch vụ Bình Anh (cần cập nhật backend)'
+                : detail?.toString() ?? 'Lỗi máy chủ (${res.statusCode})'),
+      };
+    } on TimeoutException {
+      return {'ok': false, 'status': 0, 'message': 'Dịch vụ Bình Anh phản hồi quá lâu, vui lòng thử lại.'};
+    } catch (e) {
+      return {'ok': false, 'status': 0, 'message': 'Không thể kết nối API: $e'};
+    }
   }
 
   /// Lấy danh sách cây dầu & trạm cấp nhiên liệu
@@ -746,6 +911,7 @@ class AdminService {
     required String deviceId,
     required double kmOcr,
     required double kmConfirmed,
+    List<Map<String, dynamic>>? photoGps,
   }) async {
     try {
       final res = await http
@@ -766,6 +932,7 @@ class AdminService {
               'device_id': deviceId,
               'km_ocr': kmOcr,
               'km_confirmed': kmConfirmed,
+              if (photoGps != null) 'photo_gps': photoGps,
             }),
           )
           .timeout(const Duration(seconds: 10));
@@ -817,7 +984,8 @@ class AdminService {
   }
 
   /// Gửi hình chụp chứng từ / sự cố gắn vào đơn hàng vận tải:
-  /// photoType: 'pump_slip' | 'weigh_slip' | 'delivery_slip' | 'breakdown' | 'repair'
+  /// photoType: 'pump_slip_before' | 'pump_slip' | 'weigh_slip' | 'delivery_slip' | 'breakdown' | 'repair'
+  /// Mọi ảnh của tài xế đều kèm tọa độ GPS lúc chụp (gps_lat, gps_lng, gps_accuracy, gps_captured_at).
   static Future<Map<String, dynamic>?> submitOrderAttachment({
     required int orderId,
     required String photoType,
@@ -826,6 +994,10 @@ class AdminService {
     double? tonnage,
     String? slipCode,
     String? location,
+    double? gpsLat,
+    double? gpsLng,
+    double? gpsAccuracy,
+    String? gpsCapturedAt,
     String? repairStatus,
   }) async {
     try {
@@ -838,6 +1010,10 @@ class AdminService {
           'slip_code': slipCode.trim(),
         if (location != null && location.trim().isNotEmpty)
           'location': location.trim(),
+        if (gpsLat != null) 'gps_lat': gpsLat,
+        if (gpsLng != null) 'gps_lng': gpsLng,
+        if (gpsAccuracy != null) 'gps_accuracy': gpsAccuracy,
+        if (gpsCapturedAt != null) 'gps_captured_at': gpsCapturedAt,
         if (repairStatus != null && repairStatus.trim().isNotEmpty)
           'repair_status': repairStatus.trim(),
       };

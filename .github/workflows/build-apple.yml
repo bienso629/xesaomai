@@ -10,8 +10,12 @@ permissions:
 
 jobs:
   build-ios:
-    name: Build iOS (.ipa chưa ký)
+    name: Build iOS (.ipa, ký và đẩy TestFlight nếu có Secrets)
     runs-on: macos-latest
+    env:
+      HAS_SIGNING: ${{ secrets.IOS_DIST_CERT_P12_BASE64 != '' && secrets.IOS_PROVISION_PROFILE_BASE64 != '' && vars.APPLE_TEAM_ID != '' }}
+      HAS_ASC_KEY: ${{ secrets.APPSTORE_API_PRIVATE_KEY != '' }}
+      BUILD_NUMBER: ${{ github.run_number }}
 
     steps:
       - name: Checkout repository
@@ -27,22 +31,109 @@ jobs:
         working-directory: ./app_tai_xe
         run: flutter pub get
 
+      # ---------- Không có Secrets: giữ cách build cũ (chưa ký) ----------
       - name: Build iOS Release (no codesign)
+        if: env.HAS_SIGNING != 'true'
         working-directory: ./app_tai_xe
-        run: flutter build ios --release --no-codesign
+        run: |
+          echo "::warning::Chưa đủ Secrets ký iOS, đang build bản chưa ký."
+          flutter build ios --release --no-codesign --build-number=$BUILD_NUMBER
 
       - name: Package unsigned IPA
+        if: env.HAS_SIGNING != 'true'
         working-directory: ./app_tai_xe/build/ios/iphoneos
         run: |
           mkdir -p Payload
           cp -R Runner.app Payload/
           zip -qry "$GITHUB_WORKSPACE/SaoMai_TaiXe_iOS_unsigned.ipa" Payload
 
+      # ---------- Có Secrets: ký bản App Store ----------
+      - name: Cài chứng chỉ và provisioning profile
+        if: env.HAS_SIGNING == 'true'
+        env:
+          P12_BASE64: ${{ secrets.IOS_DIST_CERT_P12_BASE64 }}
+          P12_PASSWORD: ${{ secrets.IOS_DIST_CERT_PASSWORD }}
+          PROFILE_BASE64: ${{ secrets.IOS_PROVISION_PROFILE_BASE64 }}
+          KEYCHAIN_PASSWORD: ${{ secrets.KEYCHAIN_PASSWORD }}
+        run: |
+          KEYCHAIN="$RUNNER_TEMP/build.keychain-db"
+          echo "$P12_BASE64" | base64 --decode > "$RUNNER_TEMP/dist.p12"
+          echo "$PROFILE_BASE64" | base64 --decode > "$RUNNER_TEMP/app.mobileprovision"
+
+          security create-keychain -p "$KEYCHAIN_PASSWORD" "$KEYCHAIN"
+          security set-keychain-settings -lut 21600 "$KEYCHAIN"
+          security unlock-keychain -p "$KEYCHAIN_PASSWORD" "$KEYCHAIN"
+          security import "$RUNNER_TEMP/dist.p12" -P "$P12_PASSWORD" -A -t cert -f pkcs12 -k "$KEYCHAIN"
+          security set-key-partition-list -S apple-tool:,apple: -k "$KEYCHAIN_PASSWORD" "$KEYCHAIN"
+          security list-keychains -d user -s "$KEYCHAIN" $(security list-keychains -d user | tr -d '"')
+
+          security cms -D -i "$RUNNER_TEMP/app.mobileprovision" > "$RUNNER_TEMP/profile.plist"
+          UUID=$(/usr/libexec/PlistBuddy -c "Print UUID" "$RUNNER_TEMP/profile.plist")
+          NAME=$(/usr/libexec/PlistBuddy -c "Print Name" "$RUNNER_TEMP/profile.plist")
+          mkdir -p "$HOME/Library/MobileDevice/Provisioning Profiles"
+          cp "$RUNNER_TEMP/app.mobileprovision" "$HOME/Library/MobileDevice/Provisioning Profiles/$UUID.mobileprovision"
+          echo "PROFILE_NAME=$NAME" >> "$GITHUB_ENV"
+
+      - name: Bật ký thủ công cho target Runner (chỉ trên máy build)
+        if: env.HAS_SIGNING == 'true'
+        working-directory: ./app_tai_xe/ios
+        env:
+          TEAM_ID: ${{ vars.APPLE_TEAM_ID }}
+        run: |
+          # Chèn cấu hình ký vào 3 cấu hình của target app (dòng có bundle ID đúng của app, không đụng RunnerTests).
+          perl -0pi -e 's/(\n(\t+)PRODUCT_BUNDLE_IDENTIFIER = com\.taxilogistics\.driver\.saomai;)/\n$2CODE_SIGN_STYLE = Manual;\n$2DEVELOPMENT_TEAM = $ENV{TEAM_ID};\n$2CODE_SIGN_IDENTITY = "Apple Distribution";\n$2"CODE_SIGN_IDENTITY[sdk=iphoneos*]" = "Apple Distribution";\n$2PROVISIONING_PROFILE_SPECIFIER = "$ENV{PROFILE_NAME}";$1/g' Runner.xcodeproj/project.pbxproj
+          grep -c "PROVISIONING_PROFILE_SPECIFIER" Runner.xcodeproj/project.pbxproj
+
+          cat > "$RUNNER_TEMP/ExportOptions.plist" <<PLIST
+          <?xml version="1.0" encoding="UTF-8"?>
+          <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+          <plist version="1.0">
+          <dict>
+            <key>method</key><string>app-store-connect</string>
+            <key>teamID</key><string>$TEAM_ID</string>
+            <key>signingStyle</key><string>manual</string>
+            <key>signingCertificate</key><string>Apple Distribution</string>
+            <key>provisioningProfiles</key>
+            <dict>
+              <key>com.taxilogistics.driver.saomai</key><string>$PROFILE_NAME</string>
+            </dict>
+            <key>uploadSymbols</key><true/>
+            <key>manageAppVersionAndBuildNumber</key><false/>
+          </dict>
+          </plist>
+          PLIST
+
+      - name: Build IPA đã ký
+        if: env.HAS_SIGNING == 'true'
+        working-directory: ./app_tai_xe
+        run: |
+          flutter build ipa --release --build-number=$BUILD_NUMBER \
+            --export-options-plist="$RUNNER_TEMP/ExportOptions.plist"
+          cp build/ios/ipa/*.ipa "$GITHUB_WORKSPACE/SaoMai_TaiXe_iOS.ipa"
+
+      - name: Đẩy lên TestFlight
+        if: env.HAS_SIGNING == 'true' && env.HAS_ASC_KEY == 'true'
+        env:
+          API_KEY_ID: ${{ secrets.APPSTORE_API_KEY_ID }}
+          API_ISSUER_ID: ${{ secrets.APPSTORE_API_ISSUER_ID }}
+          API_PRIVATE_KEY: ${{ secrets.APPSTORE_API_PRIVATE_KEY }}
+        run: |
+          mkdir -p "$HOME/.appstoreconnect/private_keys"
+          printf '%s' "$API_PRIVATE_KEY" > "$HOME/.appstoreconnect/private_keys/AuthKey_$API_KEY_ID.p8"
+          xcrun altool --upload-app --type ios -f SaoMai_TaiXe_iOS.ipa \
+            --apiKey "$API_KEY_ID" --apiIssuer "$API_ISSUER_ID"
+
+      - name: Dọn keychain
+        if: always() && env.HAS_SIGNING == 'true'
+        run: |
+          security delete-keychain "$RUNNER_TEMP/build.keychain-db" || true
+          rm -f "$RUNNER_TEMP/dist.p12" "$RUNNER_TEMP/app.mobileprovision" "$HOME/.appstoreconnect/private_keys/"*.p8
+
       - name: Upload iOS Artifact
         uses: actions/upload-artifact@v4
         with:
-          name: SaoMai_TaiXe_iOS_unsigned
-          path: SaoMai_TaiXe_iOS_unsigned.ipa
+          name: SaoMai_TaiXe_iOS
+          path: SaoMai_TaiXe_iOS*.ipa
           retention-days: 30
 
   build-macos:
@@ -97,5 +188,6 @@ jobs:
           files: |
             dist/SaoMai_TaiXe_iOS_unsigned.ipa
             dist/SaoMai_TaiXe_macOS.zip
+          fail_on_unmatched_files: false
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
