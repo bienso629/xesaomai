@@ -167,6 +167,8 @@ class OrderAttachmentsSection extends StatelessWidget {
     final allowCapture = !readOnly && !isAdminOrManager;
     final isDriver = allowCapture && roles.contains('driver');
     final isMechanic = allowCapture && roles.contains('mechanic');
+    final showGeo = readOnly || isAdminOrManager;
+    Widget? geo(String ptype) => showGeo ? _buildGeoCheck(order, ptype) : null;
 
     final int? orderId = order['id'] is int
         ? order['id'] as int
@@ -259,6 +261,7 @@ class OrderAttachmentsSection extends StatelessWidget {
           captureLabel: pumpBeforePhoto.isNotEmpty
               ? "Chụp lại (Trước khi bơm)"
               : "Chụp ảnh Trước khi bơm",
+          geoCheck: geo('pump_slip_before'),
           onCapture: () => captureType('pump_before'),
         ),
         const SizedBox(height: 8),
@@ -277,6 +280,7 @@ class OrderAttachmentsSection extends StatelessWidget {
           captureLabel: pumpPhoto.isNotEmpty
               ? "Chụp lại (Đã bơm xong)"
               : "Chụp ảnh Đã bơm xong",
+          geoCheck: geo('pump_slip'),
           onCapture: () => captureType('pump_slip'),
         ),
         const SizedBox(height: 8),
@@ -297,6 +301,7 @@ class OrderAttachmentsSection extends StatelessWidget {
           canCapture: isDriver && orderId != null,
           captureLabel:
               weighPhoto.isNotEmpty ? "Chụp lại Phiếu cân" : "Chụp Phiếu cân",
+          geoCheck: geo('weigh_slip'),
           onCapture: () => captureType('weigh_slip'),
         ),
         const SizedBox(height: 8),
@@ -314,6 +319,7 @@ class OrderAttachmentsSection extends StatelessWidget {
           captureLabel: deliveryPhoto.isNotEmpty
               ? "Chụp lại Phiếu giao"
               : "Chụp Phiếu giao hàng",
+          geoCheck: geo('delivery_slip'),
           onCapture: () => captureType('delivery_slip'),
         ),
         const SizedBox(height: 8),
@@ -364,6 +370,83 @@ class OrderAttachmentsSection extends StatelessWidget {
     );
   }
 
+  static String _fmtDistance(dynamic m) {
+    final d = m is num ? m.toDouble() : double.tryParse('${m ?? ''}');
+    if (d == null) return '';
+    return d < 1000 ? '${d.round()} m' : '${(d / 1000).toStringAsFixed(1)} km';
+  }
+
+  /// Dòng đối chiếu GPS lúc chụp với Nơi nhận hàng / Điểm giao hàng của đơn.
+  /// Dữ liệu lấy từ photo_geo_check do backend tính sẵn.
+  static Widget? _buildGeoCheck(Map<String, dynamic> order, String ptype) {
+    final all = order['photo_geo_check'];
+    if (all is! Map) return null;
+    final c = all[ptype];
+    if (c is! Map) return null;
+    final matched = (c['matched'] ?? '').toString();
+
+    final parts = <String>[];
+    if (c['pickup_distance_m'] != null) {
+      parts.add('Nơi nhận ${_fmtDistance(c['pickup_distance_m'])}');
+    }
+    if (c['delivery_distance_m'] != null) {
+      parts.add('Điểm giao ${_fmtDistance(c['delivery_distance_m'])}');
+    }
+    final acc = c['gps_accuracy'];
+    final accText = acc is num ? ' (sai số GPS ±${acc.round()} m)' : '';
+
+    late final Color color;
+    late final IconData icon;
+    late final String text;
+    switch (matched) {
+      case 'PICKUP':
+        color = const Color(0xFF15803D);
+        icon = Icons.verified_outlined;
+        text = 'Chụp TẠI Nơi nhận hàng';
+        break;
+      case 'DELIVERY':
+        color = const Color(0xFF15803D);
+        icon = Icons.verified_outlined;
+        text = 'Chụp TẠI Điểm giao hàng';
+        break;
+      case 'NONE':
+        color = const Color(0xFFDC2626);
+        icon = Icons.wrong_location_outlined;
+        text = 'KHÔNG ở Nơi nhận hàng / Điểm giao hàng';
+        break;
+      default:
+        color = const Color(0xFF64748B);
+        icon = Icons.location_searching;
+        text = 'Đơn chưa có tọa độ điểm nhận / giao để đối chiếu';
+    }
+    final detail = [
+      if (parts.isNotEmpty) 'Cách ${parts.join(', ')}',
+      if (accText.isNotEmpty) accText.trim(),
+    ].join(' ');
+
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 4),
+      decoration: BoxDecoration(
+        color: color.withValues(alpha: 0.06),
+        borderRadius: BorderRadius.circular(4),
+        border: Border.all(color: color.withValues(alpha: 0.35)),
+      ),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Icon(icon, size: 14, color: color),
+          const SizedBox(width: 6),
+          Expanded(
+            child: Text(
+              detail.isEmpty ? text : '$text • $detail',
+              style: TextStyle(fontSize: 11, fontWeight: FontWeight.w600, color: color),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
   Widget _buildAttachmentCard(
     BuildContext context, {
     required IconData icon,
@@ -372,6 +455,7 @@ class OrderAttachmentsSection extends StatelessWidget {
     required String photoUrl,
     required String statusText,
     String? detailText,
+    Widget? geoCheck,
     required bool canCapture,
     required String captureLabel,
     required VoidCallback onCapture,
@@ -485,6 +569,10 @@ class OrderAttachmentsSection extends StatelessWidget {
                       color: Color(0xFF334155),
                     ),
                   ),
+                ],
+                if (geoCheck != null) ...[
+                  const SizedBox(height: 4),
+                  geoCheck,
                 ],
                 const SizedBox(height: 6),
                 Wrap(

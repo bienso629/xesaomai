@@ -1631,38 +1631,69 @@ class _VehicleInspectionReviewScreenState
     setState(() => _isAiChecking = true);
     try {
       final specs = <Map<String, String>>[
-        {'field': 'img_front_underbody', 'label': 'Ảnh gầm trước'},
-        {'field': 'img_rear_underbody', 'label': 'Ảnh gầm sau'},
-        {'field': 'img_left_side', 'label': 'Ảnh bên trái xe'},
-        {'field': 'img_right_side', 'label': 'Ảnh bên phải xe'},
-        {'field': 'img_dashboard', 'label': 'Ảnh đồng hồ táp-lô'},
+        {
+          'field': 'img_front_underbody',
+          'label': 'Gầm trước xe (cản & trục lái)',
+        },
+        {'field': 'img_rear_underbody', 'label': 'Bầu vi sai & gầm sau xe'},
+        {'field': 'img_left_side', 'label': 'Hông trái xe (lốp & bồn)'},
+        {'field': 'img_right_side', 'label': 'Hông phải xe (bình dầu & lốp)'},
+        {'field': 'img_dashboard', 'label': 'Táp-lô & đồng hồ ODO'},
       ];
       final plate = (record['plate_number'] ?? record['plate'] ?? '')
           .toString();
       final driver = (record['driver_name'] ?? '').toString();
+      final currentDate = (record['check_date'] ?? '').toString();
+      // Lượt chụp gần nhất của ngày gửi trước đó (cùng biển số) để đối chiếu
+      final previous = await _findPreviousDayRecord(record);
+      final prevDate = (previous?['check_date'] ?? '').toString();
+      final prevDriver = (previous?['driver_name'] ?? '').toString();
+
       final content = <Map<String, dynamic>>[
         {
           'type': 'text',
           'text':
-              'Đây là 5 ảnh kiểm tra xe đầu ca do tài xế chụp (thứ tự gửi: gầm trước, gầm sau, bên trái, bên phải, đồng hồ táp-lô; một số ảnh có thể thiếu hoặc không đọc được). '
-                  'Biển số: ${plate.isEmpty ? 'không rõ' : plate}. '
-                  'Tài xế: ${driver.isEmpty ? 'không rõ' : driver}. '
-                  'Hãy đánh giá chất lượng toàn diện của xe và khả năng an toàn để khởi hành.',
+              'Biển số: ${plate.isEmpty ? 'không rõ' : plate}. '
+              'LƯỢT MỚI: ngày ${currentDate.isEmpty ? 'không rõ' : _formatDateLabel(currentDate)}, '
+              'tài xế ${driver.isEmpty ? 'không rõ' : driver}, Km táp-lô: ${record['km_confirmed'] ?? record['km_ocr'] ?? 'không rõ'}. '
+              '${previous == null ? 'KHÔNG có lượt chụp của ngày trước đó để đối chiếu, chỉ đánh giá lượt mới.' : 'LƯỢT TRƯỚC: ngày ${_formatDateLabel(prevDate)}, tài xế ${prevDriver.isEmpty ? 'không rõ' : prevDriver}, Km táp-lô: ${previous['km_confirmed'] ?? previous['km_ocr'] ?? 'không rõ'}.'} '
+              'Ảnh được gửi theo từng vị trí, mỗi vị trí gồm ảnh MỚI rồi tới ảnh NGÀY TRƯỚC (nếu có).',
         },
       ];
-      for (final spec in specs) {
-        final bytes = await _loadImageBytes(
-          record[spec['field']]?.toString() ?? '',
-        );
-        if (bytes == null) continue;
+      int currentCount = 0;
+      int prevCount = 0;
+      for (var i = 0; i < specs.length; i++) {
+        final spec = specs[i];
+        final field = spec['field']!;
+        final label = spec['label']!;
+        final curBytes = await _loadImageBytes(record[field]?.toString() ?? '');
         content.add({
-          'type': 'image_url',
-          'image_url': {
-            'url': 'data:image/jpeg;base64,${base64Encode(bytes)}',
-          },
+          'type': 'text',
+          'text': curBytes == null
+              ? 'Vị trí ${i + 1} - $label - ẢNH MỚI: không có hoặc không tải được.'
+              : 'Vị trí ${i + 1} - $label - ẢNH MỚI (${_formatDateLabel(currentDate)}):',
         });
+        if (curBytes != null) {
+          currentCount++;
+          content.add(_imagePart(curBytes));
+        }
+        if (previous != null) {
+          final prevBytes = await _loadImageBytes(
+            previous[field]?.toString() ?? '',
+          );
+          content.add({
+            'type': 'text',
+            'text': prevBytes == null
+                ? 'Vị trí ${i + 1} - $label - ẢNH NGÀY TRƯỚC: không có hoặc không tải được.'
+                : 'Vị trí ${i + 1} - $label - ẢNH NGÀY TRƯỚC (${_formatDateLabel(prevDate)}):',
+          });
+          if (prevBytes != null) {
+            prevCount++;
+            content.add(_imagePart(prevBytes));
+          }
+        }
       }
-      if (content.length <= 1) {
+      if (currentCount == 0) {
         _showAiResultDialog(
           title: "Không có ảnh hợp lệ",
           content:
@@ -1670,39 +1701,47 @@ class _VehicleInspectionReviewScreenState
         );
         return;
       }
-      final endpoint = (prefs.getString('proxy_ai_endpoint') ??
-              'https://api.openai.com/v1')
-          .trim();
+      final endpoint =
+          (prefs.getString('proxy_ai_endpoint') ?? 'https://api.openai.com/v1')
+              .trim();
       final normalized = endpoint.endsWith('/')
           ? endpoint.substring(0, endpoint.length - 1)
           : endpoint;
       final url = '$normalized/chat/completions';
-      final model = (prefs.getString('proxy_ai_model') ?? 'gpt-4o-mini')
-          .trim();
+      final model = (prefs.getString('proxy_ai_model') ?? 'gpt-4o-mini').trim();
       final maxTokens =
           int.tryParse(prefs.getString('proxy_ai_max_tokens') ?? '2048') ??
-              2048;
+          2048;
       final temperature =
           double.tryParse(prefs.getString('proxy_ai_temperature') ?? '0.7') ??
-              0.7;
-      final resp = await http
-          .post(
-            Uri.parse(url),
-            headers: {
-              'Content-Type': 'application/json',
-              'Authorization': 'Bearer $apiKey',
-            },
-            body: jsonEncode({
-              'model': model,
-              'temperature': temperature,
-              'max_tokens': maxTokens,
-              'messages': [
-                {'role': 'system', 'content': _aiSystemPrompt()},
-                {'role': 'user', 'content': content},
-              ],
-            }),
-          )
-          .timeout(const Duration(seconds: 120));
+          0.7;
+
+      Future<http.Response> send({required bool withTemperature}) {
+        return http
+            .post(
+              Uri.parse(url),
+              headers: {
+                'Content-Type': 'application/json',
+                'Authorization': 'Bearer $apiKey',
+              },
+              body: jsonEncode({
+                'model': model,
+                if (withTemperature) 'temperature': temperature,
+                'max_tokens': maxTokens,
+                'messages': [
+                  {'role': 'system', 'content': _aiSystemPrompt()},
+                  {'role': 'user', 'content': content},
+                ],
+              }),
+            )
+            .timeout(const Duration(seconds: 180));
+      }
+
+      var resp = await send(withTemperature: true);
+      // Một số model mới (vd Claude qua endpoint OpenAI-compatible) không nhận temperature: gửi lại không kèm tham số này
+      if (resp.statusCode == 400 && resp.body.contains('temperature')) {
+        resp = await send(withTemperature: false);
+      }
       if (resp.statusCode != 200) {
         final bodyPreview = resp.body.length > 600
             ? resp.body.substring(0, 600)
@@ -1725,14 +1764,15 @@ class _VehicleInspectionReviewScreenState
       if (text.trim().isEmpty) {
         _showAiResultDialog(
           title: "Kết quả trống",
-          content:
-              "AI không trả về nội dung phân tích. Vui lòng thử lại sau.",
+          content: "AI không trả về nội dung phân tích. Vui lòng thử lại sau.",
         );
         return;
       }
       _showAiResultDialog(
         title: "Kiểm tra chất lượng xe (AI)",
-        content: text.trim(),
+        content: previous == null
+            ? "Đối chiếu: không có lượt chụp ngày trước, chỉ đánh giá $currentCount ảnh mới.\n\n${text.trim()}"
+            : "Đối chiếu: $currentCount ảnh ngày ${_formatDateLabel(currentDate)} với $prevCount ảnh ngày ${_formatDateLabel(prevDate)}.\n\n${text.trim()}",
       );
     } catch (e) {
       _showAiResultDialog(
@@ -1747,16 +1787,63 @@ class _VehicleInspectionReviewScreenState
   /// System prompt chuẩn cho bài kiểm tra chất lượng xe đầu ca.
   String _aiSystemPrompt() {
     return 'Bạn là chuyên gia kiểm định an toàn phương tiện đường bộ (xe đầu kéo, xe tải). '
-        'Bạn nhận 5 ảnh kiểm tra xe đầu ca do tài xế tự chụp: gầm trước, gầm sau, hai bên hông xe và đồng hồ táp-lô. '
-        'Hãy phân tích kỹ từng ảnh: gầm xe (nứt khung, rò rỉ dầu/nước làm mát, ốc vít lỏng, bình xăng, la zăng), '
-        'thân xe (vỡ kính, gương chiếu hậu, đèn, lốp mòn hoặc non hơi, vết móp nứt nghiêm trọng), '
-        'táp-lô (đèn cảnh báo đang sáng, mã lỗi động cơ, áp suất lốp, mức nhiên liệu). '
+        'Bạn nhận 5 ảnh kiểm tra xe MỚI NHẤT do tài xế chụp (gầm trước, bầu vi sai & gầm sau, hông trái, hông phải, táp-lô & ODO) '
+        'và, nếu có, 5 ảnh cùng vị trí của NGÀY GỬI TRƯỚC ĐÓ của cùng xe. Mỗi ảnh có dòng chữ ghi rõ vị trí và là ảnh mới hay ảnh ngày trước. '
+        'Nhiệm vụ: so sánh từng cặp ảnh cùng vị trí để phát hiện thay đổi giữa hai ngày: hư hỏng mới xuất hiện (nứt khung, rò rỉ dầu/nước làm mát, '
+        'vết móp, vỡ kính/đèn/gương), lốp mòn thêm hoặc non hơi, đèn cảnh báo mới sáng trên táp-lô, số ODO bất thường (giảm, hoặc tăng phi lý), '
+        'và dấu hiệu ảnh bị chụp lại/trùng với ngày trước hoặc chụp sai vị trí, ảnh không phải xe. '
         'Trả lời bằng tiếng Việt, ngắn gọn, theo đúng cấu trúc: '
         '1) KẾT LUẬN: ĐẠT TIÊU CHUẨN / KHÔNG ĐẠT / CẦN THEO DÕI trước khi khởi hành; '
-        '2) PHÁT HIỆN THEO TỪNG ẢNH (nêu rõ ảnh nào có vấn đề, ảnh mờ hoặc thiếu thì ghi rõ); '
-        '3) RỦI RO AN TOÀN nếu cho xe chạy; '
-        '4) GỢI Ý CHO ĐIỀU PHỐI & QUẢN LÝ: duyệt khởi hành, yêu cầu chụp lại, hay đưa xe vào sửa chữa. '
+        '2) SO SÁNH THEO TỪNG VỊ TRÍ (1 đến 5): tình trạng hiện tại và thay đổi so với ngày trước (không đổi / có thay đổi gì); ảnh thiếu, mờ, sai vị trí thì ghi rõ; '
+        '3) ODO: số đọc được ở hai ngày và nhận xét; '
+        '4) RỦI RO AN TOÀN nếu cho xe chạy; '
+        '5) GỢI Ý CHO ĐIỀU PHỐI & QUẢN LÝ: duyệt khởi hành, yêu cầu chụp lại, hay đưa xe vào sửa chữa. '
+        'Nếu không có ảnh ngày trước thì chỉ đánh giá ảnh mới và nói rõ là không có dữ liệu đối chiếu. '
         'Không suy diễn khi thiếu dữ liệu, ưu tiên an toàn là trên hết.';
+  }
+
+  /// Đóng gói bytes ảnh thành phần image_url (base64) cho API Vision.
+  Map<String, dynamic> _imagePart(List<int> bytes) {
+    return {
+      'type': 'image_url',
+      'image_url': {'url': 'data:image/jpeg;base64,${base64Encode(bytes)}'},
+    };
+  }
+
+  /// Tìm lượt chụp của ngày gửi trước đó (ngày gần nhất nhỏ hơn ngày của lượt đang xét, cùng biển số).
+  /// Cùng ngày có nhiều lượt thì lấy lượt mới nhất (id lớn nhất).
+  Future<Map<String, dynamic>?> _findPreviousDayRecord(
+    Map<String, dynamic> record,
+  ) async {
+    final plate = (record['plate_number'] ?? '').toString();
+    final date = (record['check_date'] ?? '').toString();
+    if (plate.isEmpty || date.isEmpty) return null;
+    List<dynamic> history = _plateHistory;
+    final samePlate =
+        history.isNotEmpty &&
+        (history.first['plate_number'] ?? '').toString() == plate;
+    if (!samePlate) {
+      history = await AdminService.fetchInspections(plateNumber: plate);
+    }
+    Map<String, dynamic>? best;
+    for (final item in history) {
+      // Chỉ lấy đúng biển số (API lọc ILIKE nên có thể lẫn biển số gần giống)
+      if ((item['plate_number'] ?? '').toString() != plate) continue;
+      final d = (item['check_date'] ?? '').toString();
+      if (d.isEmpty || d.compareTo(date) >= 0) continue;
+      if (best == null) {
+        best = item as Map<String, dynamic>;
+        continue;
+      }
+      final bestDate = (best['check_date'] ?? '').toString();
+      final cmp = d.compareTo(bestDate);
+      final idItem = (item['id'] as num?) ?? 0;
+      final idBest = (best['id'] as num?) ?? 0;
+      if (cmp > 0 || (cmp == 0 && idItem > idBest)) {
+        best = item as Map<String, dynamic>;
+      }
+    }
+    return best;
   }
 
   /// Tải bytes ảnh từ URL hoặc file cục bộ (khớp logic hiển thị _buildSafeImage).

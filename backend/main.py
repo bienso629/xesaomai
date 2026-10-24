@@ -4,6 +4,7 @@ import math
 import uuid
 import shutil
 import hashlib
+import hmac
 import html
 import json
 import asyncio
@@ -210,6 +211,46 @@ class CustomerUpdate(BaseModel):
     address: Optional[str] = None
     note: Optional[str] = None
 
+CUSTOMER_FIELDS = ["code", "name", "tax_code", "contact_person", "phone", "email", "address", "note"]
+
+class LocationCreate(BaseModel):
+    name: str
+    address: Optional[str] = None
+    kind: Optional[str] = "BOTH"  # PICKUP | DELIVERY | BOTH
+    latitude: Optional[float] = None
+    longitude: Optional[float] = None
+    radius_m: Optional[int] = None
+    note: Optional[str] = None
+
+class LocationUpdate(BaseModel):
+    name: Optional[str] = None
+    address: Optional[str] = None
+    kind: Optional[str] = None
+    latitude: Optional[float] = None
+    longitude: Optional[float] = None
+    radius_m: Optional[int] = None
+    note: Optional[str] = None
+
+class LocationSuggestionApprove(BaseModel):
+    name: Optional[str] = None
+    address: Optional[str] = None
+    kind: Optional[str] = "BOTH"
+    note: Optional[str] = None
+
+class LocationScanRequest(BaseModel):
+    vietmap_days: Optional[int] = 30
+    binhanh_days: Optional[int] = 7
+    min_stop_minutes: Optional[int] = 15
+    min_visits: Optional[int] = 2
+
+
+def _clean(value) -> Optional[str]:
+    """Bỏ khoảng trắng thừa; chuỗi rỗng coi như không có (None)."""
+    if value is None:
+        return None
+    text = str(value).strip()
+    return text or None
+
 class VehicleCreate(BaseModel):
     plate_number: str
     vehicle_type: str
@@ -243,9 +284,12 @@ class GasStationUpdate(BaseModel):
 
 class OrderCreate(BaseModel):
     order_code: str
+    customer_code: Optional[str] = None
     factory_code: str
     product_id: int
+    product_detail: Optional[str] = None
     transport_type: Optional[str] = "INTERNAL"
+    carrier_name: Optional[str] = None
     customer_group_id: Optional[str] = None
     pickup_address: str
     pickup_lat: Optional[float] = None
@@ -253,15 +297,20 @@ class OrderCreate(BaseModel):
     delivery_address: str
     delivery_lat: Optional[float] = None
     delivery_lng: Optional[float] = None
+    pickup_radius_m: Optional[int] = None
+    delivery_radius_m: Optional[int] = None
     assigned_vehicle_plate: str
     assigned_driver_id: int
     cargo_weight_tons: float
 
 class OrderUpdate(BaseModel):
     order_code: Optional[str] = None
+    customer_code: Optional[str] = None
     factory_code: Optional[str] = None
     product_id: Optional[int] = None
+    product_detail: Optional[str] = None
     transport_type: Optional[str] = None
+    carrier_name: Optional[str] = None
     customer_group_id: Optional[str] = None
     pickup_address: Optional[str] = None
     pickup_lat: Optional[float] = None
@@ -269,6 +318,8 @@ class OrderUpdate(BaseModel):
     delivery_address: Optional[str] = None
     delivery_lat: Optional[float] = None
     delivery_lng: Optional[float] = None
+    pickup_radius_m: Optional[int] = None
+    delivery_radius_m: Optional[int] = None
     assigned_vehicle_plate: Optional[str] = None
     assigned_driver_id: Optional[int] = None
     cargo_weight_tons: Optional[float] = None
@@ -477,6 +528,15 @@ ORDER_PHOTO_PREFIX = {
 
 ORDER_ATTACHMENT_DDL = [
     "ALTER TABLE orders ADD COLUMN IF NOT EXISTS updated_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP",
+    # Mã khách hàng (liên kết mềm với customers.code), không bắt buộc
+    "ALTER TABLE orders ADD COLUMN IF NOT EXISTS customer_code VARCHAR(50)",
+    # Sản phẩm do điều phối nhập tay (bên cạnh Hàng hóa chọn từ danh mục products)
+    "ALTER TABLE orders ADD COLUMN IF NOT EXISTS product_detail VARCHAR(255)",
+    # Bán kính (mét) cho phép khi đối chiếu GPS ảnh với Nơi nhận hàng / Điểm giao hàng
+    "ALTER TABLE orders ADD COLUMN IF NOT EXISTS pickup_radius_m INTEGER",
+    "ALTER TABLE orders ADD COLUMN IF NOT EXISTS delivery_radius_m INTEGER",
+    # Đơn vị vận chuyển do điều phối nhập tay khi chọn Xe thuê ngoài (RENTAL)
+    "ALTER TABLE orders ADD COLUMN IF NOT EXISTS carrier_name VARCHAR(255)",
     # Phiếu bơm hàng: 2 ảnh bắt buộc do Tài xế chụp
     "ALTER TABLE orders ADD COLUMN IF NOT EXISTS pump_slip_before_photo_url TEXT",
     "ALTER TABLE orders ADD COLUMN IF NOT EXISTS pump_slip_before_time TIMESTAMP WITH TIME ZONE",
@@ -560,6 +620,70 @@ def _parse_gps_time(value: Optional[str]):
     except ValueError:
         return None
 
+DEFAULT_ORDER_POINT_RADIUS_M = 300
+
+# Loại ảnh -> nhãn hiển thị, dùng khi đối chiếu GPS ảnh với Nơi nhận / Điểm giao
+ORDER_PHOTO_GEO_LABELS = {
+    "pump_slip_before": "Bơm hàng - Trước khi bơm",
+    "pump_slip": "Bơm hàng - Đã bơm xong",
+    "weigh_slip": "Phiếu cân",
+    "delivery_slip": "Phiếu giao hàng",
+    "breakdown": "Báo hỏng xe",
+    "repair": "Sửa chữa xe",
+}
+
+def _validate_order_point(lat, lng, label: str):
+    # Tọa độ điểm của đơn không bắt buộc, nhưng đã nhập thì phải nhập đủ cặp và hợp lệ
+    if lat is None and lng is None:
+        return
+    if lat is None or lng is None:
+        raise HTTPException(status_code=400, detail=f"{label}: phải nhập đủ cả Vĩ độ và Kinh độ")
+    if not (-90 <= lat <= 90 and -180 <= lng <= 180) or (lat == 0 and lng == 0):
+        raise HTTPException(status_code=400, detail=f"{label}: tọa độ không hợp lệ")
+
+def _as_float(v):
+    try:
+        return None if v is None else float(v)
+    except (TypeError, ValueError):
+        return None
+
+def _attach_photo_geo_check(order):
+    """Gắn photo_geo_check vào đơn: với mỗi ảnh đã có GPS, tính khoảng cách tới
+    Nơi nhận hàng và Điểm giao hàng (mét) và cho biết ảnh có nằm trong bán kính không."""
+    if not order:
+        return order
+    o = dict(order)
+    points = {}
+    for key in ("pickup", "delivery"):
+        lat = _as_float(o.get(f"{key}_lat"))
+        lng = _as_float(o.get(f"{key}_lng"))
+        if lat is None or lng is None:
+            continue
+        radius = o.get(f"{key}_radius_m") or DEFAULT_ORDER_POINT_RADIUS_M
+        points[key] = (lat, lng, int(radius))
+
+    checks = {}
+    for ptype, label in ORDER_PHOTO_GEO_LABELS.items():
+        plat = _as_float(o.get(f"{ptype}_gps_lat"))
+        plng = _as_float(o.get(f"{ptype}_gps_lng"))
+        if plat is None or plng is None:
+            continue
+        item = {"label": label, "gps_lat": plat, "gps_lng": plng,
+                "gps_accuracy": _as_float(o.get(f"{ptype}_gps_accuracy"))}
+        nearest = None
+        for key, (lat, lng, radius) in points.items():
+            dist = round(haversine_distance(plat, plng, lat, lng))
+            item[f"{key}_distance_m"] = dist
+            item[f"{key}_radius_m"] = radius
+            item[f"at_{key}"] = dist <= radius
+            if dist <= radius and (nearest is None or dist < nearest[1]):
+                nearest = (key, dist)
+        # matched: PICKUP | DELIVERY | NONE (có tọa độ điểm nhưng ngoài bán kính) | UNKNOWN (đơn chưa có tọa độ)
+        item["matched"] = nearest[0].upper() if nearest else ("NONE" if points else "UNKNOWN")
+        checks[ptype] = item
+    o["photo_geo_check"] = checks
+    return o
+
 def ensure_customers_table():
     # Tự tạo bảng customers khi server khởi động (DB cũ chưa có bảng này)
     try:
@@ -596,11 +720,64 @@ def ensure_vehicle_gps_columns():
     except Exception as e:
         print(f"[vehicles] Không thêm được cột GPS cho bảng vehicles: {e}")
 
+LOCATIONS_DDL = [
+    """
+    CREATE TABLE IF NOT EXISTS locations (
+        id SERIAL PRIMARY KEY,
+        name VARCHAR(255) NOT NULL,
+        address TEXT,
+        kind VARCHAR(20) DEFAULT 'BOTH',
+        latitude DOUBLE PRECISION,
+        longitude DOUBLE PRECISION,
+        radius_m INTEGER DEFAULT 300,
+        note TEXT,
+        source VARCHAR(30) DEFAULT 'MANUAL',
+        is_active BOOLEAN DEFAULT TRUE,
+        created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
+        updated_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
+    )
+    """,
+    """
+    CREATE TABLE IF NOT EXISTS location_suggestions (
+        id SERIAL PRIMARY KEY,
+        providers VARCHAR(50),
+        address TEXT,
+        station_name VARCHAR(255),
+        latitude DOUBLE PRECISION NOT NULL,
+        longitude DOUBLE PRECISION NOT NULL,
+        visit_count INTEGER DEFAULT 0,
+        total_minutes INTEGER DEFAULT 0,
+        vehicle_count INTEGER DEFAULT 0,
+        vehicles TEXT,
+        first_seen TIMESTAMP,
+        last_seen TIMESTAMP,
+        status VARCHAR(20) DEFAULT 'PENDING',
+        location_id INTEGER REFERENCES locations(id) ON DELETE SET NULL,
+        created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
+        updated_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
+    )
+    """,
+    "CREATE INDEX IF NOT EXISTS ix_location_suggestions_status ON location_suggestions(status)",
+]
+
+def ensure_locations_tables():
+    try:
+        conn = get_db()
+        cur = conn.cursor()
+        for ddl in LOCATIONS_DDL:
+            cur.execute(ddl)
+        conn.commit()
+        cur.close()
+        conn.close()
+    except Exception as e:
+        print(f"[locations] Không tạo được bảng locations: {e}")
+
 @app.on_event("startup")
 def _startup_ensure_customers():
     ensure_customers_table()
     ensure_order_attachment_columns()
     ensure_vehicle_gps_columns()
+    ensure_locations_tables()
 
 # ----------------- REALTIME WEBSOCKET & DEVICE TOKEN (PUSH NOTIFICATION) -----------------
 
@@ -1417,10 +1594,15 @@ def _zalo_access_token() -> str:
         conn.close()
 
 
+def _zalo_appsecret_proof(token: str) -> str:
+    # Ứng dụng Zalo bật "appsecret_proof" thì mọi lời gọi OpenAPI phải kèm HMAC-SHA256(access_token, app_secret)
+    return hmac.new(ZALO_APP_SECRET.encode(), token.encode(), hashlib.sha256).hexdigest()
+
+
 def _zalo_get(path: str, payload: dict, token: str) -> dict:
     res = requests.get(
         f"{ZALO_OPENAPI_BASE}{path}",
-        headers={"access_token": token},
+        headers={"access_token": token, "appsecret_proof": _zalo_appsecret_proof(token)},
         params={"data": json.dumps(payload)},
         timeout=20,
     )
@@ -2358,6 +2540,448 @@ def binhanh_activity(
     }
 
 
+# ----------------- ĐIỂM NHẬN / GIAO HÀNG -----------------
+# Danh mục do người dùng quản lý (bảng locations) + gợi ý tự gom từ lịch sử dừng đỗ
+# của Vietmap (GetVehicleStopReports) và Bình Anh (route, tự tính đoạn tốc độ 0).
+LOCATION_KINDS = ("PICKUP", "DELIVERY", "BOTH")
+LOCATION_CLUSTER_METERS = 250
+_location_scan = {"running": False, "started_at": None, "finished_at": None,
+                  "progress": "", "result": None, "error": None}
+_location_scan_lock = threading.Lock()
+
+def _clean_kind(kind: Optional[str]) -> str:
+    k = (kind or "BOTH").strip().upper()
+    if k not in LOCATION_KINDS:
+        raise HTTPException(status_code=400, detail="Loại điểm phải là PICKUP, DELIVERY hoặc BOTH")
+    return k
+
+def _check_lat_lng(lat, lng):
+    if (lat is None) != (lng is None):
+        raise HTTPException(status_code=400, detail="Phải nhập đủ cả vĩ độ và kinh độ")
+    if lat is not None and not (-90 <= lat <= 90 and -180 <= lng <= 180):
+        raise HTTPException(status_code=400, detail="Tọa độ không hợp lệ")
+
+@app.get("/api/v1/locations")
+def get_locations(kind: Optional[str] = None, current_user: dict = Depends(require_dispatch_staff)):
+    conn = get_db()
+    cur = conn.cursor()
+    if kind:
+        k = _clean_kind(kind)
+        cur.execute(
+            "SELECT * FROM locations WHERE is_active = TRUE AND (kind = %s OR kind = 'BOTH') ORDER BY name ASC, id ASC",
+            (k,),
+        )
+    else:
+        cur.execute("SELECT * FROM locations WHERE is_active = TRUE ORDER BY name ASC, id ASC")
+    rows = cur.fetchall()
+    cur.close()
+    conn.close()
+    return rows
+
+@app.post("/api/v1/locations", status_code=status.HTTP_201_CREATED)
+def create_location(loc: LocationCreate, current_user: dict = Depends(require_dispatch_staff)):
+    name = _clean(loc.name)
+    if not name:
+        raise HTTPException(status_code=400, detail="Tên điểm là bắt buộc")
+    kind = _clean_kind(loc.kind)
+    _check_lat_lng(loc.latitude, loc.longitude)
+    conn = get_db()
+    cur = conn.cursor()
+    try:
+        cur.execute("SELECT id FROM locations WHERE is_active = TRUE AND LOWER(name) = LOWER(%s)", (name,))
+        if cur.fetchone():
+            raise HTTPException(status_code=400, detail=f"Điểm '{name}' đã có trong danh mục")
+        cur.execute(
+            """INSERT INTO locations (name, address, kind, latitude, longitude, radius_m, note, source)
+               VALUES (%s, %s, %s, %s, %s, %s, %s, 'MANUAL') RETURNING *""",
+            (name, _clean(loc.address), kind, loc.latitude, loc.longitude, loc.radius_m or 300, _clean(loc.note)),
+        )
+        row = cur.fetchone()
+        conn.commit()
+        cur.close()
+        conn.close()
+        return row
+    except HTTPException:
+        conn.rollback(); conn.close(); raise
+    except Exception as e:
+        conn.rollback(); conn.close()
+        raise HTTPException(status_code=400, detail=str(e))
+
+@app.put("/api/v1/locations/{location_id}")
+def update_location(location_id: int, loc: LocationUpdate, current_user: dict = Depends(require_dispatch_staff)):
+    conn = get_db()
+    cur = conn.cursor()
+    try:
+        cur.execute("SELECT * FROM locations WHERE id = %s AND is_active = TRUE", (location_id,))
+        current = cur.fetchone()
+        if not current:
+            raise HTTPException(status_code=404, detail="Không tìm thấy điểm")
+        fields, params = [], []
+        if loc.name is not None:
+            name = _clean(loc.name)
+            if not name:
+                raise HTTPException(status_code=400, detail="Tên điểm không được để trống")
+            cur.execute(
+                "SELECT id FROM locations WHERE is_active = TRUE AND LOWER(name) = LOWER(%s) AND id <> %s",
+                (name, location_id),
+            )
+            if cur.fetchone():
+                raise HTTPException(status_code=400, detail=f"Điểm '{name}' đã có trong danh mục")
+            fields.append("name = %s"); params.append(name)
+        if loc.address is not None:
+            fields.append("address = %s"); params.append(_clean(loc.address))
+        if loc.kind is not None:
+            fields.append("kind = %s"); params.append(_clean_kind(loc.kind))
+        lat = loc.latitude if loc.latitude is not None else current["latitude"]
+        lng = loc.longitude if loc.longitude is not None else current["longitude"]
+        if loc.latitude is not None or loc.longitude is not None:
+            _check_lat_lng(lat, lng)
+            fields.append("latitude = %s"); params.append(lat)
+            fields.append("longitude = %s"); params.append(lng)
+        if loc.radius_m is not None:
+            fields.append("radius_m = %s"); params.append(max(50, int(loc.radius_m)))
+        if loc.note is not None:
+            fields.append("note = %s"); params.append(_clean(loc.note))
+        if fields:
+            params.append(location_id)
+            cur.execute(
+                f"UPDATE locations SET {', '.join(fields)}, updated_at = CURRENT_TIMESTAMP WHERE id = %s RETURNING *",
+                params,
+            )
+            current = cur.fetchone()
+        conn.commit()
+        cur.close()
+        conn.close()
+        return current
+    except HTTPException:
+        conn.rollback(); conn.close(); raise
+    except Exception as e:
+        conn.rollback(); conn.close()
+        raise HTTPException(status_code=400, detail=str(e))
+
+@app.delete("/api/v1/locations/{location_id}")
+def delete_location(location_id: int, current_user: dict = Depends(require_dispatch_staff)):
+    conn = get_db()
+    cur = conn.cursor()
+    try:
+        cur.execute("SELECT id, name FROM locations WHERE id = %s AND is_active = TRUE", (location_id,))
+        existing = cur.fetchone()
+        if not existing:
+            raise HTTPException(status_code=404, detail="Không tìm thấy điểm")
+        cur.execute("UPDATE locations SET is_active = FALSE, updated_at = CURRENT_TIMESTAMP WHERE id = %s", (location_id,))
+        # Gợi ý đã duyệt thành điểm này được trả về hàng chờ để có thể duyệt lại
+        cur.execute(
+            "UPDATE location_suggestions SET status = 'PENDING', location_id = NULL, updated_at = CURRENT_TIMESTAMP WHERE location_id = %s",
+            (location_id,),
+        )
+        conn.commit()
+        cur.close()
+        conn.close()
+        return {"message": f"Đã xóa điểm '{existing['name']}'"}
+    except HTTPException:
+        conn.rollback(); conn.close(); raise
+    except Exception as e:
+        conn.rollback(); conn.close()
+        raise HTTPException(status_code=400, detail=str(e))
+
+def _vietmap_stops(days: int, min_stop_minutes: int, progress) -> list:
+    """Các lần dừng đỗ của toàn bộ xe Vietmap trong `days` ngày gần nhất (tối đa 31 ngày)."""
+    vehicles = _fetch_vietmap_vehicles()
+    end = datetime.now(timezone(timedelta(hours=7))).date()
+    start = end - timedelta(days=max(1, min(days, 31)) - 1)
+    stops = []
+    for i, v in enumerate(vehicles, 1):
+        progress(f"Vietmap: xe {v['plate']} ({i}/{len(vehicles)})")
+        try:
+            # Lưu ý: from/to phải là YYYY-MM-DD, truyền kèm giờ sẽ nhận 204NoContent
+            res = requests.get(
+                f"{QUANLYXE_BASE_URL}/GetVehicleStopReports",
+                params={"plate": v["plate"], "from": start.isoformat(), "to": end.isoformat(),
+                        "duration": min_stop_minutes * 60, "apikey": QUANLYXE_API_KEY},
+                timeout=60,
+            )
+            rows = res.json().get("Data") or []
+        except Exception as e:
+            print(f"[locations] Vietmap {v['plate']}: {e}")
+            continue
+        for r in rows:
+            lat, lng = r.get("Y"), r.get("X")  # X = kinh độ, Y = vĩ độ
+            if not lat or not lng:
+                continue
+            stops.append({
+                "provider": "vietmap", "plate": v["plate"], "lat": float(lat), "lng": float(lng),
+                "address": (r.get("Address") or "").strip(), "station": (r.get("Station") or "").strip(),
+                "minutes": int((r.get("Duration") or 0) / 60),
+                "from": r.get("FromTime"), "to": r.get("ToTime"),
+            })
+    return stops
+
+def _binhanh_stops(days: int, min_stop_minutes: int, progress) -> list:
+    """Tự tính các lần dừng từ lộ trình Bình Anh: chuỗi điểm liên tiếp có tốc độ 0, đứng gần nhau."""
+    raw = _binhanh_post("tracking", {"IsFuel": True}, timeout=20).get("Vehicles") or []
+    plates = [_normalize_plate(v.get("VehiclePlate")) for v in raw if v.get("VehiclePlate")]
+    today = datetime.now(timezone(timedelta(hours=7))).replace(tzinfo=None, hour=0, minute=0, second=0, microsecond=0)
+    n_days = max(1, min(days, 31))
+    stops = []
+
+    def flush(seg, plate):
+        if not seg:
+            return
+        t0 = datetime.fromisoformat(seg[0]["LocalTime"])
+        t1 = datetime.fromisoformat(seg[-1]["LocalTime"])
+        minutes = int((t1 - t0).total_seconds() / 60)
+        if minutes < min_stop_minutes:
+            return
+        mid = seg[len(seg) // 2]
+        stops.append({
+            "provider": "binhanh", "plate": _format_binhanh_plate(plate),
+            "lat": float(mid["Latitude"]), "lng": float(mid["Longitude"]),
+            "address": (mid.get("Address") or "").strip(), "station": "",
+            "minutes": minutes, "from": seg[0]["LocalTime"], "to": seg[-1]["LocalTime"],
+        })
+
+    for i, plate in enumerate(plates, 1):
+        for d in range(n_days):
+            day = today - timedelta(days=d)
+            progress(f"Bình Anh: xe {_format_binhanh_plate(plate)} ({i}/{len(plates)}), ngày {day:%d/%m}")
+            try:
+                routes = _binhanh_post("route", {
+                    "vehiclePlate": plate,
+                    "fromDate": day.strftime("%Y-%m-%dT00:00:00"),
+                    "toDate": day.strftime("%Y-%m-%dT23:59:59"),
+                }, timeout=90).get("Routes") or []
+            except HTTPException as e:
+                print(f"[locations] Bình Anh {plate} {day:%Y-%m-%d}: {e.detail}")
+                continue
+            seg = []
+            for r in routes:
+                if not r.get("Latitude") or not r.get("Longitude") or not r.get("LocalTime"):
+                    continue
+                still = (r.get("Speed") or 0) <= 2
+                if still and (not seg or haversine_distance(
+                        seg[0]["Latitude"], seg[0]["Longitude"], r["Latitude"], r["Longitude"]) <= 150):
+                    seg.append(r)
+                else:
+                    flush(seg, plate)
+                    seg = [r] if still else []
+            flush(seg, plate)
+    return stops
+
+def _cluster_stops(stops: list) -> list:
+    """Gom các lần dừng cách nhau không quá LOCATION_CLUSTER_METERS thành một cụm."""
+    clusters = []
+    for st in sorted(stops, key=lambda x: -x["minutes"]):
+        target = None
+        for c in clusters:
+            if haversine_distance(c["lat"], c["lng"], st["lat"], st["lng"]) <= LOCATION_CLUSTER_METERS:
+                target = c
+                break
+        if target is None:
+            target = {"lat": st["lat"], "lng": st["lng"], "stops": []}
+            clusters.append(target)
+        target["stops"].append(st)
+    out = []
+    for c in clusters:
+        ss = c["stops"]
+        addr_count, station_count = {}, {}
+        for s_ in ss:
+            if s_["address"]:
+                addr_count[s_["address"]] = addr_count.get(s_["address"], 0) + 1
+            if s_["station"]:
+                station_count[s_["station"]] = station_count.get(s_["station"], 0) + 1
+        times = [t for s_ in ss for t in (s_["from"], s_["to"]) if t]
+        out.append({
+            "lat": c["lat"], "lng": c["lng"],
+            "address": max(addr_count, key=addr_count.get) if addr_count else None,
+            "station": max(station_count, key=station_count.get) if station_count else None,
+            "providers": ",".join(sorted({s_["provider"] for s_ in ss})),
+            "visit_count": len(ss),
+            "total_minutes": sum(s_["minutes"] for s_ in ss),
+            "vehicles": sorted({s_["plate"] for s_ in ss}),
+            "first_seen": min(times)[:19] if times else None,
+            "last_seen": max(times)[:19] if times else None,
+        })
+    return out
+
+def _save_location_suggestions(clusters: list, min_visits: int) -> dict:
+    conn = get_db()
+    cur = conn.cursor()
+    try:
+        cur.execute("SELECT id, latitude, longitude, radius_m FROM locations WHERE is_active = TRUE AND latitude IS NOT NULL")
+        catalog = cur.fetchall()
+        cur.execute("SELECT id, latitude, longitude, status FROM location_suggestions")
+        existing = cur.fetchall()
+        inserted = updated = skipped_catalog = skipped_few = 0
+        for c in clusters:
+            if c["visit_count"] < min_visits:
+                skipped_few += 1
+                continue
+            # Đã có trong danh mục thì không gợi ý nữa
+            if any(haversine_distance(l["latitude"], l["longitude"], c["lat"], c["lng"])
+                   <= max(l["radius_m"] or 300, LOCATION_CLUSTER_METERS) for l in catalog):
+                skipped_catalog += 1
+                continue
+            values = (c["providers"], c["address"], c["station"], c["visit_count"], c["total_minutes"],
+                      len(c["vehicles"]), ", ".join(c["vehicles"]), c["first_seen"], c["last_seen"])
+            match = next((e for e in existing if haversine_distance(
+                e["latitude"], e["longitude"], c["lat"], c["lng"]) <= LOCATION_CLUSTER_METERS), None)
+            if match:
+                # Giữ nguyên trạng thái (đã bỏ qua thì vẫn bỏ qua), chỉ cập nhật số liệu lần quét mới nhất
+                cur.execute(
+                    """UPDATE location_suggestions SET providers = %s, address = %s, station_name = %s,
+                       visit_count = %s, total_minutes = %s, vehicle_count = %s, vehicles = %s,
+                       first_seen = %s, last_seen = %s, updated_at = CURRENT_TIMESTAMP WHERE id = %s""",
+                    values + (match["id"],),
+                )
+                updated += 1
+            else:
+                cur.execute(
+                    """INSERT INTO location_suggestions (providers, address, station_name, visit_count, total_minutes,
+                       vehicle_count, vehicles, first_seen, last_seen, latitude, longitude)
+                       VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s) RETURNING id""",
+                    values + (c["lat"], c["lng"]),
+                )
+                existing.append({"id": cur.fetchone()["id"], "latitude": c["lat"], "longitude": c["lng"], "status": "PENDING"})
+                inserted += 1
+        conn.commit()
+        return {"inserted": inserted, "updated": updated,
+                "skipped_in_catalog": skipped_catalog, "skipped_few_visits": skipped_few}
+    finally:
+        cur.close()
+        conn.close()
+
+def _run_location_scan(req: LocationScanRequest):
+    def progress(msg):
+        _location_scan["progress"] = msg
+    result = {"vietmap_stops": 0, "binhanh_stops": 0, "errors": []}
+    try:
+        stops = []
+        if (req.vietmap_days or 0) > 0:
+            try:
+                vm = _vietmap_stops(req.vietmap_days, req.min_stop_minutes or 15, progress)
+                result["vietmap_stops"] = len(vm)
+                stops += vm
+            except Exception as e:
+                result["errors"].append(f"Vietmap: {getattr(e, 'detail', e)}")
+        if (req.binhanh_days or 0) > 0:
+            try:
+                ba = _binhanh_stops(req.binhanh_days, req.min_stop_minutes or 15, progress)
+                result["binhanh_stops"] = len(ba)
+                stops += ba
+            except Exception as e:
+                result["errors"].append(f"Bình Anh: {getattr(e, 'detail', e)}")
+        progress("Đang gom cụm và lưu gợi ý")
+        clusters = _cluster_stops(stops)
+        result["clusters"] = len(clusters)
+        result.update(_save_location_suggestions(clusters, max(1, req.min_visits or 2)))
+        _location_scan["result"] = result
+    except Exception as e:
+        _location_scan["error"] = str(e)
+        _location_scan["result"] = result
+    finally:
+        _location_scan["running"] = False
+        _location_scan["finished_at"] = datetime.now(timezone.utc).isoformat()
+        _location_scan["progress"] = "Hoàn tất" if not _location_scan["error"] else "Lỗi"
+
+@app.post("/api/v1/locations/scan")
+def start_location_scan(req: LocationScanRequest, current_user: dict = Depends(require_dispatch_staff)):
+    with _location_scan_lock:
+        if _location_scan["running"]:
+            return {"started": False, "message": "Đang có một lượt quét chạy, vui lòng chờ", **_location_scan}
+        _location_scan.update({"running": True, "started_at": datetime.now(timezone.utc).isoformat(),
+                               "finished_at": None, "progress": "Bắt đầu quét", "result": None, "error": None})
+    threading.Thread(target=_run_location_scan, args=(req,), daemon=True).start()
+    return {"started": True, "message": "Đã bắt đầu quét lịch sử dừng đỗ", **_location_scan}
+
+@app.get("/api/v1/locations/scan/status")
+def location_scan_status(current_user: dict = Depends(require_dispatch_staff)):
+    return dict(_location_scan)
+
+@app.get("/api/v1/location-suggestions")
+def get_location_suggestions(status_filter: Optional[str] = "PENDING", current_user: dict = Depends(require_dispatch_staff)):
+    conn = get_db()
+    cur = conn.cursor()
+    st = (status_filter or "").strip().upper()
+    if st in ("PENDING", "APPROVED", "IGNORED"):
+        cur.execute("SELECT * FROM location_suggestions WHERE status = %s ORDER BY visit_count DESC, total_minutes DESC", (st,))
+    else:
+        cur.execute("SELECT * FROM location_suggestions ORDER BY visit_count DESC, total_minutes DESC")
+    rows = cur.fetchall()
+    cur.close()
+    conn.close()
+    return rows
+
+@app.post("/api/v1/location-suggestions/{suggestion_id}/approve", status_code=status.HTTP_201_CREATED)
+def approve_location_suggestion(suggestion_id: int, body: LocationSuggestionApprove,
+                                current_user: dict = Depends(require_dispatch_staff)):
+    conn = get_db()
+    cur = conn.cursor()
+    try:
+        cur.execute("SELECT * FROM location_suggestions WHERE id = %s", (suggestion_id,))
+        sug = cur.fetchone()
+        if not sug:
+            raise HTTPException(status_code=404, detail="Không tìm thấy gợi ý")
+        if sug["status"] == "APPROVED" and sug["location_id"]:
+            raise HTTPException(status_code=400, detail="Gợi ý này đã được duyệt")
+        name = _clean(body.name) or sug["station_name"] or sug["address"]
+        if not name:
+            raise HTTPException(status_code=400, detail="Tên điểm là bắt buộc")
+        cur.execute("SELECT id FROM locations WHERE is_active = TRUE AND LOWER(name) = LOWER(%s)", (name,))
+        if cur.fetchone():
+            raise HTTPException(status_code=400, detail=f"Điểm '{name}' đã có trong danh mục")
+        cur.execute(
+            """INSERT INTO locations (name, address, kind, latitude, longitude, radius_m, note, source)
+               VALUES (%s, %s, %s, %s, %s, 300, %s, %s) RETURNING *""",
+            (name, _clean(body.address) or sug["address"], _clean_kind(body.kind),
+             sug["latitude"], sug["longitude"], _clean(body.note), "GPS:" + (sug["providers"] or "")),
+        )
+        loc = cur.fetchone()
+        cur.execute(
+            "UPDATE location_suggestions SET status = 'APPROVED', location_id = %s, updated_at = CURRENT_TIMESTAMP WHERE id = %s",
+            (loc["id"], suggestion_id),
+        )
+        conn.commit()
+        cur.close()
+        conn.close()
+        return loc
+    except HTTPException:
+        conn.rollback(); conn.close(); raise
+    except Exception as e:
+        conn.rollback(); conn.close()
+        raise HTTPException(status_code=400, detail=str(e))
+
+@app.post("/api/v1/location-suggestions/{suggestion_id}/ignore")
+def ignore_location_suggestion(suggestion_id: int, current_user: dict = Depends(require_dispatch_staff)):
+    conn = get_db()
+    cur = conn.cursor()
+    cur.execute(
+        "UPDATE location_suggestions SET status = 'IGNORED', updated_at = CURRENT_TIMESTAMP WHERE id = %s AND status = 'PENDING' RETURNING id",
+        (suggestion_id,),
+    )
+    row = cur.fetchone()
+    conn.commit()
+    cur.close()
+    conn.close()
+    if not row:
+        raise HTTPException(status_code=404, detail="Không tìm thấy gợi ý đang chờ duyệt")
+    return {"message": "Đã bỏ qua gợi ý"}
+
+@app.post("/api/v1/location-suggestions/{suggestion_id}/restore")
+def restore_location_suggestion(suggestion_id: int, current_user: dict = Depends(require_dispatch_staff)):
+    conn = get_db()
+    cur = conn.cursor()
+    cur.execute(
+        "UPDATE location_suggestions SET status = 'PENDING', updated_at = CURRENT_TIMESTAMP WHERE id = %s AND status = 'IGNORED' RETURNING id",
+        (suggestion_id,),
+    )
+    row = cur.fetchone()
+    conn.commit()
+    cur.close()
+    conn.close()
+    if not row:
+        raise HTTPException(status_code=404, detail="Không tìm thấy gợi ý đã bỏ qua")
+    return {"message": "Đã đưa gợi ý về hàng chờ duyệt"}
+
 @app.get("/api/v1/gas-stations")
 def get_gas_stations(current_user: dict = Depends(get_current_user)):
     conn = get_db()
@@ -2473,23 +3097,27 @@ def get_reports_summary(current_user: dict = Depends(get_current_user)):
 # 6. Quản lý Đơn hàng (Orders)
 @app.post("/api/v1/orders", status_code=status.HTTP_201_CREATED)
 def create_order(o: OrderCreate, current_user: dict = Depends(get_current_user)):
+    _validate_order_point(o.pickup_lat, o.pickup_lng, "Nơi nhận hàng")
+    _validate_order_point(o.delivery_lat, o.delivery_lng, "Điểm giao hàng")
     conn = get_db()
     cur = conn.cursor()
     try:
         cur.execute(
-            """INSERT INTO orders (order_code, factory_code, product_id, transport_type, customer_group_id,
+            """INSERT INTO orders (order_code, customer_code, factory_code, product_id, product_detail, transport_type, carrier_name, customer_group_id,
                                   pickup_address, pickup_lat, pickup_lng, delivery_address, delivery_lat, delivery_lng,
+                                  pickup_radius_m, delivery_radius_m,
                                   assigned_vehicle_plate, assigned_driver_id, cargo_weight_tons)
-               VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s) RETURNING *""",
-            (o.order_code, o.factory_code, o.product_id, o.transport_type, o.customer_group_id,
+               VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s) RETURNING *""",
+            (o.order_code, (o.customer_code or "").strip() or None, o.factory_code, o.product_id, (o.product_detail or "").strip() or None, o.transport_type, (o.carrier_name or "").strip() or None, o.customer_group_id,
              o.pickup_address, o.pickup_lat, o.pickup_lng, o.delivery_address, o.delivery_lat, o.delivery_lng,
+             o.pickup_radius_m, o.delivery_radius_m,
              o.assigned_vehicle_plate, o.assigned_driver_id, o.cargo_weight_tons)
         )
         conn.commit()
         created = cur.fetchone()
         cur.close()
         conn.close()
-        return created
+        return _attach_photo_geo_check(created)
     except HTTPException:
         conn.rollback()
         conn.close()
@@ -2513,7 +3141,7 @@ def get_orders(current_user: dict = Depends(get_current_user)):
     orders = cur.fetchall()
     cur.close()
     conn.close()
-    return orders
+    return [_attach_photo_geo_check(r) for r in orders]
 
 @app.put("/api/v1/orders/{order_id}")
 def update_order(order_id: int, o: OrderUpdate, current_user: dict = Depends(get_current_user)):
@@ -2522,6 +3150,8 @@ def update_order(order_id: int, o: OrderUpdate, current_user: dict = Depends(get
     allowed = (username == "admin" or any(r in ["admin", "manager", "dispatcher"] for r in roles))
     if not allowed:
         raise HTTPException(status_code=403, detail="Chỉ Quản lý và Điều phối viên mới có quyền cập nhật đơn hàng")
+    _validate_order_point(o.pickup_lat, o.pickup_lng, "Nơi nhận hàng")
+    _validate_order_point(o.delivery_lat, o.delivery_lng, "Điểm giao hàng")
 
     conn = get_db()
     cur = conn.cursor()
@@ -2536,36 +3166,40 @@ def update_order(order_id: int, o: OrderUpdate, current_user: dict = Depends(get
         if o.order_code is not None:
             fields.append("order_code = %s")
             values.append(o.order_code.strip())
+        if o.customer_code is not None:
+            fields.append("customer_code = %s")
+            values.append(o.customer_code.strip() or None)
         if o.factory_code is not None:
             fields.append("factory_code = %s")
             values.append(o.factory_code.strip())
         if o.product_id is not None:
             fields.append("product_id = %s")
             values.append(o.product_id)
+        if o.product_detail is not None:
+            fields.append("product_detail = %s")
+            values.append(o.product_detail.strip() or None)
         if o.transport_type is not None:
             fields.append("transport_type = %s")
             values.append(o.transport_type)
+        if o.carrier_name is not None:
+            fields.append("carrier_name = %s")
+            values.append(o.carrier_name.strip() or None)
         if o.customer_group_id is not None:
             fields.append("customer_group_id = %s")
             values.append(o.customer_group_id)
         if o.pickup_address is not None:
             fields.append("pickup_address = %s")
             values.append(o.pickup_address)
-        if o.pickup_lat is not None:
-            fields.append("pickup_lat = %s")
-            values.append(o.pickup_lat)
-        if o.pickup_lng is not None:
-            fields.append("pickup_lng = %s")
-            values.append(o.pickup_lng)
+        # Tọa độ và bán kính: gửi null là xóa, không gửi là giữ nguyên
+        sent = o.model_fields_set
+        for _col in ("pickup_lat", "pickup_lng", "pickup_radius_m",
+                     "delivery_lat", "delivery_lng", "delivery_radius_m"):
+            if _col in sent:
+                fields.append(f"{_col} = %s")
+                values.append(getattr(o, _col))
         if o.delivery_address is not None:
             fields.append("delivery_address = %s")
             values.append(o.delivery_address)
-        if o.delivery_lat is not None:
-            fields.append("delivery_lat = %s")
-            values.append(o.delivery_lat)
-        if o.delivery_lng is not None:
-            fields.append("delivery_lng = %s")
-            values.append(o.delivery_lng)
         if o.assigned_vehicle_plate is not None:
             fields.append("assigned_vehicle_plate = %s")
             values.append(o.assigned_vehicle_plate)
@@ -2589,7 +3223,7 @@ def update_order(order_id: int, o: OrderUpdate, current_user: dict = Depends(get
 
         cur.close()
         conn.close()
-        return updated
+        return _attach_photo_geo_check(updated)
     except HTTPException:
         conn.close()
         raise
@@ -3151,7 +3785,7 @@ def submit_order_attachment(
         conn.commit()
         cur.close()
         conn.close()
-        return dict(updated)
+        return _attach_photo_geo_check(updated)
     except HTTPException:
         raise
     except Exception as e:

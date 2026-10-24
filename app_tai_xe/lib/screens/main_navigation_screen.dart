@@ -33,6 +33,10 @@ class _MainNavigationScreenState extends State<MainNavigationScreen> {
   int _userFilteredCount = 0;
   int _gasStationFilteredCount = 0;
   int _gasStationTotalCount = 0;
+  int _customerFilteredCount = 0;
+  int _customerTotalCount = 0;
+  int _locationFilteredCount = 0;
+  int _locationTotalCount = 0;
   int _userTotalCount = 0;
   // Đồng bộ trạng thái duyệt của Điều phối định kỳ: xe chỉ "Đủ điều kiện chạy" khi server trả approved
   Timer? _approvalSyncTimer;
@@ -102,6 +106,7 @@ class _MainNavigationScreenState extends State<MainNavigationScreen> {
     "Cấu Hình Nhắc Nhở & Kịch Bản Nền",
     "Cấu Hình Proxy AI & Trợ Lý Thông Minh",
     "Quản Lý Khách Hàng",
+    "Điểm Nhận / Giao Hàng",
   ];
 
   String _getAppTitle() {
@@ -119,6 +124,8 @@ class _MainNavigationScreenState extends State<MainNavigationScreen> {
     final isVehiclesTab = _currentRoot == 2 && _activeManagementTab == 2;
     final isUsersTab = _currentRoot == 2 && _activeManagementTab == 3;
     final isGasStationsTab = _currentRoot == 2 && _activeManagementTab == 4;
+    final isCustomersTab = _currentRoot == 2 && _activeManagementTab == 9;
+    final isLocationsTab = _currentRoot == 2 && _activeManagementTab == 10;
 
     String? countLabel;
     if (isOrdersTab && _orderTotalCount > 0) {
@@ -137,6 +144,14 @@ class _MainNavigationScreenState extends State<MainNavigationScreen> {
       countLabel = _gasStationFilteredCount == _gasStationTotalCount
           ? "$_gasStationTotalCount trạm dầu"
           : "$_gasStationFilteredCount/$_gasStationTotalCount trạm dầu";
+    } else if (isCustomersTab && _customerTotalCount > 0) {
+      countLabel = _customerFilteredCount == _customerTotalCount
+          ? "$_customerTotalCount khách hàng"
+          : "$_customerFilteredCount/$_customerTotalCount khách hàng";
+    } else if (isLocationsTab && _locationTotalCount > 0) {
+      countLabel = _locationFilteredCount == _locationTotalCount
+          ? "$_locationTotalCount điểm"
+          : "$_locationFilteredCount/$_locationTotalCount điểm";
     }
 
     if (countLabel == null) {
@@ -565,6 +580,15 @@ class _MainNavigationScreenState extends State<MainNavigationScreen> {
                       subtitle: "Danh sách khách hàng, liên hệ",
                       onTap: () => _onSelectManagementTab(9),
                     ),
+                    // Điểm nhận / giao: Điều phối, Quản lý / Giám đốc, Admin
+                    _buildDrawerItem(
+                      isSelected: _currentRoot == 2 && _activeManagementTab == 10,
+                      icon: Icons.place_outlined,
+                      activeIcon: Icons.place,
+                      title: "Điểm nhận / giao",
+                      subtitle: "Kho, cảng, gợi ý từ GPS",
+                      onTap: () => _onSelectManagementTab(10),
+                    ),
                   ],
                   // Chỉ Admin và Quản lý / Giám đốc (manager) được thấy các mục dưới
                   if (state.currentUsername == 'admin' ||
@@ -921,6 +945,24 @@ class _MainNavigationScreenState extends State<MainNavigationScreen> {
         },
         onOpenInspectionScreen: () {
           _onSelectRoot(1);
+        },
+        onCustomerCountChanged: (filtered, total) {
+          if (_customerFilteredCount != filtered ||
+              _customerTotalCount != total) {
+            setState(() {
+              _customerFilteredCount = filtered;
+              _customerTotalCount = total;
+            });
+          }
+        },
+        onLocationCountChanged: (filtered, total) {
+          if (_locationFilteredCount != filtered ||
+              _locationTotalCount != total) {
+            setState(() {
+              _locationFilteredCount = filtered;
+              _locationTotalCount = total;
+            });
+          }
         },
         onVehicleCountChanged: (filtered, total) {
           if (_vehicleFilteredCount != filtered ||

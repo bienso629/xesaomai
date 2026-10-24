@@ -1,4 +1,5 @@
 import 'customers_screen.dart';
+import 'locations_screen.dart';
 import 'dart:async';
 import 'dart:io';
 import 'package:flutter/material.dart';
@@ -24,6 +25,8 @@ class DispatchSupervisorScreen extends StatefulWidget {
   final void Function(int filtered, int total)? onOrderCountChanged;
   final void Function(int filtered, int total)? onUserCountChanged;
   final void Function(int filtered, int total)? onGasStationCountChanged;
+  final void Function(int filtered, int total)? onCustomerCountChanged;
+  final void Function(int filtered, int total)? onLocationCountChanged;
 
   const DispatchSupervisorScreen({
     super.key,
@@ -35,6 +38,8 @@ class DispatchSupervisorScreen extends StatefulWidget {
     this.onOrderCountChanged,
     this.onUserCountChanged,
     this.onGasStationCountChanged,
+    this.onCustomerCountChanged,
+    this.onLocationCountChanged,
   });
 
   static Future<void> showShiftHistoryDialog(
@@ -440,7 +445,18 @@ class _DispatchSupervisorScreenState extends State<DispatchSupervisorScreen> {
         if (!canManageCustomers) {
           return _buildOverviewTab(state);
         }
-        return const CustomersScreen();
+        return CustomersScreen(onCountChanged: widget.onCustomerCountChanged);
+      case 10:
+        // Điểm nhận / giao: Điều phối, Quản lý / Giám đốc, Admin
+        final canManageLocations =
+            state.currentUsername == 'admin' ||
+            state.userRoles.any(
+              (r) => ['admin', 'manager', 'dispatcher'].contains(r.toLowerCase()),
+            );
+        if (!canManageLocations) {
+          return _buildOverviewTab(state);
+        }
+        return LocationsScreen(onCountChanged: widget.onLocationCountChanged);
       default:
         return _buildOverviewTab(state);
     }
@@ -10642,8 +10658,483 @@ class _DispatchSupervisorScreenState extends State<DispatchSupervisorScreen> {
     );
   }
 
+  // HELPER: Ô NƠI NHẬN / ĐIỂM GIAO (DANH MỤC ĐIỂM + ĐỊA CHỈ ĐƠN CŨ)
+  /// Giá trị điền vào ô khi chọn một điểm trong danh mục.
+  String _locationFillText(Map<String, dynamic> loc) {
+    final name = (loc['name'] ?? '').toString().trim();
+    final addr = (loc['address'] ?? '').toString().trim();
+    if (addr.isEmpty || addr.toLowerCase() == name.toLowerCase()) return name;
+    return "$name - $addr";
+  }
+
+  Widget _buildLocationAutocomplete({
+    required TextEditingController controller,
+    required String labelText,
+    required IconData prefixIcon,
+    required List<Map<String, dynamic>> catalog,
+    required List<String> history,
+    String? hintText,
+    bool isRequired = false,
+    void Function(Map<String, dynamic> loc)? onCatalogSelected,
+  }) {
+    // Điểm trong danh mục đứng trước, sau đó là địa chỉ đã dùng ở các đơn cũ
+    final options = <Map<String, dynamic>>[];
+    final seen = <String>{};
+    for (final loc in catalog) {
+      final value = _locationFillText(loc);
+      if (value.isEmpty || !seen.add(value.toLowerCase())) continue;
+      options.add({
+        'value': value,
+        'title': (loc['name'] ?? '').toString().trim(),
+        'sub': (loc['address'] ?? '').toString().trim(),
+        'catalog': true,
+        'loc': loc,
+      });
+    }
+    for (final h in history) {
+      final value = h.trim();
+      if (value.isEmpty || !seen.add(value.toLowerCase())) continue;
+      options.add({'value': value, 'title': value, 'sub': '', 'catalog': false});
+    }
+
+    return Autocomplete<Map<String, dynamic>>(
+      initialValue: TextEditingValue(text: controller.text),
+      displayStringForOption: (o) => o['value'].toString(),
+      optionsBuilder: (TextEditingValue v) {
+        final q = v.text.trim().toLowerCase();
+        if (q.isEmpty) return options.take(8);
+        return options
+            .where((o) => [o['value'], o['title'], o['sub']]
+                .any((e) => e.toString().toLowerCase().contains(q)))
+            .take(10);
+      },
+      onSelected: (o) {
+        controller.text = o['value'].toString();
+        if (o['catalog'] == true && o['loc'] is Map && onCatalogSelected != null) {
+          onCatalogSelected(Map<String, dynamic>.from(o['loc'] as Map));
+        }
+      },
+      fieldViewBuilder: (context, fieldCtrl, focusNode, onFieldSubmitted) {
+        // Đồng bộ dữ liệu khi người dùng nhập tay tự do
+        fieldCtrl.addListener(() {
+          if (controller.text != fieldCtrl.text) controller.text = fieldCtrl.text;
+        });
+        return Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            _buildFormLabel(isRequired ? "$labelText *" : labelText),
+            TextField(
+              controller: fieldCtrl,
+              focusNode: focusNode,
+              decoration: InputDecoration(isDense: true, hintText: hintText),
+              onSubmitted: (_) => onFieldSubmitted(),
+            ),
+          ],
+        );
+      },
+      optionsViewBuilder: (context, onSelected, opts) {
+        return Align(
+          alignment: Alignment.topLeft,
+          child: Material(
+            elevation: 4,
+            borderRadius: BorderRadius.circular(4),
+            color: Colors.white,
+            child: ConstrainedBox(
+              constraints: const BoxConstraints(maxHeight: 260, maxWidth: 520),
+              child: ListView.separated(
+                padding: const EdgeInsets.symmetric(vertical: 4),
+                shrinkWrap: true,
+                itemCount: opts.length,
+                separatorBuilder: (_, _) => Divider(height: 1, color: Colors.grey.shade200),
+                itemBuilder: (context, index) {
+                  final o = opts.elementAt(index);
+                  final isCatalog = o['catalog'] == true;
+                  final sub = o['sub'].toString();
+                  return InkWell(
+                    hoverColor: Colors.blue.shade50,
+                    onTap: () => onSelected(o),
+                    child: Padding(
+                      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 9),
+                      child: Row(
+                        children: [
+                          Icon(
+                            isCatalog ? Icons.place : prefixIcon,
+                            size: 16,
+                            color: isCatalog ? Colors.teal.shade700 : Colors.blue.shade700,
+                          ),
+                          const SizedBox(width: 10),
+                          Expanded(
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              mainAxisSize: MainAxisSize.min,
+                              children: [
+                                Text(
+                                  o['title'].toString(),
+                                  overflow: TextOverflow.ellipsis,
+                                  style: TextStyle(
+                                    fontSize: 13,
+                                    color: Colors.black87,
+                                    fontWeight: isCatalog ? FontWeight.w600 : FontWeight.normal,
+                                  ),
+                                ),
+                                if (sub.isNotEmpty)
+                                  Text(
+                                    sub,
+                                    overflow: TextOverflow.ellipsis,
+                                    style: TextStyle(fontSize: 11.5, color: Colors.grey.shade600),
+                                  ),
+                              ],
+                            ),
+                          ),
+                          if (isCatalog) ...[
+                            const SizedBox(width: 8),
+                            Container(
+                              padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                              decoration: BoxDecoration(
+                                color: Colors.teal.shade50,
+                                borderRadius: BorderRadius.circular(4),
+                                border: Border.all(color: Colors.teal.shade200),
+                              ),
+                              child: Text(
+                                "Danh mục",
+                                style: TextStyle(
+                                  fontSize: 10.5,
+                                  fontWeight: FontWeight.bold,
+                                  color: Colors.teal.shade800,
+                                ),
+                              ),
+                            ),
+                          ],
+                        ],
+                      ),
+                    ),
+                  );
+                },
+              ),
+            ),
+          ),
+        );
+      },
+    );
+  }
+
+  // HELPER: TỌA ĐỘ NƠI NHẬN / ĐIỂM GIAO (ĐỐI CHIẾU GPS ẢNH TÀI XẾ)
+  static String _coordText(dynamic v) {
+    if (v == null) return '';
+    final d = double.tryParse(v.toString());
+    return d == null ? '' : d.toString();
+  }
+
+  /// Điền tọa độ và bán kính từ một điểm trong danh mục.
+  void _fillPointCoords(
+    Map<String, dynamic> loc,
+    TextEditingController latCtrl,
+    TextEditingController lngCtrl,
+    TextEditingController radiusCtrl,
+  ) {
+    final lat = _coordText(loc['latitude']);
+    final lng = _coordText(loc['longitude']);
+    if (lat.isEmpty || lng.isEmpty) return;
+    latCtrl.text = lat;
+    lngCtrl.text = lng;
+    final r = int.tryParse((loc['radius_m'] ?? '').toString());
+    radiusCtrl.text = r == null ? '' : r.toString();
+  }
+
+  Widget _buildPointCoordsRow({
+    required TextEditingController latCtrl,
+    required TextEditingController lngCtrl,
+    required TextEditingController radiusCtrl,
+  }) {
+    InputDecoration deco(String hint) => InputDecoration(
+          isDense: true,
+          hintText: hint,
+          hintStyle: TextStyle(fontSize: 12, color: Colors.grey.shade500),
+        );
+    Widget col(String label, Widget field) => Expanded(
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Text(label, style: TextStyle(fontSize: 11.5, color: Colors.grey.shade700)),
+              const SizedBox(height: 4),
+              field,
+            ],
+          ),
+        );
+    const numKb = TextInputType.numberWithOptions(decimal: true, signed: true);
+    return Padding(
+      padding: const EdgeInsets.only(top: 8),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          col("Vĩ độ (Latitude)", TextField(
+            controller: latCtrl,
+            keyboardType: numKb,
+            style: const TextStyle(fontSize: 13),
+            decoration: deco("VD: 20.0789"),
+          )),
+          const SizedBox(width: 10),
+          col("Kinh độ (Longitude)", TextField(
+            controller: lngCtrl,
+            keyboardType: numKb,
+            style: const TextStyle(fontSize: 13),
+            decoration: deco("VD: 105.8604"),
+          )),
+          const SizedBox(width: 10),
+          SizedBox(
+            width: 110,
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Text("Bán kính (m)", style: TextStyle(fontSize: 11.5, color: Colors.grey.shade700)),
+                const SizedBox(height: 4),
+                TextField(
+                  controller: radiusCtrl,
+                  keyboardType: TextInputType.number,
+                  style: const TextStyle(fontSize: 13),
+                  decoration: deco("300"),
+                ),
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  /// Đọc tọa độ trong form. Bỏ trống cả hai là hợp lệ (đơn không có tọa độ).
+  ({double? lat, double? lng, int? radius, String? error}) _readPointCoords(
+    String label,
+    TextEditingController latCtrl,
+    TextEditingController lngCtrl,
+    TextEditingController radiusCtrl,
+  ) {
+    String norm(String v) => v.trim().replaceAll(',', '.');
+    final latT = norm(latCtrl.text);
+    final lngT = norm(lngCtrl.text);
+    final radT = radiusCtrl.text.trim();
+    int? radius;
+    if (radT.isNotEmpty) {
+      radius = int.tryParse(radT);
+      if (radius == null || radius < 20 || radius > 20000) {
+        return (lat: null, lng: null, radius: null,
+            error: "$label: bán kính phải là số nguyên từ 20 đến 20000 mét");
+      }
+    }
+    if (latT.isEmpty && lngT.isEmpty) {
+      return (lat: null, lng: null, radius: radius, error: null);
+    }
+    if (latT.isEmpty || lngT.isEmpty) {
+      return (lat: null, lng: null, radius: null,
+          error: "$label: phải nhập đủ cả Vĩ độ và Kinh độ");
+    }
+    final lat = double.tryParse(latT);
+    final lng = double.tryParse(lngT);
+    if (lat == null || lng == null || lat < -90 || lat > 90 || lng < -180 || lng > 180 ||
+        (lat == 0 && lng == 0)) {
+      return (lat: null, lng: null, radius: null, error: "$label: tọa độ không hợp lệ");
+    }
+    return (lat: lat, lng: lng, radius: radius, error: null);
+  }
+
+  /// Tải danh mục điểm nhận / giao cho form đơn hàng. Trả về (điểm nhận, điểm giao).
+  Future<(List<Map<String, dynamic>>, List<Map<String, dynamic>>)> _loadLocationsForOrder() async {
+    final raw = await AdminService.fetchLocations();
+    final list = raw
+        .whereType<Map>()
+        .map((e) => Map<String, dynamic>.from(e))
+        .where((e) => (e['name'] ?? '').toString().trim().isNotEmpty)
+        .toList();
+    list.sort((a, b) => (a['name'] ?? '')
+        .toString()
+        .toLowerCase()
+        .compareTo((b['name'] ?? '').toString().toLowerCase()));
+    bool isKind(Map<String, dynamic> e, String k) {
+      final kind = (e['kind'] ?? 'BOTH').toString().toUpperCase();
+      return kind == k || kind == 'BOTH' || kind.isEmpty;
+    }
+    return (
+      list.where((e) => isKind(e, 'PICKUP')).toList(),
+      list.where((e) => isKind(e, 'DELIVERY')).toList(),
+    );
+  }
+
+  // HELPER: Ô MÃ KHÁCH HÀNG (AUTOCOMPLETE TỪ DANH SÁCH KHÁCH HÀNG)
+  Widget _buildCustomerCodeAutocomplete({
+    required TextEditingController controller,
+    required List<Map<String, dynamic>> customers,
+  }) {
+    String norm(String v) => v.trim().toLowerCase();
+    Map<String, dynamic>? findByCode(String code) {
+      final c = norm(code);
+      if (c.isEmpty) return null;
+      for (final cu in customers) {
+        if (norm((cu['code'] ?? '').toString()) == c) return cu;
+      }
+      return null;
+    }
+
+    return Autocomplete<Map<String, dynamic>>(
+      initialValue: TextEditingValue(text: controller.text),
+      displayStringForOption: (cu) => (cu['code'] ?? '').toString(),
+      optionsBuilder: (TextEditingValue value) {
+        final q = norm(value.text);
+        if (q.isEmpty) return customers.take(8);
+        return customers
+            .where((cu) =>
+                norm((cu['name'] ?? '').toString()).contains(q) ||
+                norm((cu['code'] ?? '').toString()).contains(q))
+            .take(10);
+      },
+      onSelected: (cu) {
+        controller.text = (cu['code'] ?? '').toString();
+      },
+      fieldViewBuilder: (context, fieldCtrl, focusNode, onFieldSubmitted) {
+        fieldCtrl.addListener(() {
+          if (controller.text != fieldCtrl.text) {
+            controller.text = fieldCtrl.text;
+          }
+        });
+        return Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            _buildFormLabel("Mã khách hàng"),
+            TextField(
+              controller: fieldCtrl,
+              focusNode: focusNode,
+              decoration: const InputDecoration(
+                isDense: true,
+                hintText: "Gõ tên khách hàng để tìm",
+              ),
+              onSubmitted: (_) => onFieldSubmitted(),
+            ),
+            ValueListenableBuilder<TextEditingValue>(
+              valueListenable: fieldCtrl,
+              builder: (context, value, _) {
+                if (value.text.trim().isEmpty || customers.isEmpty) {
+                  return const SizedBox.shrink();
+                }
+                final match = findByCode(value.text);
+                return Padding(
+                  padding: const EdgeInsets.only(top: 4),
+                  child: Text(
+                    match != null
+                        ? (match['name'] ?? '').toString()
+                        : "Không có trong danh sách Khách hàng",
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: TextStyle(
+                      fontSize: 11,
+                      color: match != null
+                          ? Colors.teal.shade700
+                          : Colors.grey.shade600,
+                    ),
+                  ),
+                );
+              },
+            ),
+          ],
+        );
+      },
+      optionsViewBuilder: (context, onSelected, options) {
+        return Align(
+          alignment: Alignment.topLeft,
+          child: Material(
+            elevation: 4,
+            borderRadius: BorderRadius.circular(4),
+            color: Colors.white,
+            child: ConstrainedBox(
+              constraints: const BoxConstraints(maxHeight: 260, maxWidth: 520),
+              child: ListView.separated(
+                padding: const EdgeInsets.symmetric(vertical: 4),
+                shrinkWrap: true,
+                itemCount: options.length,
+                separatorBuilder: (_, _) =>
+                    Divider(height: 1, color: Colors.grey.shade200),
+                itemBuilder: (context, index) {
+                  final cu = options.elementAt(index);
+                  final name = (cu['name'] ?? '').toString();
+                  final code = (cu['code'] ?? '').toString();
+                  return InkWell(
+                    hoverColor: Colors.blue.shade50,
+                    onTap: () => onSelected(cu),
+                    child: Padding(
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 14,
+                        vertical: 8,
+                      ),
+                      child: Row(
+                        children: [
+                          Icon(
+                            Icons.storefront_outlined,
+                            size: 16,
+                            color: Colors.blue.shade700,
+                          ),
+                          const SizedBox(width: 10),
+                          Expanded(
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                Text(
+                                  name,
+                                  style: const TextStyle(
+                                    fontSize: 13,
+                                    color: Colors.black87,
+                                    fontWeight: FontWeight.w600,
+                                  ),
+                                  overflow: TextOverflow.ellipsis,
+                                ),
+                                Text(
+                                  code,
+                                  style: TextStyle(
+                                    fontSize: 11,
+                                    color: Colors.grey.shade600,
+                                  ),
+                                  overflow: TextOverflow.ellipsis,
+                                ),
+                              ],
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                  );
+                },
+              ),
+            ),
+          ),
+        );
+      },
+    );
+  }
+
+  /// Tải danh sách khách hàng đang hoạt động cho ô Mã khách hàng.
+  Future<List<Map<String, dynamic>>> _loadCustomersForOrder() async {
+    final raw = await AdminService.fetchCustomers();
+    final list = raw
+        .whereType<Map>()
+        .map((e) => Map<String, dynamic>.from(e))
+        .where((e) => (e['code'] ?? '').toString().trim().isNotEmpty)
+        .toList();
+    list.sort((a, b) => (a['name'] ?? '')
+        .toString()
+        .toLowerCase()
+        .compareTo((b['name'] ?? '').toString().toLowerCase()));
+    return list;
+  }
+
   // DIALOG: TẠO ĐƠN HÀNG MỚI
-  void _showCreateOrderDialog() {
+  Future<void> _showCreateOrderDialog() async {
+    final (customers, (pickupCatalog, deliveryCatalog)) =
+        await (_loadCustomersForOrder(), _loadLocationsForOrder()).wait;
+    if (!mounted) return;
+    final customerCodeCtrl = TextEditingController();
+    final productDetailCtrl = TextEditingController();
+    final carrierNameCtrl = TextEditingController();
     final orderCodeCtrl = TextEditingController(
       text:
           "DH${DateTime.now().year}${(DateTime.now().month).toString().padLeft(2, '0')}${(DateTime.now().day).toString().padLeft(2, '0')}-${DateTime.now().millisecondsSinceEpoch % 10000}",
@@ -10653,6 +11144,12 @@ class _DispatchSupervisorScreenState extends State<DispatchSupervisorScreen> {
       text: "Kho Xi Măng Bỉm Sơn, Thanh Hóa",
     );
     final deliveryAddrCtrl = TextEditingController();
+    final pickupLatCtrl = TextEditingController();
+    final pickupLngCtrl = TextEditingController();
+    final pickupRadiusCtrl = TextEditingController();
+    final deliveryLatCtrl = TextEditingController();
+    final deliveryLngCtrl = TextEditingController();
+    final deliveryRadiusCtrl = TextEditingController();
     final cargoWeightCtrl = TextEditingController(text: "30.0");
     String transportType = "INTERNAL";
     int? selectedProductId = _products.isNotEmpty
@@ -10770,23 +11267,63 @@ class _DispatchSupervisorScreenState extends State<DispatchSupervisorScreen> {
                     ],
                   ),
                   const SizedBox(height: 16),
-                  // Chọn sản phẩm
-                  _buildFormLabel("Sản phẩm / Hàng hóa *"),
-                  DropdownButtonFormField<int?>(
-                    value: selectedProductId,
-                    isDense: true,
-                    decoration: const InputDecoration(isDense: true),
-                    items: _products.map((p) {
-                      final id = p['id'] as int;
-                      final name = (p['name'] ?? 'Sản phẩm').toString();
-                      return DropdownMenuItem<int?>(
-                        value: id,
-                        child: Text(name, style: const TextStyle(fontSize: 13)),
-                      );
-                    }).toList(),
-                    onChanged: (val) {
-                      setDialogState(() => selectedProductId = val);
-                    },
+                  // Mã khách hàng (full width)
+                  _buildCustomerCodeAutocomplete(
+                    controller: customerCodeCtrl,
+                    customers: customers,
+                  ),
+                  const SizedBox(height: 16),
+                  // Hàng hóa (chọn từ danh mục) | Sản phẩm (điều phối nhập tay)
+                  Row(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Expanded(
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            _buildFormLabel("Hàng hóa *"),
+                            DropdownButtonFormField<int?>(
+                              value: selectedProductId,
+                              isDense: true,
+                              isExpanded: true,
+                              decoration: const InputDecoration(isDense: true),
+                              items: _products.map((p) {
+                                final id = p['id'] as int;
+                                final name =
+                                    (p['name'] ?? 'Hàng hóa').toString();
+                                return DropdownMenuItem<int?>(
+                                  value: id,
+                                  child: Text(
+                                    name,
+                                    overflow: TextOverflow.ellipsis,
+                                    style: const TextStyle(fontSize: 13),
+                                  ),
+                                );
+                              }).toList(),
+                              onChanged: (val) {
+                                setDialogState(() => selectedProductId = val);
+                              },
+                            ),
+                          ],
+                        ),
+                      ),
+                      const SizedBox(width: 16),
+                      Expanded(
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            _buildFormLabel("Sản phẩm"),
+                            TextField(
+                              controller: productDetailCtrl,
+                              decoration: const InputDecoration(
+                                isDense: true,
+                                hintText: "Nhập tên sản phẩm",
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                    ],
                   ),
                   const SizedBox(height: 16),
                   // Trọng lượng hàng hóa
@@ -10803,50 +11340,99 @@ class _DispatchSupervisorScreenState extends State<DispatchSupervisorScreen> {
                   ),
                   const SizedBox(height: 16),
                   // Hình thức vận chuyển
-                  _buildFormLabel("Hình thức vận chuyển"),
-                  DropdownButtonFormField<String>(
-                    value: transportType,
-                    isDense: true,
-                    decoration: const InputDecoration(isDense: true),
-                    items: const [
-                      DropdownMenuItem(
-                        value: "INTERNAL",
-                        child: Text("Xe nội bộ", style: TextStyle(fontSize: 13)),
+                  // Khi chọn "Xe thuê ngoài" thì hiện thêm cột "Đơn vị vận chuyển" bên phải
+                  Row(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Expanded(
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            _buildFormLabel("Hình thức vận chuyển"),
+                            DropdownButtonFormField<String>(
+                              value: transportType,
+                              isDense: true,
+                              isExpanded: true,
+                              decoration: const InputDecoration(isDense: true),
+                              items: const [
+                                DropdownMenuItem(
+                                  value: "INTERNAL",
+                                  child: Text("Xe nội bộ", style: TextStyle(fontSize: 13)),
+                                ),
+                                DropdownMenuItem(
+                                  value: "RENTAL",
+                                  child: Text("Xe thuê ngoài", style: TextStyle(fontSize: 13)),
+                                ),
+                                DropdownMenuItem(
+                                  value: "CUSTOMER_SELF",
+                                  child: Text("Khách tự vận chuyển", style: TextStyle(fontSize: 13)),
+                                ),
+                              ],
+                              onChanged: (val) {
+                                if (val != null) {
+                                  setDialogState(() => transportType = val);
+                                }
+                              },
+                            ),
+                          ],
+                        ),
                       ),
-                      DropdownMenuItem(
-                        value: "RENTAL",
-                        child: Text("Xe thuê ngoài", style: TextStyle(fontSize: 13)),
-                      ),
-                      DropdownMenuItem(
-                        value: "CUSTOMER_SELF",
-                        child: Text("Khách tự vận chuyển", style: TextStyle(fontSize: 13)),
-                      ),
+                      if (transportType == "RENTAL") ...[
+                        const SizedBox(width: 12),
+                        Expanded(
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              _buildFormLabel("Đơn vị vận chuyển"),
+                              TextField(
+                                controller: carrierNameCtrl,
+                                style: const TextStyle(fontSize: 13),
+                                decoration: const InputDecoration(
+                                  hintText: "Nhập đơn vị vận chuyển",
+                                  isDense: true,
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
+                      ],
                     ],
-                    onChanged: (val) {
-                      if (val != null) {
-                        setDialogState(() => transportType = val);
-                      }
-                    },
                   ),
                   const SizedBox(height: 16),
                   // Điểm nhận hàng (Gợi ý tự động Autocomplete)
-                  _buildOrderAutocompleteInput(
+                  _buildLocationAutocomplete(
                     controller: pickupAddrCtrl,
                     labelText: "Nơi nhận hàng (Địa chỉ lấy hàng)",
                     prefixIcon: Icons.warehouse_outlined,
-                    suggestions: pickupSuggestions.toList(),
+                    catalog: pickupCatalog,
+                    history: pickupSuggestions.toList(),
+                    onCatalogSelected: (loc) => _fillPointCoords(
+                        loc, pickupLatCtrl, pickupLngCtrl, pickupRadiusCtrl),
                     hintText: "Nhập hoặc chọn kho hàng...",
                     isRequired: true,
                   ),
+                  _buildPointCoordsRow(
+                    latCtrl: pickupLatCtrl,
+                    lngCtrl: pickupLngCtrl,
+                    radiusCtrl: pickupRadiusCtrl,
+                  ),
                   const SizedBox(height: 16),
                   // Điểm giao hàng (Gợi ý tự động Autocomplete)
-                  _buildOrderAutocompleteInput(
+                  _buildLocationAutocomplete(
                     controller: deliveryAddrCtrl,
                     labelText: "Điểm giao hàng (Địa chỉ trả hàng)",
                     prefixIcon: Icons.location_on_outlined,
-                    suggestions: deliverySuggestions.toList(),
+                    catalog: deliveryCatalog,
+                    history: deliverySuggestions.toList(),
+                    onCatalogSelected: (loc) => _fillPointCoords(
+                        loc, deliveryLatCtrl, deliveryLngCtrl, deliveryRadiusCtrl),
                     hintText: "Nhập địa chỉ hoặc chọn công trình...",
                     isRequired: true,
+                  ),
+                  _buildPointCoordsRow(
+                    latCtrl: deliveryLatCtrl,
+                    lngCtrl: deliveryLngCtrl,
+                    radiusCtrl: deliveryRadiusCtrl,
                   ),
                   const SizedBox(height: 16),
                   // Phương tiện chỉ định
@@ -10956,16 +11542,39 @@ class _DispatchSupervisorScreenState extends State<DispatchSupervisorScreen> {
                   return;
                 }
 
+                final pickupPt = _readPointCoords(
+                    "Nơi nhận hàng", pickupLatCtrl, pickupLngCtrl, pickupRadiusCtrl);
+                final deliveryPt = _readPointCoords(
+                    "Điểm giao hàng", deliveryLatCtrl, deliveryLngCtrl, deliveryRadiusCtrl);
+                final coordError = pickupPt.error ?? deliveryPt.error;
+                if (coordError != null) {
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    SnackBar(content: Text(coordError)),
+                  );
+                  return;
+                }
+
                 Navigator.of(dialogCtx).pop();
                 setState(() => _isLoading = true);
 
                 final payload = <String, dynamic>{
                   "order_code": code,
+                  "customer_code": customerCodeCtrl.text.trim(),
                   "factory_code": factory,
                   "product_id": selectedProductId,
+                  "product_detail": productDetailCtrl.text.trim(),
                   "transport_type": transportType,
+                  "carrier_name": transportType == "RENTAL"
+                      ? carrierNameCtrl.text.trim()
+                      : "",
                   "pickup_address": pickup,
+                  "pickup_lat": pickupPt.lat,
+                  "pickup_lng": pickupPt.lng,
+                  "pickup_radius_m": pickupPt.radius,
                   "delivery_address": delivery,
+                  "delivery_lat": deliveryPt.lat,
+                  "delivery_lng": deliveryPt.lng,
+                  "delivery_radius_m": deliveryPt.radius,
                   "assigned_vehicle_plate": selectedVehiclePlate,
                   "assigned_driver_id": selectedDriverId,
                   "cargo_weight_tons": weight,
@@ -10997,8 +11606,20 @@ class _DispatchSupervisorScreenState extends State<DispatchSupervisorScreen> {
   }
 
   // DIALOG: CHỈNH SỬA ĐƠN HÀNG
-  void _showEditOrderDialog(dynamic orderData) {
+  Future<void> _showEditOrderDialog(dynamic orderData) async {
+    final (customers, (pickupCatalog, deliveryCatalog)) =
+        await (_loadCustomersForOrder(), _loadLocationsForOrder()).wait;
+    if (!mounted) return;
     final o = orderData is Map ? orderData : <String, dynamic>{};
+    final customerCodeCtrl = TextEditingController(
+      text: (o['customer_code'] ?? '').toString(),
+    );
+    final productDetailCtrl = TextEditingController(
+      text: (o['product_detail'] ?? '').toString(),
+    );
+    final carrierNameCtrl = TextEditingController(
+      text: (o['carrier_name'] ?? '').toString(),
+    );
     final orderId = o['id'] as int;
     final orderCodeCtrl = TextEditingController(
       text: (o['order_code'] ?? '').toString(),
@@ -11011,6 +11632,16 @@ class _DispatchSupervisorScreenState extends State<DispatchSupervisorScreen> {
     );
     final deliveryAddrCtrl = TextEditingController(
       text: (o['delivery_address'] ?? '').toString(),
+    );
+    final pickupLatCtrl = TextEditingController(text: _coordText(o['pickup_lat']));
+    final pickupLngCtrl = TextEditingController(text: _coordText(o['pickup_lng']));
+    final pickupRadiusCtrl = TextEditingController(
+      text: (o['pickup_radius_m'] ?? '').toString(),
+    );
+    final deliveryLatCtrl = TextEditingController(text: _coordText(o['delivery_lat']));
+    final deliveryLngCtrl = TextEditingController(text: _coordText(o['delivery_lng']));
+    final deliveryRadiusCtrl = TextEditingController(
+      text: (o['delivery_radius_m'] ?? '').toString(),
     );
     final cargoWeightCtrl = TextEditingController(
       text: (o['cargo_weight_tons']?.toString() ?? '30.0'),
@@ -11158,23 +11789,63 @@ class _DispatchSupervisorScreenState extends State<DispatchSupervisorScreen> {
                     ],
                   ),
                   const SizedBox(height: 16),
-                  // Chọn sản phẩm
-                  _buildFormLabel("Sản phẩm / Hàng hóa *"),
-                  DropdownButtonFormField<int?>(
-                    value: selectedProductId,
-                    isDense: true,
-                    decoration: const InputDecoration(isDense: true),
-                    items: _products.map((p) {
-                      final id = p['id'] as int;
-                      final name = (p['name'] ?? 'Sản phẩm').toString();
-                      return DropdownMenuItem<int?>(
-                        value: id,
-                        child: Text(name, style: const TextStyle(fontSize: 13)),
-                      );
-                    }).toList(),
-                    onChanged: (val) {
-                      setDialogState(() => selectedProductId = val);
-                    },
+                  // Mã khách hàng (full width)
+                  _buildCustomerCodeAutocomplete(
+                    controller: customerCodeCtrl,
+                    customers: customers,
+                  ),
+                  const SizedBox(height: 16),
+                  // Hàng hóa (chọn từ danh mục) | Sản phẩm (điều phối nhập tay)
+                  Row(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Expanded(
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            _buildFormLabel("Hàng hóa *"),
+                            DropdownButtonFormField<int?>(
+                              value: selectedProductId,
+                              isDense: true,
+                              isExpanded: true,
+                              decoration: const InputDecoration(isDense: true),
+                              items: _products.map((p) {
+                                final id = p['id'] as int;
+                                final name =
+                                    (p['name'] ?? 'Hàng hóa').toString();
+                                return DropdownMenuItem<int?>(
+                                  value: id,
+                                  child: Text(
+                                    name,
+                                    overflow: TextOverflow.ellipsis,
+                                    style: const TextStyle(fontSize: 13),
+                                  ),
+                                );
+                              }).toList(),
+                              onChanged: (val) {
+                                setDialogState(() => selectedProductId = val);
+                              },
+                            ),
+                          ],
+                        ),
+                      ),
+                      const SizedBox(width: 16),
+                      Expanded(
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            _buildFormLabel("Sản phẩm"),
+                            TextField(
+                              controller: productDetailCtrl,
+                              decoration: const InputDecoration(
+                                isDense: true,
+                                hintText: "Nhập tên sản phẩm",
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                    ],
                   ),
                   const SizedBox(height: 16),
                   // Trọng lượng hàng hóa
@@ -11191,50 +11862,99 @@ class _DispatchSupervisorScreenState extends State<DispatchSupervisorScreen> {
                   ),
                   const SizedBox(height: 16),
                   // Hình thức vận chuyển
-                  _buildFormLabel("Hình thức vận chuyển"),
-                  DropdownButtonFormField<String>(
-                    value: transportType,
-                    isDense: true,
-                    decoration: const InputDecoration(isDense: true),
-                    items: const [
-                      DropdownMenuItem(
-                        value: "INTERNAL",
-                        child: Text("Xe nội bộ", style: TextStyle(fontSize: 13)),
+                  // Khi chọn "Xe thuê ngoài" thì hiện thêm cột "Đơn vị vận chuyển" bên phải
+                  Row(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Expanded(
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            _buildFormLabel("Hình thức vận chuyển"),
+                            DropdownButtonFormField<String>(
+                              value: transportType,
+                              isDense: true,
+                              isExpanded: true,
+                              decoration: const InputDecoration(isDense: true),
+                              items: const [
+                                DropdownMenuItem(
+                                  value: "INTERNAL",
+                                  child: Text("Xe nội bộ", style: TextStyle(fontSize: 13)),
+                                ),
+                                DropdownMenuItem(
+                                  value: "RENTAL",
+                                  child: Text("Xe thuê ngoài", style: TextStyle(fontSize: 13)),
+                                ),
+                                DropdownMenuItem(
+                                  value: "CUSTOMER_SELF",
+                                  child: Text("Khách tự vận chuyển", style: TextStyle(fontSize: 13)),
+                                ),
+                              ],
+                              onChanged: (val) {
+                                if (val != null) {
+                                  setDialogState(() => transportType = val);
+                                }
+                              },
+                            ),
+                          ],
+                        ),
                       ),
-                      DropdownMenuItem(
-                        value: "RENTAL",
-                        child: Text("Xe thuê ngoài", style: TextStyle(fontSize: 13)),
-                      ),
-                      DropdownMenuItem(
-                        value: "CUSTOMER_SELF",
-                        child: Text("Khách tự vận chuyển", style: TextStyle(fontSize: 13)),
-                      ),
+                      if (transportType == "RENTAL") ...[
+                        const SizedBox(width: 12),
+                        Expanded(
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              _buildFormLabel("Đơn vị vận chuyển"),
+                              TextField(
+                                controller: carrierNameCtrl,
+                                style: const TextStyle(fontSize: 13),
+                                decoration: const InputDecoration(
+                                  hintText: "Nhập đơn vị vận chuyển",
+                                  isDense: true,
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
+                      ],
                     ],
-                    onChanged: (val) {
-                      if (val != null) {
-                        setDialogState(() => transportType = val);
-                      }
-                    },
                   ),
                   const SizedBox(height: 16),
                   // Điểm nhận hàng (Gợi ý tự động Autocomplete)
-                  _buildOrderAutocompleteInput(
+                  _buildLocationAutocomplete(
                     controller: pickupAddrCtrl,
                     labelText: "Nơi nhận hàng",
                     prefixIcon: Icons.warehouse_outlined,
-                    suggestions: pickupSuggestions.toList(),
+                    catalog: pickupCatalog,
+                    history: pickupSuggestions.toList(),
+                    onCatalogSelected: (loc) => _fillPointCoords(
+                        loc, pickupLatCtrl, pickupLngCtrl, pickupRadiusCtrl),
                     hintText: "Nhập hoặc chọn kho hàng...",
                     isRequired: true,
                   ),
+                  _buildPointCoordsRow(
+                    latCtrl: pickupLatCtrl,
+                    lngCtrl: pickupLngCtrl,
+                    radiusCtrl: pickupRadiusCtrl,
+                  ),
                   const SizedBox(height: 16),
                   // Điểm giao hàng (Gợi ý tự động Autocomplete)
-                  _buildOrderAutocompleteInput(
+                  _buildLocationAutocomplete(
                     controller: deliveryAddrCtrl,
                     labelText: "Điểm giao hàng",
                     prefixIcon: Icons.location_on_outlined,
-                    suggestions: deliverySuggestions.toList(),
+                    catalog: deliveryCatalog,
+                    history: deliverySuggestions.toList(),
+                    onCatalogSelected: (loc) => _fillPointCoords(
+                        loc, deliveryLatCtrl, deliveryLngCtrl, deliveryRadiusCtrl),
                     hintText: "Nhập địa chỉ hoặc chọn công trình...",
                     isRequired: true,
+                  ),
+                  _buildPointCoordsRow(
+                    latCtrl: deliveryLatCtrl,
+                    lngCtrl: deliveryLngCtrl,
+                    radiusCtrl: deliveryRadiusCtrl,
                   ),
                   const SizedBox(height: 16),
                   // Phương tiện chỉ định
@@ -11356,16 +12076,39 @@ class _DispatchSupervisorScreenState extends State<DispatchSupervisorScreen> {
                   return;
                 }
 
+                final pickupPt = _readPointCoords(
+                    "Nơi nhận hàng", pickupLatCtrl, pickupLngCtrl, pickupRadiusCtrl);
+                final deliveryPt = _readPointCoords(
+                    "Điểm giao hàng", deliveryLatCtrl, deliveryLngCtrl, deliveryRadiusCtrl);
+                final coordError = pickupPt.error ?? deliveryPt.error;
+                if (coordError != null) {
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    SnackBar(content: Text(coordError)),
+                  );
+                  return;
+                }
+
                 Navigator.of(dialogCtx).pop();
                 setState(() => _isLoading = true);
 
                 final payload = <String, dynamic>{
                   "order_code": code,
+                  "customer_code": customerCodeCtrl.text.trim(),
                   "factory_code": factory,
                   "product_id": selectedProductId,
+                  "product_detail": productDetailCtrl.text.trim(),
                   "transport_type": transportType,
+                  "carrier_name": transportType == "RENTAL"
+                      ? carrierNameCtrl.text.trim()
+                      : "",
                   "pickup_address": pickup,
+                  "pickup_lat": pickupPt.lat,
+                  "pickup_lng": pickupPt.lng,
+                  "pickup_radius_m": pickupPt.radius,
                   "delivery_address": delivery,
+                  "delivery_lat": deliveryPt.lat,
+                  "delivery_lng": deliveryPt.lng,
+                  "delivery_radius_m": deliveryPt.radius,
                   "assigned_vehicle_plate": selectedVehiclePlate,
                   "assigned_driver_id": selectedDriverId,
                   "cargo_weight_tons": weight,

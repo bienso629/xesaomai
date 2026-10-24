@@ -49,6 +49,8 @@ services:
       BINHANH_CUSTOMER_CODE: ${BINHANH_CUSTOMER_CODE:-}
       BINHANH_KEY: ${BINHANH_KEY:-}
       QUANLYXE_API_KEY: ${QUANLYXE_API_KEY:-}
+      ZALO_APP_ID: ${ZALO_APP_ID:-}
+      ZALO_APP_SECRET: ${ZALO_APP_SECRET:-}
     ports:
       - "1133:8000"
     volumes:

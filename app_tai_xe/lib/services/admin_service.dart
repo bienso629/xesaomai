@@ -352,6 +352,89 @@ class AdminService {
     return false;
   }
 
+  // ---------------- ĐIỂM NHẬN / GIAO HÀNG ----------------
+
+  /// Gọi API điểm nhận / giao, trả về {'ok': bool, 'status': int, 'data': dynamic, 'message': String}
+  static Future<Map<String, dynamic>> _locationCall(
+    String method,
+    String path, {
+    Map<String, dynamic>? body,
+    int timeoutSeconds = 10,
+  }) async {
+    try {
+      final uri = Uri.parse('$baseUrl/$path');
+      final headers = await _headers();
+      final encoded = body == null ? null : jsonEncode(body);
+      final Future<http.Response> req;
+      switch (method) {
+        case 'POST':
+          req = http.post(uri, headers: headers, body: encoded ?? '{}');
+          break;
+        case 'PUT':
+          req = http.put(uri, headers: headers, body: encoded ?? '{}');
+          break;
+        case 'DELETE':
+          req = http.delete(uri, headers: headers);
+          break;
+        default:
+          req = http.get(uri, headers: headers);
+      }
+      final res = await req.timeout(Duration(seconds: timeoutSeconds));
+      final decoded = res.bodyBytes.isEmpty ? null : jsonDecode(utf8.decode(res.bodyBytes));
+      final ok = res.statusCode >= 200 && res.statusCode < 300;
+      final detail = decoded is Map ? decoded['detail'] : null;
+      return {
+        'ok': ok,
+        'status': res.statusCode,
+        'data': decoded,
+        'message': ok ? '' : (detail?.toString() ?? 'Lỗi máy chủ (${res.statusCode})'),
+      };
+    } catch (e) {
+      return {'ok': false, 'status': 0, 'data': null, 'message': 'Không thể kết nối API: $e'};
+    }
+  }
+
+  /// Danh mục điểm nhận / giao hàng. [kind] = PICKUP | DELIVERY (kèm cả BOTH), để trống là lấy hết.
+  static Future<List<dynamic>> fetchLocations({String? kind}) async {
+    final res = await _locationCall('GET', kind == null ? 'locations' : 'locations?kind=$kind');
+    return res['ok'] == true && res['data'] is List ? res['data'] as List<dynamic> : [];
+  }
+
+  /// Tạo mới hoặc cập nhật một điểm trong danh mục.
+  static Future<Map<String, dynamic>> saveLocation({int? id, required Map<String, dynamic> data}) {
+    return id == null
+        ? _locationCall('POST', 'locations', body: data)
+        : _locationCall('PUT', 'locations/$id', body: data);
+  }
+
+  /// Xóa (mềm) một điểm khỏi danh mục.
+  static Future<Map<String, dynamic>> deleteLocation(int id) => _locationCall('DELETE', 'locations/$id');
+
+  /// Bắt đầu quét lịch sử dừng đỗ của Vietmap và Bình Anh (chạy nền phía server).
+  static Future<Map<String, dynamic>> startLocationScan(Map<String, dynamic> options) =>
+      _locationCall('POST', 'locations/scan', body: options);
+
+  /// Tiến độ lượt quét gần nhất.
+  static Future<Map<String, dynamic>> fetchLocationScanStatus() => _locationCall('GET', 'locations/scan/status');
+
+  /// Gợi ý điểm gom từ GPS. [status] = PENDING | IGNORED | APPROVED | ALL
+  static Future<List<dynamic>> fetchLocationSuggestions({String status = 'PENDING'}) async {
+    final res = await _locationCall('GET', 'location-suggestions?status_filter=$status');
+    return res['ok'] == true && res['data'] is List ? res['data'] as List<dynamic> : [];
+  }
+
+  /// Duyệt gợi ý thành một điểm trong danh mục.
+  static Future<Map<String, dynamic>> approveLocationSuggestion(int id, Map<String, dynamic> data) =>
+      _locationCall('POST', 'location-suggestions/$id/approve', body: data);
+
+  /// Bỏ qua gợi ý (lần quét sau không hiện lại trong hàng chờ).
+  static Future<Map<String, dynamic>> ignoreLocationSuggestion(int id) =>
+      _locationCall('POST', 'location-suggestions/$id/ignore');
+
+  /// Đưa gợi ý đã bỏ qua về hàng chờ duyệt.
+  static Future<Map<String, dynamic>> restoreLocationSuggestion(int id) =>
+      _locationCall('POST', 'location-suggestions/$id/restore');
+
   /// Gọi API Zalo OA, trả về {'ok': bool, 'status': int, 'data': dynamic, 'message': String}
   static Future<Map<String, dynamic>> _zaloCall(String method, String path) async {
     try {

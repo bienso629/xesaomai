@@ -9,7 +9,10 @@ import '../services/admin_service.dart';
 /// Chỉ Điều phối viên, Quản lý / Giám đốc và Admin được vào (kiểm tra ở
 /// main_navigation_screen.dart, dispatch_supervisor_screen.dart và phía server).
 class CustomersScreen extends StatefulWidget {
-  const CustomersScreen({super.key});
+  /// Báo số khách hàng (sau lọc / tổng) để hiện huy hiệu trên tiêu đề.
+  final void Function(int filtered, int total)? onCountChanged;
+
+  const CustomersScreen({super.key, this.onCountChanged});
 
   @override
   State<CustomersScreen> createState() => _CustomersScreenState();
@@ -20,6 +23,11 @@ class _CustomersScreenState extends State<CustomersScreen> {
   List<Map<String, dynamic>> _customers = [];
   String _query = '';
   bool _loading = true;
+
+  // Bảng dữ liệu: phân trang + sắp xếp
+  int _currentPage = 1;
+  int _pageSize = 10;
+  String _sourceFilter = 'ALL'; // ALL | ZALO | MANUAL
 
   // Đồng bộ Zalo OA
   bool _zaloBusy = false;
@@ -260,262 +268,562 @@ class _CustomersScreenState extends State<CustomersScreen> {
     );
   }
 
+  // ---------------- GIAO DIỆN (theo mẫu màn Đội xe & Tài xế) ----------------
+
+  bool _isZalo(Map<String, dynamic> c) => _s(c, 'zalo_user_id').isNotEmpty;
+
+  /// Danh sách sau khi lọc nguồn + tìm kiếm, sắp theo tên khách hàng.
+  List<Map<String, dynamic>> get _visible {
+    final list = _filtered.where((c) {
+      if (_sourceFilter == 'ZALO') return _isZalo(c);
+      if (_sourceFilter == 'MANUAL') return !_isZalo(c);
+      return true;
+    }).toList();
+    list.sort((a, b) => _s(a, 'name').toLowerCase().compareTo(_s(b, 'name').toLowerCase()));
+    return list;
+  }
+
+  void _reportCount(int filtered, int total) {
+    final cb = widget.onCountChanged;
+    if (cb == null) return;
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted) cb(filtered, total);
+    });
+  }
+
+  Widget _toolbarButton({
+    required IconData icon,
+    required String label,
+    required VoidCallback? onPressed,
+    required Color color,
+    bool busy = false,
+    bool filled = false,
+  }) {
+    final shape = RoundedRectangleBorder(borderRadius: BorderRadius.circular(4));
+    final iconW = busy
+        ? SizedBox(
+            width: 14,
+            height: 14,
+            child: CircularProgressIndicator(strokeWidth: 2, color: filled ? Colors.white : color),
+          )
+        : Icon(icon, size: 15);
+    final text = Text(label, style: const TextStyle(fontWeight: FontWeight.w600, fontSize: 12.5));
+    return SizedBox(
+      height: 36,
+      child: filled
+          ? ElevatedButton.icon(
+              style: ElevatedButton.styleFrom(
+                backgroundColor: color,
+                foregroundColor: Colors.white,
+                elevation: 0,
+                minimumSize: const Size(0, 36),
+                fixedSize: const Size.fromHeight(36),
+                tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                padding: const EdgeInsets.symmetric(horizontal: 12),
+                shape: shape,
+              ),
+              icon: iconW,
+              label: text,
+              onPressed: onPressed,
+            )
+          : OutlinedButton.icon(
+              style: OutlinedButton.styleFrom(
+                foregroundColor: color,
+                side: BorderSide(color: color.withValues(alpha: 0.45)),
+                minimumSize: const Size(0, 36),
+                fixedSize: const Size.fromHeight(36),
+                tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                padding: const EdgeInsets.symmetric(horizontal: 12),
+                shape: shape,
+              ),
+              icon: iconW,
+              label: text,
+              onPressed: onPressed,
+            ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
-    final list = _filtered;
+    final list = _visible;
+    _reportCount(list.length, _customers.length);
+
+    final totalItems = list.length;
+    final totalPages = (totalItems / _pageSize).ceil().clamp(1, 99999);
+    final validPage = _currentPage.clamp(1, totalPages);
+    final startIndex = totalItems == 0 ? 0 : (validPage - 1) * _pageSize;
+    final endIndex = (startIndex + _pageSize > totalItems) ? totalItems : startIndex + _pageSize;
+    final pageItems = totalItems == 0 ? <Map<String, dynamic>>[] : list.sublist(startIndex, endIndex);
+
     return Column(
       children: [
-        // Thanh công cụ: tìm kiếm + thêm mới + tải lại
+        // Thanh công cụ 1 hàng: Tìm kiếm + Lọc nguồn + Thêm + Đồng bộ Zalo OA
         Container(
           padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
           color: Colors.white,
           child: Row(
             children: [
               Expanded(
+                flex: 4,
                 child: SizedBox(
                   height: 36,
                   child: TextField(
                     controller: _searchCtrl,
                     style: const TextStyle(fontSize: 12.5),
                     textAlignVertical: TextAlignVertical.center,
-                    onChanged: (v) => setState(() => _query = v),
+                    onChanged: (v) => setState(() {
+                      _query = v;
+                      _currentPage = 1;
+                    }),
                     decoration: InputDecoration(
                       isDense: true,
-                      constraints: const BoxConstraints(
-                        minHeight: 36,
-                        maxHeight: 36,
-                      ),
-                      hintText: "Tìm theo tên, mã, MST, SĐT, địa chỉ...",
+                      constraints: const BoxConstraints(minHeight: 36, maxHeight: 36),
+                      hintText: "Tìm theo tên, mã khách hàng, MST, SĐT, địa chỉ...",
                       hintStyle: const TextStyle(fontSize: 12.5),
                       prefixIcon: const Icon(Icons.search, size: 17),
-                      prefixIconConstraints: const BoxConstraints(
-                        minWidth: 34,
-                        minHeight: 36,
-                        maxHeight: 36,
-                      ),
+                      prefixIconConstraints: const BoxConstraints(minWidth: 34, minHeight: 36, maxHeight: 36),
                       suffixIcon: _query.isNotEmpty
                           ? IconButton(
                               padding: EdgeInsets.zero,
-                              icon: const Icon(Icons.close, size: 15),
+                              constraints: const BoxConstraints(minWidth: 34, minHeight: 36, maxHeight: 36),
+                              icon: const Icon(Icons.clear, size: 15),
                               onPressed: () => setState(() {
                                 _searchCtrl.clear();
                                 _query = '';
+                                _currentPage = 1;
                               }),
                             )
                           : null,
+                      contentPadding: const EdgeInsets.symmetric(horizontal: 10, vertical: 0),
                     ),
                   ),
                 ),
               ),
-              const SizedBox(width: 8),
-              SizedBox(
-                height: 36,
-                child: ElevatedButton.icon(
-                  style: ElevatedButton.styleFrom(
-                    backgroundColor: Colors.blue.shade800,
-                    foregroundColor: Colors.white,
-                    elevation: 0,
-                    minimumSize: const Size(0, 36),
-                    fixedSize: const Size.fromHeight(36),
-                    tapTargetSize: MaterialTapTargetSize.shrinkWrap,
-                    padding: const EdgeInsets.symmetric(horizontal: 12),
-                    shape: RoundedRectangleBorder(
-                      borderRadius: BorderRadius.circular(4),
+              const SizedBox(width: 10),
+              // Bộ lọc theo nguồn khách hàng
+              Expanded(
+                flex: 2,
+                child: SizedBox(
+                  height: 36,
+                  child: DropdownButtonFormField<String>(
+                    initialValue: _sourceFilter,
+                    isExpanded: true,
+                    isDense: true,
+                    iconSize: 18,
+                    style: const TextStyle(fontSize: 12.5, color: Colors.black87, fontFamily: 'Nunito'),
+                    decoration: const InputDecoration(
+                      isDense: true,
+                      constraints: BoxConstraints(minHeight: 36, maxHeight: 36),
+                      prefixIcon: Icon(Icons.filter_alt_outlined, size: 17),
+                      prefixIconConstraints: BoxConstraints(minWidth: 34, minHeight: 36, maxHeight: 36),
+                      contentPadding: EdgeInsets.symmetric(horizontal: 10, vertical: 0),
                     ),
+                    items: const [
+                      DropdownMenuItem(value: 'ALL', child: Text("Tất cả nguồn")),
+                      DropdownMenuItem(value: 'ZALO', child: Text("Zalo OA")),
+                      DropdownMenuItem(value: 'MANUAL', child: Text("Thủ công")),
+                    ],
+                    onChanged: (val) {
+                      if (val != null) {
+                        setState(() {
+                          _sourceFilter = val;
+                          _currentPage = 1;
+                        });
+                      }
+                    },
                   ),
-                  icon: const Icon(Icons.person_add_alt_1, size: 17),
-                  label: const Text(
-                    "Thêm",
-                    style: TextStyle(fontSize: 12.5, fontWeight: FontWeight.w600),
-                  ),
-                  onPressed: () => _showForm(),
                 ),
               ),
-              const SizedBox(width: 8),
-              SizedBox(
-                height: 36,
-                child: Tooltip(
-                  message: "Xin quyền Zalo OA và đồng bộ toàn bộ danh sách liên hệ vào Khách hàng",
-                  child: ElevatedButton.icon(
-                    style: ElevatedButton.styleFrom(
-                      backgroundColor: const Color(0xFF0068FF),
-                      foregroundColor: Colors.white,
-                      disabledBackgroundColor: const Color(0xFF0068FF).withValues(alpha: 0.6),
-                      disabledForegroundColor: Colors.white,
-                      elevation: 0,
-                      minimumSize: const Size(0, 36),
-                      fixedSize: const Size.fromHeight(36),
-                      tapTargetSize: MaterialTapTargetSize.shrinkWrap,
-                      padding: const EdgeInsets.symmetric(horizontal: 12),
-                      shape: RoundedRectangleBorder(
-                        borderRadius: BorderRadius.circular(4),
-                      ),
-                    ),
-                    icon: _zaloBusy
-                        ? const SizedBox(
-                            width: 15,
-                            height: 15,
-                            child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white),
-                          )
-                        : const Icon(Icons.sync, size: 17),
-                    label: const Text(
-                      "Đồng bộ Zalo OA",
-                      style: TextStyle(fontSize: 12.5, fontWeight: FontWeight.w600),
-                    ),
-                    onPressed: _zaloBusy ? null : _onZaloSync,
-                  ),
+              const SizedBox(width: 12),
+              _toolbarButton(
+                icon: Icons.person_add_alt_1,
+                label: "Thêm khách hàng",
+                color: Colors.blue.shade800,
+                filled: true,
+                onPressed: () => _showForm(),
+              ),
+              const SizedBox(width: 10),
+              Tooltip(
+                message: "Xin quyền Zalo OA và đồng bộ danh sách người quan tâm vào Khách hàng",
+                child: _toolbarButton(
+                  icon: Icons.sync,
+                  label: _zaloBusy ? "Đang đồng bộ..." : "Đồng bộ Zalo OA",
+                  color: const Color(0xFF0068FF),
+                  busy: _zaloBusy,
+                  onPressed: _zaloBusy ? null : _onZaloSync,
                 ),
               ),
             ],
           ),
         ),
-        Container(
-          width: double.infinity,
-          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 6),
-          color: Colors.grey.shade100,
-          child: Text(
-            [
-              _query.isEmpty
-                  ? "${_customers.length} khách hàng"
-                  : "${list.length}/${_customers.length} khách hàng",
-              if (_zaloProgress.isNotEmpty) _zaloProgress,
-            ].join("  •  "),
-            style: TextStyle(fontSize: 12, color: Colors.grey.shade700),
+        if (_zaloProgress.isNotEmpty)
+          Container(
+            width: double.infinity,
+            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 6),
+            color: const Color(0xFFE6F0FF),
+            child: Text(
+              _zaloProgress,
+              style: const TextStyle(fontSize: 12, color: Color(0xFF0068FF), fontWeight: FontWeight.w600),
+            ),
           ),
-        ),
+        const Divider(height: 1),
+        // Bảng danh sách khách hàng
         Expanded(
           child: _loading
               ? const Center(child: CircularProgressIndicator())
-              : list.isEmpty
-              ? _buildEmpty()
               : RefreshIndicator(
                   onRefresh: _load,
-                  child: ListView.separated(
-                    padding: const EdgeInsets.all(12),
-                    itemCount: list.length,
-                    separatorBuilder: (_, _) => const SizedBox(height: 8),
-                    itemBuilder: (_, i) => _buildCard(list[i]),
-                  ),
+                  child: pageItems.isEmpty ? _buildEmpty() : _buildTable(pageItems),
                 ),
         ),
+        // THANH ĐIỀU HƯỚNG PHÂN TRANG
+        if (!_loading && totalItems > 0)
+          _buildPagination(
+            totalItems: totalItems,
+            startIndex: startIndex,
+            endIndex: endIndex,
+            validPage: validPage,
+            totalPages: totalPages,
+          ),
       ],
     );
   }
 
   Widget _buildEmpty() {
-    return Center(
-      child: Column(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          Icon(Icons.groups_outlined, size: 48, color: Colors.grey.shade400),
-          const SizedBox(height: 12),
-          Text(
-            _customers.isEmpty
-                ? "Chưa có khách hàng nào. Bấm \"Thêm\" để tạo mới."
-                : "Không tìm thấy khách hàng phù hợp",
-            style: TextStyle(fontSize: 14, color: Colors.grey.shade600),
+    return LayoutBuilder(
+      builder: (context, constraints) => SingleChildScrollView(
+        physics: const AlwaysScrollableScrollPhysics(),
+        child: SizedBox(
+          height: constraints.maxHeight,
+          child: Center(
+            child: Column(
+              mainAxisAlignment: MainAxisAlignment.center,
+              children: [
+                Icon(Icons.groups_outlined, size: 48, color: Colors.grey.shade400),
+                const SizedBox(height: 12),
+                Text(
+                  _customers.isEmpty
+                      ? "Chưa có khách hàng nào. Bấm \"Thêm khách hàng\" để tạo mới."
+                      : "Không tìm thấy khách hàng nào phù hợp với bộ lọc",
+                  style: TextStyle(fontSize: 14, color: Colors.grey.shade600, fontWeight: FontWeight.w500),
+                ),
+              ],
+            ),
           ),
-        ],
+        ),
       ),
     );
   }
 
-  Widget _buildCard(Map<String, dynamic> c) {
-    Widget line(IconData icon, String text) {
-      if (text.isEmpty) return const SizedBox.shrink();
-      return Padding(
-        padding: const EdgeInsets.only(top: 4),
-        child: Row(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Icon(icon, size: 14, color: Colors.grey.shade600),
-            const SizedBox(width: 6),
-            Expanded(
-              child: Text(
-                text,
-                style: TextStyle(fontSize: 12.5, color: Colors.grey.shade800),
-              ),
-            ),
-          ],
+  Widget _buildTable(List<Map<String, dynamic>> pageItems) {
+    DataColumn col(String label) => DataColumn(
+      label: Text(label, style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 13)),
+    );
+
+    DataCell makeCell(Widget child) =>
+        DataCell(Container(alignment: Alignment.centerLeft, child: child));
+
+    Widget plainText(String text, {double maxWidth = 260}) {
+      if (text.isEmpty) {
+        return Text("—", style: TextStyle(fontSize: 12.5, color: Colors.grey.shade400));
+      }
+      return ConstrainedBox(
+        constraints: BoxConstraints(maxWidth: maxWidth),
+        child: Text(
+          text,
+          maxLines: 2,
+          overflow: TextOverflow.ellipsis,
+          style: const TextStyle(fontSize: 12.5, color: Colors.black87),
         ),
       );
     }
 
-    final contact = [
-      _s(c, 'contact_person'),
-      _s(c, 'phone'),
-    ].where((e) => e.isNotEmpty).join(' • ');
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        return SingleChildScrollView(
+          physics: const AlwaysScrollableScrollPhysics(),
+          scrollDirection: Axis.vertical,
+          child: SingleChildScrollView(
+            scrollDirection: Axis.horizontal,
+            child: ConstrainedBox(
+              constraints: BoxConstraints(minWidth: constraints.maxWidth),
+              child: DataTable(
+                headingRowColor: WidgetStateProperty.all(Colors.grey.shade100),
+                headingRowHeight: 44,
+                dividerThickness: 0,
+                dataRowMaxHeight: 64,
+                dataRowMinHeight: 58,
+                horizontalMargin: 16,
+                columnSpacing: 24,
+                columns: [
+                  col("Tên khách hàng"),
+                  col("Mã khách hàng"),
+                  col("Nguồn"),
+                  col("Người liên hệ"),
+                  col("Mã số thuế"),
+                  col("Địa chỉ"),
+                  col("Thao tác"),
+                ],
+                rows: List.generate(pageItems.length, (idx) {
+                  final c = pageItems[idx];
+                  final rowColor = idx % 2 == 0 ? Colors.white : Colors.grey.shade50;
+                  final isZalo = _isZalo(c);
+                  final zaloName = _s(c, 'zalo_display_name');
+                  final contactName = _s(c, 'contact_person');
+                  final phone = _s(c, 'phone');
+                  final email = _s(c, 'email');
+                  final subLine = [phone, email].where((e) => e.isNotEmpty).join(' • ');
 
-    return Container(
-      padding: const EdgeInsets.fromLTRB(12, 10, 4, 10),
-      decoration: BoxDecoration(
-        color: Colors.white,
-        borderRadius: BorderRadius.circular(4),
-        border: Border.all(color: Colors.grey.shade300),
-      ),
-      child: Row(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Row(
-                  children: [
-                    Container(
-                      padding: const EdgeInsets.symmetric(
-                        horizontal: 6,
-                        vertical: 2,
-                      ),
-                      decoration: BoxDecoration(
-                        color: Colors.blue.shade50,
-                        borderRadius: BorderRadius.circular(4),
-                      ),
-                      child: Text(
-                        _s(c, 'code'),
-                        style: TextStyle(
-                          fontSize: 11,
-                          fontWeight: FontWeight.w600,
-                          color: Colors.blue.shade800,
+                  return DataRow(
+                    color: WidgetStateProperty.all(rowColor),
+                    cells: [
+                      // Cột 1: Tên khách hàng (+ nhãn Zalo OA)
+                      makeCell(
+                        Row(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            Container(
+                              padding: const EdgeInsets.all(6),
+                              decoration: BoxDecoration(
+                                color: Colors.blue.shade50,
+                                borderRadius: BorderRadius.circular(4),
+                              ),
+                              child: const Icon(Icons.storefront, size: 18, color: Colors.blue),
+                            ),
+                            const SizedBox(width: 10),
+                            ConstrainedBox(
+                              constraints: const BoxConstraints(maxWidth: 240),
+                              child: Column(
+                                mainAxisSize: MainAxisSize.min,
+                                mainAxisAlignment: MainAxisAlignment.center,
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                children: [
+                                  Text(
+                                    _s(c, 'name'),
+                                    maxLines: 1,
+                                    overflow: TextOverflow.ellipsis,
+                                    style: TextStyle(
+                                      fontWeight: FontWeight.bold,
+                                      fontSize: 13.5,
+                                      color: Colors.blueGrey.shade900,
+                                    ),
+                                  ),
+                                  if (_s(c, 'note').isNotEmpty)
+                                    Text(
+                                      _s(c, 'note'),
+                                      maxLines: 1,
+                                      overflow: TextOverflow.ellipsis,
+                                      style: TextStyle(fontSize: 11, color: Colors.grey.shade600),
+                                    ),
+                                ],
+                              ),
+                            ),
+                          ],
                         ),
                       ),
-                    ),
-                    const SizedBox(width: 8),
-                    Expanded(
-                      child: Text(
-                        _s(c, 'name'),
-                        style: const TextStyle(
-                          fontSize: 14,
-                          fontWeight: FontWeight.bold,
+                      // Cột 2: Mã khách hàng
+                      makeCell(Text(_s(c, 'code'), style: const TextStyle(fontSize: 12.5))),
+                      // Cột 3: Nguồn (nhãn giống "Xe nội bộ")
+                      makeCell(
+                        Tooltip(
+                          message: isZalo
+                              ? "Zalo${zaloName.isEmpty ? '' : ': $zaloName'} • ID ${_s(c, 'zalo_user_id')}"
+                              : "Tạo thủ công trên phần mềm",
+                          child: Container(
+                            padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+                            decoration: BoxDecoration(
+                              color: isZalo ? Colors.blue.shade50 : Colors.orange.shade50,
+                              borderRadius: BorderRadius.circular(4),
+                              border: Border.all(
+                                color: isZalo ? Colors.blue.shade200 : Colors.orange.shade200,
+                              ),
+                            ),
+                            child: Text(
+                              isZalo ? "Zalo OA" : "Thủ công",
+                              style: TextStyle(
+                                color: isZalo ? Colors.blue.shade800 : Colors.orange.shade900,
+                                fontSize: 11,
+                                fontWeight: FontWeight.bold,
+                              ),
+                            ),
+                          ),
                         ),
                       ),
-                    ),
-                  ],
-                ),
-                line(Icons.person_outline, contact),
-                line(Icons.chat_bubble_outline,
-                    _s(c, 'zalo_user_id').isEmpty
-                        ? ''
-                        : "Zalo: ${_s(c, 'zalo_display_name').isEmpty ? '' : '${_s(c, 'zalo_display_name')} • '}ID ${_s(c, 'zalo_user_id')}"),
-                line(Icons.receipt_long_outlined,
-                    _s(c, 'tax_code').isEmpty ? '' : "MST: ${_s(c, 'tax_code')}"),
-                line(Icons.email_outlined, _s(c, 'email')),
-                line(Icons.location_on_outlined, _s(c, 'address')),
-                line(Icons.notes_outlined, _s(c, 'note')),
-              ],
+                      // Cột 4: Người liên hệ (giống cột Tài xế chỉ định)
+                      makeCell(
+                        (contactName.isEmpty && subLine.isEmpty)
+                            ? Text(
+                                "Chưa có liên hệ",
+                                style: TextStyle(
+                                  fontSize: 12,
+                                  fontStyle: FontStyle.italic,
+                                  color: Colors.grey.shade500,
+                                ),
+                              )
+                            : Column(
+                                mainAxisSize: MainAxisSize.min,
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                mainAxisAlignment: MainAxisAlignment.center,
+                                children: [
+                                  Row(
+                                    mainAxisSize: MainAxisSize.min,
+                                    children: [
+                                      const Icon(Icons.person, size: 15, color: Colors.teal),
+                                      const SizedBox(width: 4),
+                                      Text(
+                                        contactName.isNotEmpty ? contactName : _s(c, 'name'),
+                                        style: const TextStyle(
+                                          fontSize: 12.5,
+                                          fontWeight: FontWeight.bold,
+                                          color: Colors.teal,
+                                        ),
+                                      ),
+                                    ],
+                                  ),
+                                  if (subLine.isNotEmpty) ...[
+                                    const SizedBox(height: 2),
+                                    Text(
+                                      subLine,
+                                      style: TextStyle(fontSize: 11, color: Colors.grey.shade600),
+                                    ),
+                                  ],
+                                ],
+                              ),
+                      ),
+                      // Cột 5: Mã số thuế
+                      makeCell(plainText(_s(c, 'tax_code'), maxWidth: 150)),
+                      // Cột 6: Địa chỉ
+                      makeCell(plainText(_s(c, 'address'))),
+                      // Cột 7: Thao tác
+                      makeCell(
+                        Row(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            _rowButton(
+                              icon: Icons.edit,
+                              label: "Sửa",
+                              color: Colors.blue.shade800,
+                              border: Colors.blue.shade300,
+                              onPressed: () => _showForm(customer: c),
+                            ),
+                            const SizedBox(width: 8),
+                            _rowButton(
+                              icon: Icons.delete_outline,
+                              label: "Xóa",
+                              color: Colors.red.shade700,
+                              border: Colors.red.shade200,
+                              onPressed: () => _confirmDelete(c),
+                            ),
+                          ],
+                        ),
+                      ),
+                    ],
+                  );
+                }),
+              ),
             ),
           ),
-          IconButton(
-            tooltip: "Sửa khách hàng",
-            visualDensity: VisualDensity.compact,
-            icon: Icon(Icons.edit_outlined, size: 19, color: Colors.blue.shade700),
-            onPressed: () => _showForm(customer: c),
+        );
+      },
+    );
+  }
+
+  Widget _rowButton({
+    required IconData icon,
+    required String label,
+    required Color color,
+    required Color border,
+    required VoidCallback onPressed,
+  }) {
+    return OutlinedButton.icon(
+      style: OutlinedButton.styleFrom(
+        foregroundColor: color,
+        side: BorderSide(color: border),
+        padding: const EdgeInsets.symmetric(horizontal: 10),
+        minimumSize: const Size(0, 32),
+        tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(4)),
+      ),
+      icon: Icon(icon, size: 14),
+      label: Text(label, style: const TextStyle(fontSize: 12, fontWeight: FontWeight.bold)),
+      onPressed: onPressed,
+    );
+  }
+
+  Widget _buildPagination({
+    required int totalItems,
+    required int startIndex,
+    required int endIndex,
+    required int validPage,
+    required int totalPages,
+  }) {
+    Widget navBtn(IconData icon, String tip, bool enabled, int page) {
+      return IconButton(
+        icon: Icon(icon, size: 18),
+        padding: EdgeInsets.zero,
+        constraints: const BoxConstraints(minWidth: 28, minHeight: 28),
+        tooltip: tip,
+        onPressed: enabled ? () => setState(() => _currentPage = page) : null,
+      );
+    }
+
+    return Container(
+      height: 40,
+      padding: const EdgeInsets.symmetric(horizontal: 16),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        border: Border(top: BorderSide(color: Colors.grey.shade400, width: 1)),
+      ),
+      child: Row(
+        mainAxisAlignment: MainAxisAlignment.spaceBetween,
+        children: [
+          Text(
+            "Hiển thị ${startIndex + 1} - $endIndex trên tổng số $totalItems khách hàng",
+            style: TextStyle(fontSize: 12, color: Colors.grey.shade700, fontWeight: FontWeight.w500),
           ),
-          IconButton(
-            tooltip: "Xóa khách hàng",
-            visualDensity: VisualDensity.compact,
-            icon: Icon(Icons.delete_outline, size: 19, color: Colors.red.shade600),
-            onPressed: () => _confirmDelete(c),
+          Row(
+            children: [
+              const Text("Số dòng/trang: ", style: TextStyle(fontSize: 12, color: Colors.black87)),
+              const SizedBox(width: 4),
+              DropdownButton<int>(
+                value: _pageSize,
+                underline: const SizedBox(),
+                isDense: true,
+                style: const TextStyle(fontSize: 12, color: Colors.blueGrey, fontWeight: FontWeight.bold),
+                items: const [
+                  DropdownMenuItem(value: 5, child: Text("5")),
+                  DropdownMenuItem(value: 10, child: Text("10")),
+                  DropdownMenuItem(value: 20, child: Text("20")),
+                  DropdownMenuItem(value: 50, child: Text("50")),
+                ],
+                onChanged: (val) {
+                  if (val != null) {
+                    setState(() {
+                      _pageSize = val;
+                      _currentPage = 1;
+                    });
+                  }
+                },
+              ),
+              const SizedBox(width: 14),
+              navBtn(Icons.first_page, "Trang đầu", validPage > 1, 1),
+              navBtn(Icons.chevron_left, "Trang trước", validPage > 1, validPage - 1),
+              const SizedBox(width: 4),
+              Container(
+                padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 3),
+                decoration: BoxDecoration(
+                  color: Colors.blue.shade50,
+                  borderRadius: BorderRadius.circular(4),
+                ),
+                child: Text(
+                  "$validPage / $totalPages",
+                  style: TextStyle(fontSize: 12, fontWeight: FontWeight.bold, color: Colors.blue.shade800),
+                ),
+              ),
+              const SizedBox(width: 4),
+              navBtn(Icons.chevron_right, "Trang sau", validPage < totalPages, validPage + 1),
+              navBtn(Icons.last_page, "Trang cuối", validPage < totalPages, totalPages),
+            ],
           ),
         ],
       ),
