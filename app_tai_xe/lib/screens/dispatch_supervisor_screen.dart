@@ -365,6 +365,53 @@ class _DispatchSupervisorScreenState extends State<DispatchSupervisorScreen> {
     }
   }
 
+  Map? _vehicleByPlate(String? plate) {
+    if (plate == null || plate.isEmpty) return null;
+    for (final v in _vehicles) {
+      if (v is Map && (v['plate_number'] ?? '').toString() == plate) return v;
+    }
+    return null;
+  }
+
+  /// Dòng chỉ để xem: tài xế phụ trách của xe đang chọn (không chọn tay nữa).
+  Widget _buildVehicleDriverInfo(String? plate, {String? keepDriverName}) {
+    String text;
+    Color color;
+    IconData icon;
+    final v = _vehicleByPlate(plate);
+    if (plate == null || plate.isEmpty) {
+      text = "Chọn xe để biết tài xế phụ trách";
+      color = Colors.grey.shade600;
+      icon = Icons.info_outline;
+    } else if (keepDriverName != null && keepDriverName.trim().isNotEmpty) {
+      text = "Tài xế phụ trách: ${keepDriverName.trim()}";
+      color = Colors.green.shade700;
+      icon = Icons.person_outline;
+    } else if (v != null && v['default_driver_id'] != null) {
+      final name = (v['driver_name'] ?? v['driver_username'] ?? '').toString();
+      final phone = (v['driver_phone'] ?? '').toString();
+      text = "Tài xế phụ trách: ${phone.isNotEmpty ? '$name ($phone)' : name}";
+      color = Colors.green.shade700;
+      icon = Icons.person_outline;
+    } else {
+      text = "Xe này chưa được gán tài xế phụ trách (vào Đội xe & Tài xế để gán)";
+      color = Colors.orange.shade800;
+      icon = Icons.warning_amber_outlined;
+    }
+    return Padding(
+      padding: const EdgeInsets.only(top: 6),
+      child: Row(
+        children: [
+          Icon(icon, size: 14, color: color),
+          const SizedBox(width: 6),
+          Expanded(
+            child: Text(text, style: TextStyle(fontSize: 12, color: color)),
+          ),
+        ],
+      ),
+    );
+  }
+
   /// Lấy danh sách tài xế đã khử trùng lặp theo id từ cả _users và _drivers
   /// (đảm bảo tài khoản không phải super-admin 'admin' khi /users trả 403 vẫn có đủ danh sách tài xế)
   List<Map<String, dynamic>> _getAvailableDriverUsers() {
@@ -10672,12 +10719,11 @@ class _DispatchSupervisorScreenState extends State<DispatchSupervisorScreen> {
     required String labelText,
     required IconData prefixIcon,
     required List<Map<String, dynamic>> catalog,
-    required List<String> history,
     String? hintText,
     bool isRequired = false,
     void Function(Map<String, dynamic> loc)? onCatalogSelected,
   }) {
-    // Điểm trong danh mục đứng trước, sau đó là địa chỉ đã dùng ở các đơn cũ
+    // Chỉ gợi ý điểm đã xác nhận trong danh mục Điểm nhận / giao
     final options = <Map<String, dynamic>>[];
     final seen = <String>{};
     for (final loc in catalog) {
@@ -10690,11 +10736,6 @@ class _DispatchSupervisorScreenState extends State<DispatchSupervisorScreen> {
         'catalog': true,
         'loc': loc,
       });
-    }
-    for (final h in history) {
-      final value = h.trim();
-      if (value.isEmpty || !seen.add(value.toLowerCase())) continue;
-      options.add({'value': value, 'title': value, 'sub': '', 'catalog': false});
     }
 
     return Autocomplete<Map<String, dynamic>>(
@@ -10719,6 +10760,17 @@ class _DispatchSupervisorScreenState extends State<DispatchSupervisorScreen> {
         fieldCtrl.addListener(() {
           if (controller.text != fieldCtrl.text) controller.text = fieldCtrl.text;
         });
+        // Địa chỉ được điền từ bên ngoài (VD: chọn điểm trên bản đồ) thì hiện lên ô
+        if (controller.text != fieldCtrl.text && !focusNode.hasFocus) {
+          WidgetsBinding.instance.addPostFrameCallback((_) {
+            if (controller.text != fieldCtrl.text && !focusNode.hasFocus) {
+              fieldCtrl.value = TextEditingValue(
+                text: controller.text,
+                selection: TextSelection.collapsed(offset: controller.text.length),
+              );
+            }
+          });
+        }
         return Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           mainAxisSize: MainAxisSize.min,
@@ -10819,126 +10871,96 @@ class _DispatchSupervisorScreenState extends State<DispatchSupervisorScreen> {
     );
   }
 
-  // HELPER: TỌA ĐỘ NƠI NHẬN / ĐIỂM GIAO (ĐỐI CHIẾU GPS ẢNH TÀI XẾ)
-  static String _coordText(dynamic v) {
+  /// Hiện số đúng như dữ liệu (30.0 -> "30", 13.7 -> "13.7"), null -> rỗng.
+  static String _numText(dynamic v) {
     if (v == null) return '';
     final d = double.tryParse(v.toString());
-    return d == null ? '' : d.toString();
+    if (d == null) return '';
+    return d == d.roundToDouble() ? d.toInt().toString() : d.toString();
   }
 
-  /// Điền tọa độ và bán kính từ một điểm trong danh mục.
-  void _fillPointCoords(
-    Map<String, dynamic> loc,
-    TextEditingController latCtrl,
-    TextEditingController lngCtrl,
-    TextEditingController radiusCtrl,
+  // HELPER: TỌA ĐỘ NƠI NHẬN / ĐIỂM GIAO (ĐỐI CHIẾU GPS ẢNH TÀI XẾ)
+
+  /// Điểm trong danh mục khớp với chữ trong ô địa chỉ (theo chữ điền sẵn, tên hoặc địa chỉ).
+  Map<String, dynamic>? _matchCatalogLoc(List<Map<String, dynamic>> cat, String addr) {
+    final a = addr.trim().toLowerCase();
+    if (a.isEmpty) return null;
+    for (final loc in cat) {
+      final keys = [
+        _locationFillText(loc),
+        (loc['name'] ?? '').toString(),
+        (loc['address'] ?? '').toString(),
+      ].map((e) => e.trim().toLowerCase()).where((e) => e.isNotEmpty);
+      if (keys.contains(a)) return loc;
+    }
+    return null;
+  }
+
+  /// Tọa độ của Nơi nhận / Điểm giao không cho nhập tay nữa:
+  /// 1. Đơn đang sửa, địa chỉ giữ nguyên và đã có tọa độ -> giữ tọa độ đang lưu.
+  /// 2. Địa chỉ khớp một điểm đã xác nhận trong danh mục -> lấy tọa độ của điểm đó.
+  /// 3. Còn lại -> không có tọa độ (null).
+  ({double? lat, double? lng, int? radius, String source}) _resolvePointCoords(
+    String addr,
+    List<Map<String, dynamic>> cat,
+    _PointOrig? orig,
   ) {
-    final lat = _coordText(loc['latitude']);
-    final lng = _coordText(loc['longitude']);
-    if (lat.isEmpty || lng.isEmpty) return;
-    latCtrl.text = lat;
-    lngCtrl.text = lng;
-    final r = int.tryParse((loc['radius_m'] ?? '').toString());
-    radiusCtrl.text = r == null ? '' : r.toString();
+    if (orig != null &&
+        orig.lat != null &&
+        orig.lng != null &&
+        addr.trim() == orig.address.trim()) {
+      return (lat: orig.lat, lng: orig.lng, radius: orig.radius, source: 'order');
+    }
+    final loc = _matchCatalogLoc(cat, addr);
+    if (loc != null) {
+      final lat = double.tryParse((loc['latitude'] ?? '').toString());
+      final lng = double.tryParse((loc['longitude'] ?? '').toString());
+      if (lat != null && lng != null) {
+        return (
+          lat: lat,
+          lng: lng,
+          radius: int.tryParse((loc['radius_m'] ?? '').toString()),
+          source: 'catalog',
+        );
+      }
+    }
+    return (lat: null, lng: null, radius: null, source: 'none');
   }
 
-  Widget _buildPointCoordsRow({
-    required TextEditingController latCtrl,
-    required TextEditingController lngCtrl,
-    required TextEditingController radiusCtrl,
-  }) {
-    InputDecoration deco(String hint) => InputDecoration(
-          isDense: true,
-          hintText: hint,
-          hintStyle: TextStyle(fontSize: 12, color: Colors.grey.shade500),
-        );
-    Widget col(String label, Widget field) => Expanded(
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            mainAxisSize: MainAxisSize.min,
+  /// Dòng chỉ đọc dưới ô địa chỉ: cho biết đơn sẽ dùng tọa độ nào để đối chiếu GPS ảnh.
+  Widget _buildPointCoordsInfo(
+    TextEditingController addrCtrl,
+    List<Map<String, dynamic>> cat,
+    _PointOrig? orig,
+  ) {
+    return ValueListenableBuilder<TextEditingValue>(
+      valueListenable: addrCtrl,
+      builder: (context, v, _) {
+        if (v.text.trim().isEmpty) return const SizedBox.shrink();
+        final pt = _resolvePointCoords(v.text, cat, orig);
+        final has = pt.lat != null && pt.lng != null;
+        final radius = pt.radius ?? 100;
+        final text = !has
+            ? "Chưa có trong danh mục Điểm nhận / giao, chưa đối chiếu GPS ảnh được"
+            : "${pt.source == 'order' ? 'Tọa độ đang lưu của đơn' : 'Tọa độ theo danh mục'}: "
+                "${pt.lat!.toStringAsFixed(6)}, ${pt.lng!.toStringAsFixed(6)} – bán kính $radius m";
+        final color = has ? Colors.teal.shade700 : Colors.orange.shade800;
+        return Padding(
+          padding: const EdgeInsets.only(top: 6),
+          child: Row(
             children: [
-              Text(label, style: TextStyle(fontSize: 11.5, color: Colors.grey.shade700)),
-              const SizedBox(height: 4),
-              field,
+              Icon(has ? Icons.gps_fixed : Icons.gps_off, size: 14, color: color),
+              const SizedBox(width: 6),
+              Expanded(
+                child: Text(text, style: TextStyle(fontSize: 11.5, color: color)),
+              ),
             ],
           ),
         );
-    const numKb = TextInputType.numberWithOptions(decimal: true, signed: true);
-    return Padding(
-      padding: const EdgeInsets.only(top: 8),
-      child: Row(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          col("Vĩ độ (Latitude)", TextField(
-            controller: latCtrl,
-            keyboardType: numKb,
-            style: const TextStyle(fontSize: 13),
-            decoration: deco("VD: 20.0789"),
-          )),
-          const SizedBox(width: 10),
-          col("Kinh độ (Longitude)", TextField(
-            controller: lngCtrl,
-            keyboardType: numKb,
-            style: const TextStyle(fontSize: 13),
-            decoration: deco("VD: 105.8604"),
-          )),
-          const SizedBox(width: 10),
-          SizedBox(
-            width: 110,
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                Text("Bán kính (m)", style: TextStyle(fontSize: 11.5, color: Colors.grey.shade700)),
-                const SizedBox(height: 4),
-                TextField(
-                  controller: radiusCtrl,
-                  keyboardType: TextInputType.number,
-                  style: const TextStyle(fontSize: 13),
-                  decoration: deco("300"),
-                ),
-              ],
-            ),
-          ),
-        ],
-      ),
+      },
     );
   }
 
-  /// Đọc tọa độ trong form. Bỏ trống cả hai là hợp lệ (đơn không có tọa độ).
-  ({double? lat, double? lng, int? radius, String? error}) _readPointCoords(
-    String label,
-    TextEditingController latCtrl,
-    TextEditingController lngCtrl,
-    TextEditingController radiusCtrl,
-  ) {
-    String norm(String v) => v.trim().replaceAll(',', '.');
-    final latT = norm(latCtrl.text);
-    final lngT = norm(lngCtrl.text);
-    final radT = radiusCtrl.text.trim();
-    int? radius;
-    if (radT.isNotEmpty) {
-      radius = int.tryParse(radT);
-      if (radius == null || radius < 20 || radius > 20000) {
-        return (lat: null, lng: null, radius: null,
-            error: "$label: bán kính phải là số nguyên từ 20 đến 20000 mét");
-      }
-    }
-    if (latT.isEmpty && lngT.isEmpty) {
-      return (lat: null, lng: null, radius: radius, error: null);
-    }
-    if (latT.isEmpty || lngT.isEmpty) {
-      return (lat: null, lng: null, radius: null,
-          error: "$label: phải nhập đủ cả Vĩ độ và Kinh độ");
-    }
-    final lat = double.tryParse(latT);
-    final lng = double.tryParse(lngT);
-    if (lat == null || lng == null || lat < -90 || lat > 90 || lng < -180 || lng > 180 ||
-        (lat == 0 && lng == 0)) {
-      return (lat: null, lng: null, radius: null, error: "$label: tọa độ không hợp lệ");
-    }
-    return (lat: lat, lng: lng, radius: radius, error: null);
-  }
 
   /// Tải danh mục điểm nhận / giao cho form đơn hàng. Trả về (điểm nhận, điểm giao).
   Future<(List<Map<String, dynamic>>, List<Map<String, dynamic>>)> _loadLocationsForOrder() async {
@@ -11144,12 +11166,8 @@ class _DispatchSupervisorScreenState extends State<DispatchSupervisorScreen> {
       text: "Kho Xi Măng Bỉm Sơn, Thanh Hóa",
     );
     final deliveryAddrCtrl = TextEditingController();
-    final pickupLatCtrl = TextEditingController();
-    final pickupLngCtrl = TextEditingController();
-    final pickupRadiusCtrl = TextEditingController();
-    final deliveryLatCtrl = TextEditingController();
-    final deliveryLngCtrl = TextEditingController();
-    final deliveryRadiusCtrl = TextEditingController();
+    const _PointOrig? pickupOrig = null;
+    const _PointOrig? deliveryOrig = null;
     final cargoWeightCtrl = TextEditingController(text: "30.0");
     String transportType = "INTERNAL";
     int? selectedProductId = _products.isNotEmpty
@@ -11159,8 +11177,6 @@ class _DispatchSupervisorScreenState extends State<DispatchSupervisorScreen> {
     String? selectedVehiclePlate = activeVehicles.isNotEmpty
         ? (activeVehicles[0]['plate_number']?.toString())
         : null;
-    int? selectedDriverId;
-
     // Danh sách gợi ý Nhà máy, Nơi nhận và Điểm giao hàng
     final factorySuggestions = <String>{
       "NM-BIMSON",
@@ -11169,39 +11185,12 @@ class _DispatchSupervisorScreenState extends State<DispatchSupervisorScreen> {
       "NM-HAIPHONG",
       "NM-CAMPHA",
     };
-    final pickupSuggestions = <String>{
-      "Kho Xi Măng Bỉm Sơn, Thanh Hóa",
-      "Kho Long An KCN Thuận Đạo",
-      "Kho Nghi Sơn, Thanh Hóa",
-      "Cảng Nghi Sơn, Tĩnh Gia",
-      "Kho Cảng Sài Gòn, Q.4, TP.HCM",
-      "Cảng Cát Lái, TP. Thủ Đức",
-    };
-    final deliverySuggestions = <String>{
-      "Dự án Khu đô thị Waterpoint, Bến Lức",
-      "Trạm trộn Bê tông An Cư, Long An",
-      "Công trình Cầu Mỹ Thuận 2",
-      "Khu đô thị Vinhomes Grand Park, TP. Thủ Đức",
-      "Trạm bê tông Lê Phan, Bình Chánh",
-      "Công trình Cao tốc Bắc Nam - Đoạn Diễn Châu",
-    };
 
     for (final ord in _orders) {
       if (ord is Map) {
         final f = (ord['factory_code'] ?? '').toString().trim();
         if (f.isNotEmpty) factorySuggestions.add(f);
-        final p = (ord['pickup_address'] ?? '').toString().trim();
-        if (p.isNotEmpty) pickupSuggestions.add(p);
-        final d = (ord['delivery_address'] ?? '').toString().trim();
-        if (d.isNotEmpty) deliverySuggestions.add(d);
       }
-    }
-
-    // Lọc danh sách tài xế (kết hợp _users và _drivers, khử trùng id)
-    final driverUsers = _getAvailableDriverUsers();
-
-    if (driverUsers.isNotEmpty) {
-      selectedDriverId = driverUsers[0]['id'] as int?;
     }
 
     showDialog(
@@ -11405,17 +11394,10 @@ class _DispatchSupervisorScreenState extends State<DispatchSupervisorScreen> {
                     labelText: "Nơi nhận hàng (Địa chỉ lấy hàng)",
                     prefixIcon: Icons.warehouse_outlined,
                     catalog: pickupCatalog,
-                    history: pickupSuggestions.toList(),
-                    onCatalogSelected: (loc) => _fillPointCoords(
-                        loc, pickupLatCtrl, pickupLngCtrl, pickupRadiusCtrl),
                     hintText: "Nhập hoặc chọn kho hàng...",
                     isRequired: true,
                   ),
-                  _buildPointCoordsRow(
-                    latCtrl: pickupLatCtrl,
-                    lngCtrl: pickupLngCtrl,
-                    radiusCtrl: pickupRadiusCtrl,
-                  ),
+                  _buildPointCoordsInfo(pickupAddrCtrl, pickupCatalog, pickupOrig),
                   const SizedBox(height: 16),
                   // Điểm giao hàng (Gợi ý tự động Autocomplete)
                   _buildLocationAutocomplete(
@@ -11423,17 +11405,10 @@ class _DispatchSupervisorScreenState extends State<DispatchSupervisorScreen> {
                     labelText: "Điểm giao hàng (Địa chỉ trả hàng)",
                     prefixIcon: Icons.location_on_outlined,
                     catalog: deliveryCatalog,
-                    history: deliverySuggestions.toList(),
-                    onCatalogSelected: (loc) => _fillPointCoords(
-                        loc, deliveryLatCtrl, deliveryLngCtrl, deliveryRadiusCtrl),
                     hintText: "Nhập địa chỉ hoặc chọn công trình...",
                     isRequired: true,
                   ),
-                  _buildPointCoordsRow(
-                    latCtrl: deliveryLatCtrl,
-                    lngCtrl: deliveryLngCtrl,
-                    radiusCtrl: deliveryRadiusCtrl,
-                  ),
+                  _buildPointCoordsInfo(deliveryAddrCtrl, deliveryCatalog, deliveryOrig),
                   const SizedBox(height: 16),
                   // Phương tiện chỉ định
                   _buildFormLabel("Phương tiện vận chuyển *"),
@@ -11455,32 +11430,8 @@ class _DispatchSupervisorScreenState extends State<DispatchSupervisorScreen> {
                       setDialogState(() => selectedVehiclePlate = val);
                     },
                   ),
-                  const SizedBox(height: 16),
-                  // Tài xế chỉ định
-                  _buildFormLabel("Tài xế phụ trách *"),
-                  DropdownButtonFormField<int?>(
-                    value: selectedDriverId,
-                    isDense: true,
-                    decoration: const InputDecoration(isDense: true),
-                    items: [
-                      ...driverUsers.map((u) {
-                        final id = u['id'] as int;
-                        final name = (u['full_name'] ?? u['username'] ?? '')
-                            .toString();
-                        final phone = (u['phone'] ?? '').toString();
-                        final label = phone.isNotEmpty
-                            ? "$name ($phone)"
-                            : name;
-                        return DropdownMenuItem<int?>(
-                          value: id,
-                          child: Text(label, style: const TextStyle(fontSize: 13)),
-                        );
-                      }),
-                    ],
-                    onChanged: (val) {
-                      setDialogState(() => selectedDriverId = val);
-                    },
-                  ),
+                  // Tài xế đi theo xe (mỗi xe có 1 tài khoản tài xế phụ trách)
+                  _buildVehicleDriverInfo(selectedVehiclePlate),
                 ],
               ),
             ),
@@ -11533,26 +11484,21 @@ class _DispatchSupervisorScreenState extends State<DispatchSupervisorScreen> {
                   );
                   return;
                 }
-                if (selectedDriverId == null) {
+                if (_vehicleByPlate(selectedVehiclePlate)?['default_driver_id'] ==
+                    null) {
                   ScaffoldMessenger.of(context).showSnackBar(
-                    const SnackBar(
-                      content: Text("Vui lòng chỉ định tài xế phụ trách"),
+                    SnackBar(
+                      content: Text(
+                          "Xe $selectedVehiclePlate chưa được gán tài xế phụ trách. Vào Đội xe & Tài xế để gán trước."),
                     ),
                   );
                   return;
                 }
 
-                final pickupPt = _readPointCoords(
-                    "Nơi nhận hàng", pickupLatCtrl, pickupLngCtrl, pickupRadiusCtrl);
-                final deliveryPt = _readPointCoords(
-                    "Điểm giao hàng", deliveryLatCtrl, deliveryLngCtrl, deliveryRadiusCtrl);
-                final coordError = pickupPt.error ?? deliveryPt.error;
-                if (coordError != null) {
-                  ScaffoldMessenger.of(context).showSnackBar(
-                    SnackBar(content: Text(coordError)),
-                  );
-                  return;
-                }
+                final pickupPt = _resolvePointCoords(
+                    pickupAddrCtrl.text, pickupCatalog, pickupOrig);
+                final deliveryPt = _resolvePointCoords(
+                    deliveryAddrCtrl.text, deliveryCatalog, deliveryOrig);
 
                 Navigator.of(dialogCtx).pop();
                 setState(() => _isLoading = true);
@@ -11576,7 +11522,6 @@ class _DispatchSupervisorScreenState extends State<DispatchSupervisorScreen> {
                   "delivery_lng": deliveryPt.lng,
                   "delivery_radius_m": deliveryPt.radius,
                   "assigned_vehicle_plate": selectedVehiclePlate,
-                  "assigned_driver_id": selectedDriverId,
                   "cargo_weight_tons": weight,
                 };
 
@@ -11625,7 +11570,7 @@ class _DispatchSupervisorScreenState extends State<DispatchSupervisorScreen> {
       text: (o['order_code'] ?? '').toString(),
     );
     final factoryCodeCtrl = TextEditingController(
-      text: (o['factory_code'] ?? 'NM-BIMSON').toString(),
+      text: (o['factory_code'] ?? '').toString(),
     );
     final pickupAddrCtrl = TextEditingController(
       text: (o['pickup_address'] ?? '').toString(),
@@ -11633,82 +11578,37 @@ class _DispatchSupervisorScreenState extends State<DispatchSupervisorScreen> {
     final deliveryAddrCtrl = TextEditingController(
       text: (o['delivery_address'] ?? '').toString(),
     );
-    final pickupLatCtrl = TextEditingController(text: _coordText(o['pickup_lat']));
-    final pickupLngCtrl = TextEditingController(text: _coordText(o['pickup_lng']));
-    final pickupRadiusCtrl = TextEditingController(
-      text: (o['pickup_radius_m'] ?? '').toString(),
-    );
-    final deliveryLatCtrl = TextEditingController(text: _coordText(o['delivery_lat']));
-    final deliveryLngCtrl = TextEditingController(text: _coordText(o['delivery_lng']));
-    final deliveryRadiusCtrl = TextEditingController(
-      text: (o['delivery_radius_m'] ?? '').toString(),
-    );
+    final pickupOrig = _PointOrig.fromOrder(o, 'pickup');
+    final deliveryOrig = _PointOrig.fromOrder(o, 'delivery');
     final cargoWeightCtrl = TextEditingController(
-      text: (o['cargo_weight_tons']?.toString() ?? '30.0'),
+      text: _numText(o['cargo_weight_tons']),
     );
-    String transportType = (o['transport_type'] ?? 'INTERNAL').toString();
-    if (!['INTERNAL', 'RENTAL', 'CUSTOMER_SELF'].contains(transportType)) {
-      transportType = 'INTERNAL';
-    }
+    final originalTransportType =
+        (o['transport_type'] ?? '').toString().trim().toUpperCase();
+    String transportType =
+        originalTransportType.isEmpty ? 'INTERNAL' : originalTransportType;
     int? selectedProductId = o['product_id'] as int?;
     String? selectedVehiclePlate = o['assigned_vehicle_plate']?.toString();
-    int? selectedDriverId = o['assigned_driver_id'] as int?;
-    String status = (o['status'] ?? 'assigned').toString();
 
-    // Danh sách gợi ý Nhà máy, Nơi nhận và Điểm giao hàng
-    final factorySuggestions = <String>{
-      "NM-BIMSON",
-      "NM_LONG_AN",
-      "NM-NGHISON",
-      "NM-HAIPHONG",
-      "NM-CAMPHA",
-    };
-    final pickupSuggestions = <String>{
-      "Kho Xi Măng Bỉm Sơn, Thanh Hóa",
-      "Kho Long An KCN Thuận Đạo",
-      "Kho Nghi Sơn, Thanh Hóa",
-      "Cảng Nghi Sơn, Tĩnh Gia",
-      "Kho Cảng Sài Gòn, Q.4, TP.HCM",
-      "Cảng Cát Lái, TP. Thủ Đức",
-    };
-    final deliverySuggestions = <String>{
-      "Dự án Khu đô thị Waterpoint, Bến Lức",
-      "Trạm trộn Bê tông An Cư, Long An",
-      "Công trình Cầu Mỹ Thuận 2",
-      "Khu đô thị Vinhomes Grand Park, TP. Thủ Đức",
-      "Trạm bê tông Lê Phan, Bình Chánh",
-      "Công trình Cao tốc Bắc Nam - Đoạn Diễn Châu",
-    };
+    // Gợi ý lấy từ dữ liệu thật: các đơn hàng đã có trong hệ thống
+    final factorySuggestions = <String>{};
 
     for (final ord in _orders) {
       if (ord is Map) {
         final f = (ord['factory_code'] ?? '').toString().trim();
         if (f.isNotEmpty) factorySuggestions.add(f);
-        final p = (ord['pickup_address'] ?? '').toString().trim();
-        if (p.isNotEmpty) pickupSuggestions.add(p);
-        final d = (ord['delivery_address'] ?? '').toString().trim();
-        if (d.isNotEmpty) deliverySuggestions.add(d);
       }
     }
 
-    // Lọc danh sách tài xế (kết hợp _users và _drivers, khử trùng id)
-    final driverUsers = _getAvailableDriverUsers();
-    if (selectedDriverId != null &&
-        !driverUsers.any((u) => u['id'] == selectedDriverId)) {
-      final fallbackName = (o['driver_name'] ?? '').toString().trim();
-      if (fallbackName.isNotEmpty) {
-        driverUsers.insert(0, {
-          'id': selectedDriverId,
-          'full_name': fallbackName,
-          'phone': (o['driver_phone'] ?? '').toString(),
-        });
-      } else {
-        selectedDriverId = driverUsers.isNotEmpty ? driverUsers[0]['id'] as int? : null;
-      }
-    }
+    // Hàng hóa của đơn không còn trong danh mục thì vẫn giữ, hiện theo tên đã lưu
+    final editProducts = _products.whereType<Map>().toList();
     if (selectedProductId != null &&
-        !_products.any((p) => p is Map && p['id'] == selectedProductId)) {
-      selectedProductId = _products.isNotEmpty ? _products[0]['id'] as int? : null;
+        !editProducts.any((p) => p['id'] == selectedProductId)) {
+      final pn = (o['product_name'] ?? '').toString().trim();
+      editProducts.insert(0, {
+        'id': selectedProductId,
+        'name': pn.isNotEmpty ? pn : 'Hàng hóa #$selectedProductId',
+      });
     }
     // Xe chọn được: xe đang hoạt động + xe hiện tại của đơn (kể cả khi xe đó đã Tạm ngừng)
     final currentPlate = selectedVehiclePlate;
@@ -11717,11 +11617,25 @@ class _DispatchSupervisorScreenState extends State<DispatchSupervisorScreen> {
             !_isVehicleInactive(v) ||
             (v is Map && (v['plate_number'] ?? '').toString() == currentPlate))
         .toList();
+    if (selectedVehiclePlate != null && selectedVehiclePlate.trim().isEmpty) {
+      selectedVehiclePlate = null;
+    }
     if (selectedVehiclePlate != null &&
         !editVehicles.any((v) => v is Map && (v['plate_number'] ?? '').toString() == selectedVehiclePlate)) {
-      selectedVehiclePlate = editVehicles.isNotEmpty ? (editVehicles[0]['plate_number'] ?? '').toString() : null;
+      editVehicles.insert(0, {'plate_number': selectedVehiclePlate, 'vehicle_type': 'không có trong danh sách xe'});
     }
-    status = _normalizeOrderStatus(status);
+
+
+    const transportLabels = {
+      'INTERNAL': 'Xe nội bộ',
+      'RENTAL': 'Xe thuê ngoài',
+      'CUSTOMER_SELF': 'Khách tự vận chuyển',
+    };
+    final transportItems = <String, String>{
+      if (!transportLabels.containsKey(transportType))
+        transportType: 'Hiện tại ($transportType)',
+      ...transportLabels,
+    };
 
     showDialog(
       context: context,
@@ -11809,7 +11723,7 @@ class _DispatchSupervisorScreenState extends State<DispatchSupervisorScreen> {
                               isDense: true,
                               isExpanded: true,
                               decoration: const InputDecoration(isDense: true),
-                              items: _products.map((p) {
+                              items: editProducts.map((p) {
                                 final id = p['id'] as int;
                                 final name =
                                     (p['name'] ?? 'Hàng hóa').toString();
@@ -11876,20 +11790,12 @@ class _DispatchSupervisorScreenState extends State<DispatchSupervisorScreen> {
                               isDense: true,
                               isExpanded: true,
                               decoration: const InputDecoration(isDense: true),
-                              items: const [
-                                DropdownMenuItem(
-                                  value: "INTERNAL",
-                                  child: Text("Xe nội bộ", style: TextStyle(fontSize: 13)),
-                                ),
-                                DropdownMenuItem(
-                                  value: "RENTAL",
-                                  child: Text("Xe thuê ngoài", style: TextStyle(fontSize: 13)),
-                                ),
-                                DropdownMenuItem(
-                                  value: "CUSTOMER_SELF",
-                                  child: Text("Khách tự vận chuyển", style: TextStyle(fontSize: 13)),
-                                ),
-                              ],
+                              items: transportItems.entries
+                                  .map((e) => DropdownMenuItem(
+                                        value: e.key,
+                                        child: Text(e.value, style: const TextStyle(fontSize: 13)),
+                                      ))
+                                  .toList(),
                               onChanged: (val) {
                                 if (val != null) {
                                   setDialogState(() => transportType = val);
@@ -11927,17 +11833,10 @@ class _DispatchSupervisorScreenState extends State<DispatchSupervisorScreen> {
                     labelText: "Nơi nhận hàng",
                     prefixIcon: Icons.warehouse_outlined,
                     catalog: pickupCatalog,
-                    history: pickupSuggestions.toList(),
-                    onCatalogSelected: (loc) => _fillPointCoords(
-                        loc, pickupLatCtrl, pickupLngCtrl, pickupRadiusCtrl),
                     hintText: "Nhập hoặc chọn kho hàng...",
                     isRequired: true,
                   ),
-                  _buildPointCoordsRow(
-                    latCtrl: pickupLatCtrl,
-                    lngCtrl: pickupLngCtrl,
-                    radiusCtrl: pickupRadiusCtrl,
-                  ),
+                  _buildPointCoordsInfo(pickupAddrCtrl, pickupCatalog, pickupOrig),
                   const SizedBox(height: 16),
                   // Điểm giao hàng (Gợi ý tự động Autocomplete)
                   _buildLocationAutocomplete(
@@ -11945,17 +11844,10 @@ class _DispatchSupervisorScreenState extends State<DispatchSupervisorScreen> {
                     labelText: "Điểm giao hàng",
                     prefixIcon: Icons.location_on_outlined,
                     catalog: deliveryCatalog,
-                    history: deliverySuggestions.toList(),
-                    onCatalogSelected: (loc) => _fillPointCoords(
-                        loc, deliveryLatCtrl, deliveryLngCtrl, deliveryRadiusCtrl),
                     hintText: "Nhập địa chỉ hoặc chọn công trình...",
                     isRequired: true,
                   ),
-                  _buildPointCoordsRow(
-                    latCtrl: deliveryLatCtrl,
-                    lngCtrl: deliveryLngCtrl,
-                    radiusCtrl: deliveryRadiusCtrl,
-                  ),
+                  _buildPointCoordsInfo(deliveryAddrCtrl, deliveryCatalog, deliveryOrig),
                   const SizedBox(height: 16),
                   // Phương tiện chỉ định
                   _buildFormLabel("Phương tiện vận chuyển *"),
@@ -11977,66 +11869,13 @@ class _DispatchSupervisorScreenState extends State<DispatchSupervisorScreen> {
                       setDialogState(() => selectedVehiclePlate = val);
                     },
                   ),
-                  const SizedBox(height: 16),
-                  // Tài xế chỉ định
-                  _buildFormLabel("Tài xế phụ trách *"),
-                  DropdownButtonFormField<int?>(
-                    value: selectedDriverId,
-                    isDense: true,
-                    decoration: const InputDecoration(isDense: true),
-                    items: [
-                      ...driverUsers.map((u) {
-                        final id = u['id'] as int;
-                        final name = (u['full_name'] ?? u['username'] ?? '')
-                            .toString();
-                        final phone = (u['phone'] ?? '').toString();
-                        final label = phone.isNotEmpty
-                            ? "$name ($phone)"
-                            : name;
-                        return DropdownMenuItem<int?>(
-                          value: id,
-                          child: Text(label, style: const TextStyle(fontSize: 13)),
-                        );
-                      }),
-                    ],
-                    onChanged: (val) {
-                      setDialogState(() => selectedDriverId = val);
-                    },
-                  ),
-                  const SizedBox(height: 16),
-                  // Trạng thái đơn hàng
-                  _buildFormLabel("Trạng thái đơn hàng"),
-                  DropdownButtonFormField<String>(
-                    value: status,
-                    isDense: true,
-                    decoration: const InputDecoration(isDense: true),
-                    items: const [
-                      DropdownMenuItem(
-                        value: "waiting",
-                        child: Text("Chờ nhận (waiting)", style: TextStyle(fontSize: 13)),
-                      ),
-                      DropdownMenuItem(
-                        value: "assigned",
-                        child: Text("Đã điều phối (assigned)", style: TextStyle(fontSize: 13)),
-                      ),
-                      DropdownMenuItem(
-                        value: "in_transit",
-                        child: Text("Đang vận chuyển (in_transit)", style: TextStyle(fontSize: 13)),
-                      ),
-                      DropdownMenuItem(
-                        value: "completed",
-                        child: Text("Đã hoàn thành (completed)", style: TextStyle(fontSize: 13)),
-                      ),
-                      DropdownMenuItem(
-                        value: "cancelled",
-                        child: Text("Đã hủy (cancelled)", style: TextStyle(fontSize: 13)),
-                      ),
-                    ],
-                    onChanged: (val) {
-                      if (val != null) {
-                        setDialogState(() => status = val);
-                      }
-                    },
+                  // Tài xế đi theo xe: giữ xe cũ thì giữ tài xế hiện tại của đơn
+                  _buildVehicleDriverInfo(
+                    selectedVehiclePlate,
+                    keepDriverName: selectedVehiclePlate ==
+                            o['assigned_vehicle_plate']?.toString()
+                        ? (o['driver_name'] ?? '').toString()
+                        : null,
                   ),
                 ],
               ),
@@ -12061,9 +11900,17 @@ class _DispatchSupervisorScreenState extends State<DispatchSupervisorScreen> {
                 final factory = factoryCodeCtrl.text.trim();
                 final pickup = pickupAddrCtrl.text.trim();
                 final delivery = deliveryAddrCtrl.text.trim();
-                final weight =
-                    double.tryParse(cargoWeightCtrl.text.trim()) ?? 0.0;
+                final weight = double.tryParse(
+                    cargoWeightCtrl.text.trim().replaceAll(',', '.'));
 
+                if (weight == null || weight <= 0) {
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    const SnackBar(
+                      content: Text("Khối lượng hàng hóa phải là số lớn hơn 0"),
+                    ),
+                  );
+                  return;
+                }
                 if (code.isEmpty ||
                     factory.isEmpty ||
                     pickup.isEmpty ||
@@ -12076,17 +11923,10 @@ class _DispatchSupervisorScreenState extends State<DispatchSupervisorScreen> {
                   return;
                 }
 
-                final pickupPt = _readPointCoords(
-                    "Nơi nhận hàng", pickupLatCtrl, pickupLngCtrl, pickupRadiusCtrl);
-                final deliveryPt = _readPointCoords(
-                    "Điểm giao hàng", deliveryLatCtrl, deliveryLngCtrl, deliveryRadiusCtrl);
-                final coordError = pickupPt.error ?? deliveryPt.error;
-                if (coordError != null) {
-                  ScaffoldMessenger.of(context).showSnackBar(
-                    SnackBar(content: Text(coordError)),
-                  );
-                  return;
-                }
+                final pickupPt = _resolvePointCoords(
+                    pickupAddrCtrl.text, pickupCatalog, pickupOrig);
+                final deliveryPt = _resolvePointCoords(
+                    deliveryAddrCtrl.text, deliveryCatalog, deliveryOrig);
 
                 Navigator.of(dialogCtx).pop();
                 setState(() => _isLoading = true);
@@ -12097,7 +11937,8 @@ class _DispatchSupervisorScreenState extends State<DispatchSupervisorScreen> {
                   "factory_code": factory,
                   "product_id": selectedProductId,
                   "product_detail": productDetailCtrl.text.trim(),
-                  "transport_type": transportType,
+                  if (transportType != originalTransportType)
+                    "transport_type": transportType,
                   "carrier_name": transportType == "RENTAL"
                       ? carrierNameCtrl.text.trim()
                       : "",
@@ -12110,9 +11951,7 @@ class _DispatchSupervisorScreenState extends State<DispatchSupervisorScreen> {
                   "delivery_lng": deliveryPt.lng,
                   "delivery_radius_m": deliveryPt.radius,
                   "assigned_vehicle_plate": selectedVehiclePlate,
-                  "assigned_driver_id": selectedDriverId,
                   "cargo_weight_tons": weight,
-                  "status": status,
                 };
 
                 final res = await AdminService.updateOrder(orderId, payload);
@@ -16075,4 +15914,20 @@ class _VehicleInspectionsModalState extends State<_VehicleInspectionsModal> {
       ),
     );
   }
+}
+
+/// Địa chỉ và tọa độ đang lưu của một điểm trong đơn (dùng khi sửa đơn).
+class _PointOrig {
+  final String address;
+  final double? lat;
+  final double? lng;
+  final int? radius;
+  const _PointOrig(this.address, this.lat, this.lng, this.radius);
+
+  factory _PointOrig.fromOrder(Map o, String kind) => _PointOrig(
+        (o['${kind}_address'] ?? '').toString(),
+        double.tryParse((o['${kind}_lat'] ?? '').toString()),
+        double.tryParse((o['${kind}_lng'] ?? '').toString()),
+        int.tryParse((o['${kind}_radius_m'] ?? '').toString()),
+      );
 }

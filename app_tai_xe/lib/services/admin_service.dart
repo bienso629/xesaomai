@@ -410,6 +410,10 @@ class AdminService {
   /// Xóa (mềm) một điểm khỏi danh mục.
   static Future<Map<String, dynamic>> deleteLocation(int id) => _locationCall('DELETE', 'locations/$id');
 
+  /// Xóa nhiều điểm trong danh mục cùng lúc.
+  static Future<Map<String, dynamic>> bulkDeleteLocations(List<int> ids) =>
+      _locationCall('POST', 'locations/bulk-delete', body: {'ids': ids}, timeoutSeconds: 60);
+
   /// Bắt đầu quét lịch sử dừng đỗ của Vietmap và Bình Anh (chạy nền phía server).
   static Future<Map<String, dynamic>> startLocationScan(Map<String, dynamic> options) =>
       _locationCall('POST', 'locations/scan', body: options);
@@ -426,6 +430,11 @@ class AdminService {
   /// Duyệt gợi ý thành một điểm trong danh mục.
   static Future<Map<String, dynamic>> approveLocationSuggestion(int id, Map<String, dynamic> data) =>
       _locationCall('POST', 'location-suggestions/$id/approve', body: data);
+
+  /// Duyệt nhiều gợi ý cùng lúc. Tên điểm lấy theo tên trạm hoặc địa chỉ GPS.
+  static Future<Map<String, dynamic>> bulkApproveLocationSuggestions(List<int> ids, {String kind = 'BOTH'}) =>
+      _locationCall('POST', 'location-suggestions/bulk-approve',
+          body: {'ids': ids, 'kind': kind}, timeoutSeconds: 60);
 
   /// Bỏ qua gợi ý (lần quét sau không hiện lại trong hàng chờ).
   static Future<Map<String, dynamic>> ignoreLocationSuggestion(int id) =>
