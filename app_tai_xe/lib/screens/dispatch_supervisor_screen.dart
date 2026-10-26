@@ -1602,36 +1602,6 @@ class _DispatchSupervisorScreenState extends State<DispatchSupervisorScreen> {
                                 onPressed: _resetOrderFilters,
                               ),
                             ),
-                          SizedBox(
-                            height: kControlHeight,
-                            child: OutlinedButton.icon(
-                              style: OutlinedButton.styleFrom(
-                                foregroundColor: Colors.blue.shade800,
-                                side: BorderSide(color: Colors.blue.shade300),
-                                minimumSize: const Size(0, kControlHeight),
-                                fixedSize: const Size.fromHeight(
-                                  kControlHeight,
-                                ),
-                                visualDensity: VisualDensity.standard,
-                                tapTargetSize: MaterialTapTargetSize.shrinkWrap,
-                                padding: const EdgeInsets.symmetric(
-                                  horizontal: 14,
-                                ),
-                                shape: RoundedRectangleBorder(
-                                  borderRadius: BorderRadius.circular(4),
-                                ),
-                              ),
-                              icon: const Icon(Icons.refresh, size: 16),
-                              label: const Text(
-                                "Tải lại",
-                                style: TextStyle(
-                                  fontWeight: FontWeight.w600,
-                                  fontSize: 12.5,
-                                ),
-                              ),
-                              onPressed: _loadAllManagementData,
-                            ),
-                          ),
                           if (canManageOrders)
                             SizedBox(
                               height: kControlHeight,
