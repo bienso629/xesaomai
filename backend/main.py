@@ -10,6 +10,7 @@ import json
 import asyncio
 import secrets
 import threading
+from concurrent.futures import ThreadPoolExecutor, as_completed
 import unicodedata
 from urllib.parse import urlencode
 import requests
@@ -2400,6 +2401,195 @@ def _parse_binhanh_range(from_date: str, to_date: str, max_hours: int):
     if end - start > timedelta(hours=max_hours):
         raise HTTPException(status_code=400, detail=f"Chỉ được lấy dữ liệu tối đa {max_hours} giờ liên tiếp")
     return start.strftime("%Y-%m-%dT%H:%M:%S"), end.strftime("%Y-%m-%dT%H:%M:%S")
+
+FLEET_GPS_CACHE_SECONDS = 8
+_fleet_gps_cache = {"at": None, "data": None}
+_fleet_gps_lock = threading.Lock()
+_vietmap_vehicles_cache = {"at": None, "plates": []}
+_vietmap_vehicles_lock = threading.Lock()
+VIETMAP_VEHICLES_CACHE_SECONDS = 60
+
+
+def _get_vietmap_plates_cached(force: bool = False) -> list:
+    now = datetime.now(timezone.utc)
+    with _vietmap_vehicles_lock:
+        cached_at = _vietmap_vehicles_cache["at"]
+        if (
+            not force
+            and cached_at is not None
+            and (now - cached_at).total_seconds() < VIETMAP_VEHICLES_CACHE_SECONDS
+            and _vietmap_vehicles_cache["plates"]
+        ):
+            return list(_vietmap_vehicles_cache["plates"])
+    rows = _fetch_vietmap_vehicles()
+    plates = [r["plate"] for r in rows if r.get("plate")]
+    with _vietmap_vehicles_lock:
+        _vietmap_vehicles_cache["at"] = now
+        _vietmap_vehicles_cache["plates"] = plates
+    return list(plates)
+
+
+def _fetch_one_vietmap_status(plate: str) -> dict | None:
+    res = requests.get(
+        f"{QUANLYXE_BASE_URL}/getvehiclestatus",
+        params={"apikey": QUANLYXE_API_KEY, "plate": plate},
+        timeout=6,
+    )
+    res.raise_for_status()
+    data = res.json().get("Data")
+    if not isinstance(data, list) or not data:
+        return None
+    item = dict(data[0])
+    if not str(item.get("Plate") or "").strip():
+        item["Plate"] = plate
+    item["GpsProvider"] = "vietmap"
+    return item
+
+
+def _fetch_vietmap_gps_statuses(force: bool = False) -> list:
+    plates = _get_vietmap_plates_cached(force=force)
+    if not plates:
+        return []
+    out = []
+    max_workers = min(8, max(1, len(plates)))
+    with ThreadPoolExecutor(max_workers=max_workers) as ex:
+        futures = {ex.submit(_fetch_one_vietmap_status, p): p for p in plates}
+        for fut in as_completed(futures):
+            try:
+                st = fut.result()
+                if st:
+                    out.append(st)
+            except Exception as e:
+                print(f"[fleet-gps] Lỗi lấy trạng thái Vietmap ({futures[fut]}): {e}")
+    return out
+
+
+def _fetch_binhanh_gps_statuses(force: bool = False) -> list:
+    if not BINHANH_CUSTOMER_CODE or not BINHANH_KEY:
+        raise RuntimeError("chưa cấu hình BINHANH_CUSTOMER_CODE / BINHANH_KEY")
+    now = datetime.now(timezone.utc)
+    with _binhanh_lock:
+        cached_at = _binhanh_tracking_cache["at"]
+        if (
+            not force
+            and cached_at is not None
+            and (now - cached_at).total_seconds() < BINHANH_TRACKING_CACHE_SECONDS
+            and _binhanh_tracking_cache["data"]
+        ):
+            raw = list(_binhanh_tracking_cache["data"])
+        else:
+            raw = _binhanh_post("tracking", {"IsFuel": True}, timeout=8).get("Vehicles") or []
+            _binhanh_tracking_cache["at"] = now
+            _binhanh_tracking_cache["data"] = raw
+
+    out = []
+    for v in raw:
+        provider_plate = str(v.get("VehiclePlate") or "").strip()
+        if not provider_plate:
+            continue
+        formatted_plate = _format_binhanh_plate(provider_plate)
+        lat = _as_float(v.get("Latitude"))
+        lng = _as_float(v.get("Longitude"))
+        spd = _as_float(v.get("Speed")) or 0.0
+        state = int(_as_float(v.get("State")) or 0)
+        direction = _as_float(v.get("Direction")) or 0.0
+        heading = direction * 45.0 if 0 <= direction <= 8 else direction
+        # Bình Anh State: 1=Đang chạy, 2=Dừng bật máy, 4=Quá tốc độ -> ACC ON
+        is_acc_on = state in (1, 2, 4) or spd > 0
+        gps_time_str = None
+        if v.get("UTCTime"):
+            ut = str(v["UTCTime"]).strip()
+            gps_time_str = ut if ut.endswith("Z") or "+" in ut else f"{ut}Z"
+        elif v.get("LocalTime"):
+            gps_time_str = str(v["LocalTime"]).strip()
+        total_km = int(round(_as_float(v.get("TotalKm")) or 0.0))
+        driver_name = str(v.get("DriverName") or "").strip() or "Chưa gắn thẻ"
+        out.append({
+            "Id": int(_as_float(v.get("VehicleID")) or 0),
+            "Plate": formatted_plate,
+            "ActualPlate": _normalize_plate(provider_plate),
+            "Y": lat or 0.0,
+            "X": lng or 0.0,
+            "Speed": spd,
+            "Driver": driver_name,
+            "Address": str(v.get("Address") or "").strip(),
+            "IsAccOn": is_acc_on,
+            "LastOdoMile": total_km,
+            "GpsTime": gps_time_str,
+            "Heading": heading,
+            "Status": state,
+            "StateLabel": BINHANH_STATE_LABELS.get(state, "Không xác định"),
+            "Satellite": 0,
+            "GpsProvider": "binhanh",
+        })
+    return out
+
+
+@app.get("/api/v1/fleet/gps-status")
+def get_fleet_gps_status(refresh: bool = False, current_user: dict = Depends(get_current_user)):
+    """Lấy trạng thái GPS trực tuyến của toàn đội xe từ đúng 2 dịch vụ Vietmap và Bình Anh."""
+    now = datetime.now(timezone.utc)
+    if not refresh and _fleet_gps_cache["at"] is not None:
+        if (now - _fleet_gps_cache["at"]).total_seconds() < FLEET_GPS_CACHE_SECONDS and _fleet_gps_cache["data"]:
+            return _fleet_gps_cache["data"]
+
+    with _fleet_gps_lock:
+        now = datetime.now(timezone.utc)
+        if not refresh and _fleet_gps_cache["at"] is not None:
+            if (now - _fleet_gps_cache["at"]).total_seconds() < FLEET_GPS_CACHE_SECONDS and _fleet_gps_cache["data"]:
+                return _fleet_gps_cache["data"]
+
+        providers_info = {}
+        merged_by_norm_plate = {}
+
+        # Nguồn 1: Vietmap (quanlyxe.vn)
+        try:
+            vm_list = _fetch_vietmap_gps_statuses(force=refresh)
+            for item in vm_list:
+                norm = _normalize_plate(item.get("Plate"))
+                if norm:
+                    merged_by_norm_plate[norm] = item
+            providers_info["vietmap"] = {"ok": True, "count": len(vm_list)}
+        except Exception as e:
+            detail = getattr(e, "detail", None) or str(e)
+            print(f"[fleet-gps] Lỗi nguồn Vietmap: {detail}")
+            providers_info["vietmap"] = {"ok": False, "error": str(detail), "count": 0}
+
+        # Nguồn 2: Bình Anh (nếu trùng biển số thì giữ Vietmap)
+        try:
+            ba_list = _fetch_binhanh_gps_statuses(force=refresh)
+            added_ba = 0
+            for item in ba_list:
+                norm = _normalize_plate(item.get("Plate"))
+                if norm and norm not in merged_by_norm_plate:
+                    merged_by_norm_plate[norm] = item
+                    added_ba += 1
+            providers_info["binhanh"] = {"ok": True, "count": len(ba_list), "merged": added_ba}
+        except Exception as e:
+            detail = getattr(e, "detail", None) or str(e)
+            print(f"[fleet-gps] Lỗi nguồn Bình Anh: {detail}")
+            providers_info["binhanh"] = {"ok": False, "error": str(detail), "count": 0}
+
+        # Đối chiếu biển số chuẩn trong bảng vehicles nếu có để đồng nhất hiển thị
+        try:
+            fleet_map = _fleet_plate_map()
+            for norm, item in merged_by_norm_plate.items():
+                if norm in fleet_map:
+                    item["Plate"] = fleet_map[norm]
+        except Exception as e:
+            print(f"[fleet-gps] Không đối chiếu được bảng vehicles: {e}")
+
+        vehicles_sorted = sorted(merged_by_norm_plate.values(), key=lambda x: str(x.get("Plate") or ""))
+        result = {
+            "fetched_at": now.isoformat(),
+            "total": len(vehicles_sorted),
+            "providers": providers_info,
+            "Data": vehicles_sorted,
+        }
+        _fleet_gps_cache["at"] = now
+        _fleet_gps_cache["data"] = result
+        return result
+
 
 @app.get("/api/v1/binhanh/status")
 def binhanh_status(current_user: dict = Depends(require_admin_or_manager)):

@@ -4,7 +4,7 @@ import 'package:flutter_map/flutter_map.dart';
 import 'package:latlong2/latlong.dart';
 import 'package:provider/provider.dart';
 import '../services/app_state.dart';
-import '../services/quanlyxe_service.dart';
+import '../services/admin_service.dart';
 
 class MapScreen extends StatefulWidget {
   final VoidCallback? onOpenDrawer;
@@ -36,48 +36,49 @@ class _MapScreenState extends State<MapScreen> {
   bool _showPanel = true;
   String _statusFilter = 'all'; // 'all', 'running', 'stopped', 'off'
 
-  // Toạ độ mặc định fallback cho các xe thuộc hệ thống khi mất tín hiệu GPS (khớp với vị trí trên Web Vietmap)
-  static const Map<String, LatLng> _offlineFallbackLocations = {
-    'BON SG-9999': LatLng(10.3800, 105.4200), // Long Xuyên, An Giang
-    'SC-9964-3': LatLng(10.1800, 106.6000), // Bình Đại, Bến Tre
-    'SG-9963 MŨI': LatLng(9.6500, 106.5200), // Duyên Hải, Trà Vinh
-    'CT-079.18': LatLng(10.0452, 105.7469), // Cần Thơ
-    'CT-079.18(02)': LatLng(10.0350, 105.7700), // Cái Răng, Cần Thơ
-    'CT-103.02': LatLng(10.0200, 105.7800), // Cần Thơ
-    '51D-743.06': LatLng(10.7200, 106.7300), // Quận 7, TP.HCM
-    '51H-665.69': LatLng(10.8200, 106.6800), // Bình Thạnh, TP.HCM
-    'CT-10933': LatLng(9.7800, 105.4700), // Vị Thanh, Hậu Giang
-    'SG-9963': LatLng(10.7500, 106.6500), // Quận 5, TP.HCM
-    '50H-999.88': LatLng(10.9300, 106.8500), // Biên Hòa, Đồng Nai
-    '50H-888.99': LatLng(10.7000, 106.9400), // Nhơn Trạch, Đồng Nai
-    '51D-999.00': LatLng(10.8600, 106.7800), // Thủ Đức, TP.HCM
-  };
-
-  static const Map<String, Map<String, String>> _offlineVehicleDetails = {
-    'BON SG-9999': {'address': 'Châu Thành, An Giang', 'driver': 'Chưa đăng nhập', 'time': '16-04 06:50'},
-    'CT-079.18': {'address': 'Cần Thơ', 'driver': 'Chưa đăng nhập', 'time': 'Mất GPS'},
-    'CT-079.18(02)': {'address': 'Cái Răng, Cần Thơ', 'driver': 'Chưa đăng nhập', 'time': 'Mất GPS'},
-    'CT-103.02': {'address': 'Cần Thơ', 'driver': 'Chưa đăng nhập', 'time': 'Mất GPS'},
-    'SG-9963 MŨI': {'address': 'Long Phú, Sóc Trăng', 'driver': 'Chưa đăng nhập', 'time': '16-05 10:43'},
-    '51D-743.06': {'address': 'Vĩnh Lộc B, Bình Chánh, TP.HCM', 'driver': 'Chưa đăng nhập', 'time': '30-03 16:56'},
-    '51H-665.69': {'address': 'Bình Thạnh, TP.HCM', 'driver': 'Chưa đăng nhập', 'time': 'Mất GPS'},
-    'CT-10933': {'address': 'Phụng Hiệp, Hậu Giang', 'driver': 'Chưa đăng nhập', 'time': '11-10 21:06'},
-    'SC-9964-3': {'address': 'Đồng Nai', 'driver': 'Chưa đăng nhập', 'time': '08-08 09:34'},
-    'SG-9963': {'address': 'TP. Đồng Hới, Quảng Bình', 'driver': 'Chưa đăng nhập', 'time': '11-10 21:06'},
-    '50H-999.88': {'address': 'Biên Hòa, Đồng Nai', 'driver': 'Chưa đăng nhập', 'time': 'Mất GPS'},
-    '50H-888.99': {'address': 'Nhơn Trạch, Đồng Nai', 'driver': 'Chưa đăng nhập', 'time': 'Mất GPS'},
-    '51D-999.00': {'address': 'Thủ Đức, TP.HCM', 'driver': 'Chưa đăng nhập', 'time': 'Mất GPS'},
-  };
-
   Timer? _autoRefreshTimer;
+  List<dynamic> _allOrders = [];
+  bool _isLoadingOrders = false;
+
+
+  Future<void> _loadAllOrders() async {
+    if (!mounted) return;
+    setState(() {
+      _isLoadingOrders = true;
+    });
+    try {
+      final orders = await AdminService.fetchOrders();
+      if (mounted) {
+        setState(() {
+          _allOrders = orders;
+          _isLoadingOrders = false;
+        });
+      }
+    } catch (e) {
+      debugPrint("MapScreen load orders error: $e");
+      if (mounted) {
+        setState(() {
+          _isLoadingOrders = false;
+        });
+      }
+    }
+  }
 
   @override
   void initState() {
     super.initState();
+    // Tải dữ liệu GPS từ 2 dịch vụ Vietmap & Bình Anh ngay khi mở màn hình
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted) {
+        context.read<AppState>().refreshAllFleetGps();
+        _loadAllOrders();
+      }
+    });
     // Tự động làm mới toạ độ toàn đội xe mỗi 30 giây
     _autoRefreshTimer = Timer.periodic(const Duration(seconds: 30), (_) {
       if (mounted) {
         context.read<AppState>().refreshAllFleetGps();
+        _loadAllOrders();
       }
     });
   }
@@ -88,54 +89,177 @@ class _MapScreenState extends State<MapScreen> {
     super.dispose();
   }
 
+
+  Widget _buildOrderInfo(String plate) {
+    // Chuẩn hóa biển số xe để so sánh chính xác nhất
+    final cleanPlate = plate.replaceAll('-', '').replaceAll('.', '').trim().toLowerCase();
+    
+    // Tìm đơn hàng chưa hoàn thành / chưa hủy gắn với xe này
+    final vehicleOrders = _allOrders.where((o) {
+      final assignedPlate = (o['assigned_vehicle_plate'] ?? '').toString().replaceAll('-', '').replaceAll('.', '').trim().toLowerCase();
+      final status = (o['status'] ?? 'waiting').toString().toLowerCase();
+      return assignedPlate == cleanPlate && status != 'completed' && status != 'cancelled';
+    }).toList();
+
+    if (_isLoadingOrders) {
+      return const Padding(
+        padding: EdgeInsets.symmetric(vertical: 2),
+        child: Row(
+          children: [
+            SizedBox(
+              width: 10,
+              height: 10,
+              child: CircularProgressIndicator(strokeWidth: 1.5, color: Colors.blue),
+            ),
+            SizedBox(width: 6),
+            Text('Đang tải thông tin đơn hàng...', style: TextStyle(fontSize: 10, color: Colors.grey)),
+          ],
+        ),
+      );
+    }
+
+    if (vehicleOrders.isEmpty) {
+      return const Padding(
+        padding: EdgeInsets.symmetric(vertical: 2),
+        child: Row(
+          children: [
+            Icon(Icons.info_outline, size: 12, color: Colors.grey),
+            SizedBox(width: 4),
+            Text(
+              'Xe hiện chưa có đơn hàng vận chuyển nào',
+              style: TextStyle(fontSize: 11, color: Colors.grey, fontStyle: FontStyle.italic),
+            ),
+          ],
+        ),
+      );
+    }
+
+    final order = vehicleOrders.first; // Lấy đơn hàng hiện tại mới nhất
+    final orderCode = (order['order_code'] ?? 'MÃ ĐƠN').toString();
+    final customerName = (order['customer_name'] ?? 'Khách lẻ').toString();
+    final productName = (order['product_name'] ?? 'Hàng hóa').toString();
+    final statusStr = (order['status_label'] ?? order['status'] ?? 'Đang xử lý').toString();
+    final deliveryAddress = (order['delivery_address'] ?? 'Điểm giao hàng').toString();
+
+    return Container(
+      margin: const EdgeInsets.symmetric(vertical: 4),
+      padding: const EdgeInsets.all(8),
+      decoration: BoxDecoration(
+        color: Colors.blue.shade50,
+        borderRadius: BorderRadius.circular(4),
+        border: Border.all(color: Colors.blue.shade200),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              Icon(Icons.local_shipping, size: 14, color: Colors.blue.shade800),
+              const SizedBox(width: 6),
+              Text(
+                'Đơn: $orderCode',
+                style: TextStyle(fontWeight: FontWeight.bold, fontSize: 11, color: Colors.blue.shade900),
+              ),
+              const Spacer(),
+              Container(
+                padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 1),
+                decoration: BoxDecoration(
+                  color: Colors.blue.shade800,
+                  borderRadius: BorderRadius.circular(3),
+                ),
+                child: Text(
+                  statusStr.toUpperCase(),
+                  style: const TextStyle(color: Colors.white, fontSize: 8, fontWeight: FontWeight.bold),
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 3),
+          Text(
+            'Khách: $customerName | Hàng: $productName',
+            style: const TextStyle(fontSize: 11, fontWeight: FontWeight.w600, color: Colors.black87),
+          ),
+          const SizedBox(height: 1),
+          Text(
+            'Điểm giao: $deliveryAddress',
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
+            style: TextStyle(fontSize: 10, color: Colors.grey.shade800),
+          ),
+        ],
+      ),
+    );
+  }
+
+  String _formatGpsTime(DateTime? dt) {
+    if (dt == null) return '';
+    final local = dt.toLocal();
+    final d = local.day.toString().padLeft(2, '0');
+    final m = local.month.toString().padLeft(2, '0');
+    final hh = local.hour.toString().padLeft(2, '0');
+    final mm = local.minute.toString().padLeft(2, '0');
+    return '$d/$m $hh:$mm';
+  }
+
   @override
   Widget build(BuildContext context) {
     final state = context.watch<AppState>();
     final fleetStatuses = state.allFleetVehiclesStatus;
-    final allPlates = QuanLyXeService.allFleetPlates;
+    final sortedPlates = fleetStatuses.keys.toList()..sort();
 
-    // Tổng hợp dữ liệu cho 28 xe
-    final List<_VehicleMapItem> allVehicles = allPlates.map((plate) {
-      final status = fleetStatuses[plate];
-      if (status != null && status.latitude > 0 && status.longitude > 0) {
-        return _VehicleMapItem(
-          plate: plate,
-          position: LatLng(status.latitude, status.longitude),
-          speed: status.speed,
-          isAccOn: status.isAccOn,
-          address: status.address,
-          driverName: status.driverName,
-          odoKm: status.odoKm,
-          isOnline: true,
-          statusText: status.speed > 0
-              ? 'Đang chạy (${status.speed.toStringAsFixed(0)} km/h)'
-              : (status.isAccOn ? 'Nổ máy dừng' : 'Tắt máy đỗ'),
-        );
+    // Tổng hợp dữ liệu thực tế từ đúng 2 dịch vụ Vietmap & Bình Anh
+    final List<_VehicleMapItem> allVehicles = sortedPlates.map((plate) {
+      final status = fleetStatuses[plate]!;
+      final bool hasValidCoords = status.latitude > 0 && status.longitude > 0;
+      final String timeStr = _formatGpsTime(status.gpsTime);
+      final String providerCode = status.gpsProvider.toLowerCase();
+      final String providerLabel = status.providerDisplayName;
+
+      String statusText;
+      if (hasValidCoords) {
+        if (status.speed > 0) {
+          statusText = 'Đang chạy (${status.speed.toStringAsFixed(0)} km/h)';
+        } else if (status.isAccOn) {
+          statusText = 'Nổ máy dừng';
+        } else {
+          statusText = status.stateLabel != null && status.stateLabel!.isNotEmpty
+              ? status.stateLabel!
+              : 'Tắt máy đỗ';
+        }
       } else {
-        final fallback = _offlineFallbackLocations[plate] ?? defaultCenter;
-        final offlineInfo = _offlineVehicleDetails[plate];
-        return _VehicleMapItem(
-          plate: plate,
-          position: fallback,
-          speed: 0,
-          isAccOn: false,
-          address: offlineInfo?['address'] ?? 'Vị trí bãi / Trạm vệ tinh',
-          driverName: offlineInfo?['driver'] ?? 'Chưa gắn ca',
-          odoKm: 0,
-          isOnline: false,
-          statusText: offlineInfo?['time'] != null ? 'Mất tín hiệu (${offlineInfo!['time']})' : 'Mất tín hiệu / Tắt máy',
-        );
+        statusText = timeStr.isNotEmpty ? 'Mất tín hiệu ($timeStr)' : 'Chưa có tọa độ GPS';
       }
+
+      return _VehicleMapItem(
+        plate: plate,
+        position: hasValidCoords ? LatLng(status.latitude, status.longitude) : defaultCenter,
+        hasValidCoords: hasValidCoords,
+        speed: status.speed,
+        isAccOn: status.isAccOn,
+        address: status.address.isNotEmpty ? status.address : 'Chưa xác định vị trí',
+        driverName: status.driverName.isNotEmpty ? status.driverName : 'Chưa gắn thẻ',
+        odoKm: status.odoKm,
+        isOnline: hasValidCoords,
+        statusText: statusText,
+        providerCode: providerCode,
+        providerLabel: providerLabel,
+      );
     }).toList();
 
+    // Thống kê theo nguồn dịch vụ GPS
+    final int vietmapCount = allVehicles.where((v) => v.providerCode == 'vietmap').length;
+    final int binhanhCount = allVehicles.where((v) => v.providerCode == 'binhanh').length;
+
+    final providerFiltered = allVehicles;
+
     // Thống kê số lượng theo trạng thái
-    final int runningCount = allVehicles.where((v) => v.isOnline && v.speed > 0).length;
-    final int idlingCount = allVehicles.where((v) => v.isOnline && v.speed == 0 && v.isAccOn).length;
-    final int stoppedCount = allVehicles.where((v) => v.isOnline && !v.isAccOn).length;
-    final int offlineCount = allVehicles.where((v) => !v.isOnline).length;
+    final int runningCount = providerFiltered.where((v) => v.isOnline && v.speed > 0).length;
+    final int idlingCount = providerFiltered.where((v) => v.isOnline && v.speed == 0 && v.isAccOn).length;
+    final int stoppedCount = providerFiltered.where((v) => v.isOnline && !v.isAccOn).length;
+    final int offlineCount = providerFiltered.where((v) => !v.isOnline).length;
 
     // Lọc danh sách theo từ khoá và bộ lọc trạng thái
-    final filteredVehicles = allVehicles.where((v) {
+    final filteredVehicles = providerFiltered.where((v) {
       if (_searchQuery.isNotEmpty && !v.plate.toLowerCase().contains(_searchQuery.toLowerCase())) {
         return false;
       }
@@ -145,16 +269,18 @@ class _MapScreenState extends State<MapScreen> {
       return true;
     }).toList();
 
-    // Tạo các Markers trên bản đồ
-    final markers = allVehicles.map((vehicle) {
+    // Tạo các Markers trên bản đồ (chỉ vẽ các xe có toạ độ hợp lệ thuộc bộ lọc nguồn hiện tại)
+    final markers = filteredVehicles.where((v) => v.hasValidCoords).map((vehicle) {
       final isSelected = vehicle.plate == (_selectedPlateOnMap ?? state.selectedPlate);
       final Color markerColor = vehicle.isOnline
-          ? (vehicle.speed > 0 ? const Color(0xFF16A34A) : (vehicle.isAccOn ? const Color(0xFFEAB308) : const Color(0xFF64748B)))
+          ? (vehicle.speed > 0
+              ? const Color(0xFF16A34A)
+              : (vehicle.isAccOn ? const Color(0xFFEAB308) : const Color(0xFF64748B)))
           : const Color(0xFF94A3B8);
 
       return Marker(
         point: vehicle.position,
-        width: isSelected ? 110 : 85,
+        width: isSelected ? 116 : 92,
         height: isSelected ? 65 : 55,
         child: GestureDetector(
           onTap: () {
@@ -181,6 +307,8 @@ class _MapScreenState extends State<MapScreen> {
                 ),
                 child: Text(
                   vehicle.plate,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
                   style: const TextStyle(
                     color: Colors.white,
                     fontSize: 10,
@@ -199,11 +327,13 @@ class _MapScreenState extends State<MapScreen> {
       );
     }).toList();
 
-    // Lấy thông tin xe được chọn để hiển thị thẻ chi tiết
-    final selectedVehicle = allVehicles.firstWhere(
-      (v) => v.plate == (_selectedPlateOnMap ?? state.selectedPlate),
-      orElse: () => allVehicles.first,
-    );
+    // Lấy thông tin xe được chọn để hiển thị thẻ chi tiết (chỉ chọn từ danh sách đang lọc)
+    final _VehicleMapItem? selectedVehicle = filteredVehicles.isEmpty
+        ? null
+        : filteredVehicles.firstWhere(
+            (v) => v.plate == (_selectedPlateOnMap ?? state.selectedPlate),
+            orElse: () => filteredVehicles.first,
+          );
 
     final isWide = MediaQuery.of(context).size.width >= 900;
 
@@ -226,13 +356,15 @@ class _MapScreenState extends State<MapScreen> {
                     onPressed: widget.onToggleDesktopSidebar,
                   )
                 : null),
-        title: Row(
+        title: Wrap(
+          crossAxisAlignment: WrapCrossAlignment.center,
+          spacing: 8,
+          runSpacing: 4,
           children: [
             const Text(
               'Bản Đồ Giám Sát GPS Toàn Đội Xe',
               style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16),
             ),
-            const SizedBox(width: 10),
             Container(
               padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
               decoration: BoxDecoration(
@@ -248,11 +380,27 @@ class _MapScreenState extends State<MapScreen> {
                 ),
               ),
             ),
+            Container(
+              padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+              decoration: BoxDecoration(
+                color: Colors.indigo.shade50,
+                borderRadius: BorderRadius.circular(4),
+                border: Border.all(color: Colors.indigo.shade200),
+              ),
+              child: Text(
+                'Vietmap: $vietmapCount | Bình Anh: $binhanhCount',
+                style: TextStyle(
+                  color: Colors.indigo.shade900,
+                  fontWeight: FontWeight.w600,
+                  fontSize: 11,
+                ),
+              ),
+            ),
           ],
         ),
         actions: [
           IconButton(
-            tooltip: 'Làm mới toạ độ toàn đội xe',
+            tooltip: 'Làm mới toạ độ Vietmap & Bình Anh',
             icon: state.isLoadingFleetGps
                 ? const SizedBox(
                     width: 20,
@@ -260,7 +408,7 @@ class _MapScreenState extends State<MapScreen> {
                     child: CircularProgressIndicator(strokeWidth: 2, color: Colors.blue),
                   )
                 : const Icon(Icons.refresh),
-            onPressed: () => state.refreshAllFleetGps(),
+            onPressed: () => state.refreshAllFleetGps(force: true),
           ),
           IconButton(
             tooltip: _showPanel ? 'Ẩn danh sách xe' : 'Hiện danh sách xe',
@@ -282,7 +430,7 @@ class _MapScreenState extends State<MapScreen> {
       ),
       body: Row(
         children: [
-          // Khung danh sách 28 xe bên trái (Tương tự ảnh giao diện)
+          // Khung danh sách xe bên trái
           if (_showPanel)
             Container(
               width: isWide ? 360 : 320,
@@ -331,14 +479,15 @@ class _MapScreenState extends State<MapScreen> {
                   ),
                   // Bộ lọc trạng thái nhanh
                   Container(
+                    width: double.infinity,
                     padding: const EdgeInsets.symmetric(horizontal: 8),
                     child: Wrap(
                       spacing: 4,
                       runSpacing: 4,
                       children: [
-                        _buildFilterChip('Tất cả (${allVehicles.length})', 'all'),
+                        _buildFilterChip('Tất cả (${providerFiltered.length})', 'all'),
                         _buildFilterChip('Đang chạy ($runningCount)', 'running'),
-                        _buildFilterChip('Đang đỗ ($stoppedCount)', 'stopped'),
+                        _buildFilterChip('Đang đỗ (${idlingCount + stoppedCount})', 'stopped'),
                         _buildFilterChip('Offline ($offlineCount)', 'off'),
                       ],
                     ),
@@ -346,88 +495,138 @@ class _MapScreenState extends State<MapScreen> {
                   const Divider(height: 12),
                   // Danh sách cuộn các xe
                   Expanded(
-                    child: ListView.separated(
-                      itemCount: filteredVehicles.length,
-                      separatorBuilder: (_, __) => Divider(height: 1, color: Colors.grey.shade200),
-                      itemBuilder: (context, index) {
-                        final v = filteredVehicles[index];
-                        final isSel = v.plate == (_selectedPlateOnMap ?? state.selectedPlate);
-                        final Color statusColor = v.isOnline
-                            ? (v.speed > 0
-                                ? const Color(0xFF16A34A)
-                                : (v.isAccOn ? const Color(0xFFEAB308) : const Color(0xFF64748B)))
-                            : const Color(0xFF94A3B8);
+                    child: filteredVehicles.isEmpty
+                        ? Center(
+                            child: Padding(
+                              padding: const EdgeInsets.all(16.0),
+                              child: Text(
+                                state.isLoadingFleetGps
+                                    ? 'Đang đồng bộ dữ liệu GPS từ Vietmap & Bình Anh...'
+                                    : 'Không có xe phù hợp bộ lọc',
+                                textAlign: TextAlign.center,
+                                style: TextStyle(fontSize: 12, color: Colors.grey.shade600),
+                              ),
+                            ),
+                          )
+                        : ListView.separated(
+                            itemCount: filteredVehicles.length,
+                            separatorBuilder: (_, _) => Divider(height: 1, color: Colors.grey.shade200),
+                            itemBuilder: (context, index) {
+                              final v = filteredVehicles[index];
+                              final isSel = v.plate == (_selectedPlateOnMap ?? state.selectedPlate);
+                              final Color statusColor = v.isOnline
+                                  ? (v.speed > 0
+                                      ? const Color(0xFF16A34A)
+                                      : (v.isAccOn ? const Color(0xFFEAB308) : const Color(0xFF64748B)))
+                                  : const Color(0xFF94A3B8);
+                              final bool isBinhAnh = v.providerCode == 'binhanh';
 
-                        return InkWell(
-                          onTap: () {
-                            setState(() {
-                              _selectedPlateOnMap = v.plate;
-                            });
-                            _mapController.move(v.position, 15.0);
-                          },
-                          child: Container(
-                            color: isSel ? Colors.blue.shade50 : Colors.transparent,
-                            padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
-                            child: Row(
-                              children: [
-                                Container(
-                                  width: 8,
-                                  height: 38,
-                                  decoration: BoxDecoration(
-                                    color: statusColor,
-                                    borderRadius: BorderRadius.circular(2),
-                                  ),
-                                ),
-                                const SizedBox(width: 8),
-                                Expanded(
-                                  child: Column(
-                                    crossAxisAlignment: CrossAxisAlignment.start,
+                              return InkWell(
+                                onTap: () {
+                                  setState(() {
+                                    _selectedPlateOnMap = v.plate;
+                                  });
+                                  if (v.hasValidCoords) {
+                                    _mapController.move(v.position, 15.0);
+                                  }
+                                },
+                                child: Container(
+                                  color: isSel ? Colors.blue.shade50 : Colors.transparent,
+                                  padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+                                  child: Row(
                                     children: [
-                                      Row(
-                                        mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                                        children: [
-                                          Text(
-                                            v.plate,
-                                            style: TextStyle(
-                                              fontWeight: FontWeight.bold,
-                                              fontSize: 13,
-                                              color: isSel ? Colors.blue.shade900 : Colors.black87,
-                                            ),
-                                          ),
-                                          if (v.isOnline && v.speed > 0)
-                                            Container(
-                                              padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 1),
-                                              decoration: BoxDecoration(
-                                                color: Colors.green.shade100,
-                                                borderRadius: BorderRadius.circular(3),
-                                              ),
-                                              child: Text(
-                                                '${v.speed.toStringAsFixed(0)} km/h',
-                                                style: TextStyle(
-                                                  color: Colors.green.shade900,
-                                                  fontWeight: FontWeight.bold,
-                                                  fontSize: 10,
-                                                ),
-                                              ),
-                                            ),
-                                        ],
+                                      Container(
+                                        width: 8,
+                                        height: 38,
+                                        decoration: BoxDecoration(
+                                          color: statusColor,
+                                          borderRadius: BorderRadius.circular(2),
+                                        ),
                                       ),
-                                      const SizedBox(height: 2),
-                                      Text(
-                                        v.address,
-                                        maxLines: 1,
-                                        overflow: TextOverflow.ellipsis,
-                                        style: TextStyle(fontSize: 11, color: Colors.grey.shade600),
+                                      const SizedBox(width: 8),
+                                      Expanded(
+                                        child: Column(
+                                          crossAxisAlignment: CrossAxisAlignment.start,
+                                          children: [
+                                            Row(
+                                              children: [
+                                                Expanded(
+                                                  child: Row(
+                                                    children: [
+                                                      Flexible(
+                                                        child: Text(
+                                                          v.plate,
+                                                          overflow: TextOverflow.ellipsis,
+                                                          style: TextStyle(
+                                                            fontWeight: FontWeight.bold,
+                                                            fontSize: 13,
+                                                            color: isSel ? Colors.blue.shade900 : Colors.black87,
+                                                          ),
+                                                        ),
+                                                      ),
+                                                      const SizedBox(width: 6),
+                                                      Container(
+                                                        padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 1),
+                                                        decoration: BoxDecoration(
+                                                          color: isBinhAnh
+                                                              ? Colors.teal.shade50
+                                                              : Colors.indigo.shade50,
+                                                          borderRadius: BorderRadius.circular(3),
+                                                          border: Border.all(
+                                                            color: isBinhAnh
+                                                                ? Colors.teal.shade200
+                                                                : Colors.indigo.shade200,
+                                                            width: 0.8,
+                                                          ),
+                                                        ),
+                                                        child: Text(
+                                                          v.providerLabel,
+                                                          style: TextStyle(
+                                                            fontSize: 9,
+                                                            fontWeight: FontWeight.w600,
+                                                            color: isBinhAnh
+                                                                ? Colors.teal.shade800
+                                                                : Colors.indigo.shade800,
+                                                          ),
+                                                        ),
+                                                      ),
+                                                    ],
+                                                  ),
+                                                ),
+                                                if (v.isOnline && v.speed > 0)
+                                                  Container(
+                                                    padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 1),
+                                                    decoration: BoxDecoration(
+                                                      color: Colors.green.shade100,
+                                                      borderRadius: BorderRadius.circular(3),
+                                                    ),
+                                                    child: Text(
+                                                      '${v.speed.toStringAsFixed(0)} km/h',
+                                                      style: TextStyle(
+                                                        color: Colors.green.shade900,
+                                                        fontWeight: FontWeight.bold,
+                                                        fontSize: 10,
+                                                      ),
+                                                    ),
+                                                  ),
+                                              ],
+                                            ),
+                                            const SizedBox(height: 2),
+                                            Text(
+                                              v.address,
+                                              maxLines: 1,
+                                              overflow: TextOverflow.ellipsis,
+                                              style: TextStyle(fontSize: 11, color: Colors.grey.shade600),
+                                            ),
+                                          ],
+                                        ),
                                       ),
                                     ],
                                   ),
                                 ),
-                              ],
-                            ),
+                              );
+                            },
                           ),
-                        );
-                      },
-                    ),
                   ),
                 ],
               ),
@@ -456,88 +655,118 @@ class _MapScreenState extends State<MapScreen> {
                 ),
 
                 // Card thông tin chi tiết của xe đang chọn (Góc trên)
-                Positioned(
-                  top: 16,
-                  left: 16,
-                  right: 16,
-                  child: Card(
-                    elevation: 2,
-                    shape: RoundedRectangleBorder(
-                      borderRadius: BorderRadius.circular(4),
-                      side: BorderSide(color: Colors.grey.shade300, width: 1),
-                    ),
-                    color: Colors.white,
-                    child: Padding(
-                      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
-                      child: Row(
-                        children: [
-                          Icon(
-                            selectedVehicle.isOnline && selectedVehicle.speed > 0
-                                ? Icons.directions_car
-                                : (selectedVehicle.isAccOn ? Icons.power_settings_new : Icons.local_parking),
-                            color: selectedVehicle.isOnline
-                                ? (selectedVehicle.speed > 0
-                                    ? Colors.green
-                                    : (selectedVehicle.isAccOn ? Colors.amber.shade700 : Colors.grey))
-                                : Colors.grey,
-                            size: 32,
-                          ),
-                          const SizedBox(width: 12),
-                          Expanded(
-                            child: Column(
-                              crossAxisAlignment: CrossAxisAlignment.start,
-                              mainAxisSize: MainAxisSize.min,
-                              children: [
-                                Row(
-                                  children: [
-                                    Text(
-                                      'Xe: ${selectedVehicle.plate}',
-                                      style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 14),
-                                    ),
-                                    const SizedBox(width: 8),
-                                    Container(
-                                      padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
-                                      decoration: BoxDecoration(
-                                        color: selectedVehicle.isOnline ? Colors.green.shade50 : Colors.grey.shade200,
-                                        borderRadius: BorderRadius.circular(3),
-                                        border: Border.all(
-                                          color: selectedVehicle.isOnline ? Colors.green.shade300 : Colors.grey.shade400,
-                                        ),
-                                      ),
-                                      child: Text(
-                                        selectedVehicle.statusText,
-                                        style: TextStyle(
-                                          fontSize: 10,
-                                          fontWeight: FontWeight.bold,
-                                          color: selectedVehicle.isOnline ? Colors.green.shade900 : Colors.grey.shade700,
-                                        ),
-                                      ),
-                                    ),
-                                  ],
-                                ),
-                                const SizedBox(height: 2),
-                                Text(
-                                  'Vị trí: ${selectedVehicle.address}',
-                                  maxLines: 1,
-                                  overflow: TextOverflow.ellipsis,
-                                  style: const TextStyle(fontSize: 11, color: Colors.black87),
-                                ),
-                                Text(
-                                  'Tài xế: ${selectedVehicle.driverName} | Tốc độ: ${selectedVehicle.speed.toStringAsFixed(0)} km/h | ODO: ${selectedVehicle.odoKm} km',
-                                  style: TextStyle(
-                                    fontSize: 11,
-                                    color: Colors.blueGrey.shade700,
-                                    fontWeight: FontWeight.w600,
-                                  ),
-                                ),
-                              ],
+                if (selectedVehicle != null)
+                  Positioned(
+                    top: 16,
+                    left: 16,
+                    right: 16,
+                    child: Card(
+                      elevation: 2,
+                      shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(4),
+                        side: BorderSide(color: Colors.grey.shade300, width: 1),
+                      ),
+                      color: Colors.white,
+                      child: Padding(
+                        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+                        child: Row(
+                          children: [
+                            Icon(
+                              selectedVehicle.isOnline && selectedVehicle.speed > 0
+                                  ? Icons.directions_car
+                                  : (selectedVehicle.isAccOn ? Icons.power_settings_new : Icons.local_parking),
+                              color: selectedVehicle.isOnline
+                                  ? (selectedVehicle.speed > 0
+                                      ? Colors.green
+                                      : (selectedVehicle.isAccOn ? Colors.amber.shade700 : Colors.grey))
+                                  : Colors.grey,
+                              size: 32,
                             ),
-                          ),
-                        ],
+                            const SizedBox(width: 12),
+                            Expanded(
+                              child: Column(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                mainAxisSize: MainAxisSize.min,
+                                children: [
+                                  Wrap(
+                                    crossAxisAlignment: WrapCrossAlignment.center,
+                                    spacing: 8,
+                                    runSpacing: 4,
+                                    children: [
+                                      Text(
+                                        'Xe: ${selectedVehicle.plate}',
+                                        style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 14),
+                                      ),
+                                      Container(
+                                        padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                                        decoration: BoxDecoration(
+                                          color: selectedVehicle.providerCode == 'binhanh'
+                                              ? Colors.teal.shade50
+                                              : Colors.indigo.shade50,
+                                          borderRadius: BorderRadius.circular(3),
+                                          border: Border.all(
+                                            color: selectedVehicle.providerCode == 'binhanh'
+                                                ? Colors.teal.shade300
+                                                : Colors.indigo.shade300,
+                                          ),
+                                        ),
+                                        child: Text(
+                                          'GPS: ${selectedVehicle.providerLabel}',
+                                          style: TextStyle(
+                                            fontSize: 10,
+                                            fontWeight: FontWeight.bold,
+                                            color: selectedVehicle.providerCode == 'binhanh'
+                                                ? Colors.teal.shade900
+                                                : Colors.indigo.shade900,
+                                          ),
+                                        ),
+                                      ),
+                                      Container(
+                                        padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                                        decoration: BoxDecoration(
+                                          color: selectedVehicle.isOnline ? Colors.green.shade50 : Colors.grey.shade200,
+                                          borderRadius: BorderRadius.circular(3),
+                                          border: Border.all(
+                                            color: selectedVehicle.isOnline ? Colors.green.shade300 : Colors.grey.shade400,
+                                          ),
+                                        ),
+                                        child: Text(
+                                          selectedVehicle.statusText,
+                                          style: TextStyle(
+                                            fontSize: 10,
+                                            fontWeight: FontWeight.bold,
+                                            color: selectedVehicle.isOnline ? Colors.green.shade900 : Colors.grey.shade700,
+                                          ),
+                                        ),
+                                      ),
+                                    ],
+                                  ),
+                                  const SizedBox(height: 2),
+                                  Text(
+                                    'Vị trí: ${selectedVehicle.address}',
+                                    maxLines: 1,
+                                    overflow: TextOverflow.ellipsis,
+                                    style: const TextStyle(fontSize: 11, color: Colors.black87),
+                                  ),
+                                  // Tìm kiếm đơn hàng gán cho xe hiện tại
+                                  _buildOrderInfo(selectedVehicle.plate),
+                                  const SizedBox(height: 2),
+                                  Text(
+                                    'Tài xế: ${selectedVehicle.driverName} | Tốc độ: ${selectedVehicle.speed.toStringAsFixed(0)} km/h | ODO: ${selectedVehicle.odoKm} km',
+                                    style: TextStyle(
+                                      fontSize: 11,
+                                      color: Colors.blueGrey.shade700,
+                                      fontWeight: FontWeight.w600,
+                                    ),
+                                  ),
+                                ],
+                              ),
+                            ),
+                          ],
+                        ),
                       ),
                     ),
                   ),
-                ),
 
                 // Các nút điều khiển Zoom và vị trí
                 Positioned(
@@ -635,11 +864,13 @@ class _MapScreenState extends State<MapScreen> {
       ),
     );
   }
+
 }
 
 class _VehicleMapItem {
   final String plate;
   final LatLng position;
+  final bool hasValidCoords;
   final double speed;
   final bool isAccOn;
   final String address;
@@ -647,10 +878,13 @@ class _VehicleMapItem {
   final int odoKm;
   final bool isOnline;
   final String statusText;
+  final String providerCode;
+  final String providerLabel;
 
   _VehicleMapItem({
     required this.plate,
     required this.position,
+    required this.hasValidCoords,
     required this.speed,
     required this.isAccOn,
     required this.address,
@@ -658,5 +892,7 @@ class _VehicleMapItem {
     required this.odoKm,
     required this.isOnline,
     required this.statusText,
+    required this.providerCode,
+    required this.providerLabel,
   });
 }

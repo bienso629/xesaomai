@@ -798,30 +798,15 @@ class _DriverScheduleScreenState extends State<DriverScheduleScreen> {
               ),
             const SizedBox(height: 12),
 
-            // Mốc 1: ĐẾN ĐIỂM GIAO
+            // Trạng thái 1: TRƯỚC BƠM (Chụp ảnh trước khi bơm)
             _buildMilestoneStepRow(
-              title: "1. ĐẾN điểm giao hàng",
-              timeText: (trip?.arrivedTime != null)
-                  ? "Đã ghi nhận lúc ${trip!.arrivedTime!.hour.toString().padLeft(2, '0')}:${trip.arrivedTime!.minute.toString().padLeft(2, '0')} (GPS)"
-                  : "Bấm khi xe đến trạm/kho khách hàng",
-              isRecorded: trip?.arrivedTime != null,
-              buttonLabel: "Bấm ĐẾN",
-              isDisabled: stepDisabled || trip.arrivedTime != null,
-              onPressed: () => _handleArrived(context, state),
-            ),
-            const SizedBox(height: 8),
-
-            // Mốc 2a: ẢNH BƠM HÀNG - TRƯỚC KHI BƠM (bắt buộc, Tài xế chụp, có GPS)
-            _buildMilestoneStepRow(
-              title: "2a. Chụp ảnh TRƯỚC KHI BƠM",
+              title: "1. Chụp ảnh TRƯỚC KHI BƠM",
               timeText: (trip?.pumpBeforePhotoUrl != null)
                   ? "Đã gửi Điều phối (kèm GPS)"
-                  : (trip?.arrivedTime != null
-                      ? "Bắt buộc: chụp đồng hồ/vòi bơm trước khi bơm"
-                      : "Chờ xác nhận mốc ĐẾN"),
+                  : "Bắt buộc: chụp đồng hồ/vòi bơm trước khi bơm",
               isRecorded: trip?.pumpBeforePhotoUrl != null,
               buttonLabel: trip?.pumpBeforePhotoUrl != null ? "Chụp lại" : "Trước bơm",
-              isDisabled: stepDisabled || trip.arrivedTime == null || trip.pumpedTime != null,
+              isDisabled: stepDisabled || trip?.pumpedTime != null,
               onPressed: () => SlipCaptureScreen.show(
                 context,
                 slipType: 'pump_before',
@@ -831,17 +816,17 @@ class _DriverScheduleScreenState extends State<DriverScheduleScreen> {
             ),
             const SizedBox(height: 8),
 
-            // Mốc 2b: ẢNH BƠM HÀNG - ĐÃ BƠM XONG (bắt buộc, Tài xế chụp, có GPS)
+            // Trạng thái 2: BƠM XONG (Chụp ảnh Đã bơm xong)
             _buildMilestoneStepRow(
-              title: "2b. Chụp ảnh ĐÃ BƠM XONG",
+              title: "2. Chụp ảnh ĐÃ BƠM XONG",
               timeText: (trip?.pumpAfterPhotoUrl != null)
                   ? "Đã gửi Điều phối (kèm GPS)"
                   : (trip?.pumpBeforePhotoUrl != null
                       ? "Bắt buộc: chụp đồng hồ/phiếu sau khi bơm xong"
-                      : "Chụp ảnh TRƯỚC KHI BƠM trước"),
+                      : "Cần hoàn tất Chụp ảnh TRƯỚC KHI BƠM"),
               isRecorded: trip?.pumpAfterPhotoUrl != null,
-              buttonLabel: trip?.pumpAfterPhotoUrl != null ? "Chụp lại" : "Đã bơm",
-              isDisabled: stepDisabled || trip.pumpBeforePhotoUrl == null || trip.pumpedTime != null,
+              buttonLabel: trip?.pumpAfterPhotoUrl != null ? "Chụp lại" : "Bơm xong",
+              isDisabled: stepDisabled || trip?.pumpBeforePhotoUrl == null || trip?.pumpedTime != null,
               onPressed: () => SlipCaptureScreen.show(
                 context,
                 slipType: 'pump_after',
@@ -851,36 +836,15 @@ class _DriverScheduleScreenState extends State<DriverScheduleScreen> {
             ),
             const SizedBox(height: 8),
 
-            // Mốc 2: BƠM XONG (chỉ mở khi đã đủ 2 ảnh bơm hàng)
-            _buildMilestoneStepRow(
-              title: "2. BƠM XONG hàng",
-              timeText: (trip?.pumpedTime != null)
-                  ? "Hoàn tất lúc ${trip!.pumpedTime!.hour.toString().padLeft(2, '0')}:${trip.pumpedTime!.minute.toString().padLeft(2, '0')}"
-                  : (trip?.arrivedTime == null
-                      ? "Chờ xác nhận mốc ĐẾN"
-                      : (trip!.pumpAfterPhotoUrl == null
-                          ? "Cần đủ 2 ảnh bơm hàng (Trước khi bơm, Đã bơm xong)"
-                          : "Đang chờ/bơm (${trip.waitDurationMinutes} phút)")),
-              isRecorded: trip?.pumpedTime != null,
-              buttonLabel: "BƠM XONG",
-              isDisabled: stepDisabled ||
-                  trip.arrivedTime == null ||
-                  trip.pumpBeforePhotoUrl == null ||
-                  trip.pumpAfterPhotoUrl == null ||
-                  trip.pumpedTime != null,
-              onPressed: () => _handlePumped(context, state),
-            ),
-            const SizedBox(height: 8),
-
-            // Mốc 3: GỬI PHIẾU CÂN
+            // Trạng thái 3: CÂN (Chụp & gửi Phiếu Cân)
             _buildMilestoneStepRow(
               title: "3. Chụp & Gửi Phiếu Cân",
               timeText: (trip?.weighSlipPhotoUrl != null)
                   ? "Khối lượng: ${trip!.weighTonnage} Tấn (Đã đồng bộ Zalo OA)"
                   : "Chụp phiếu cân OCR khối lượng & mã lệnh",
               isRecorded: trip?.weighSlipPhotoUrl != null,
-              buttonLabel: "Phiếu Cân",
-              isDisabled: stepDisabled,
+              buttonLabel: "Cân",
+              isDisabled: stepDisabled || trip?.pumpAfterPhotoUrl == null,
               onPressed: () => SlipCaptureScreen.show(
                 context,
                 slipType: 'weigh',
@@ -889,15 +853,15 @@ class _DriverScheduleScreenState extends State<DriverScheduleScreen> {
             ),
             const SizedBox(height: 8),
 
-            // Mốc 4: GỬI PHIẾU GIAO HÀNG
+            // Trạng thái 4: GIAO (Chụp & gửi Phiếu Giao Hàng)
             _buildMilestoneStepRow(
               title: "4. Chụp & Gửi Phiếu Giao Hàng",
               timeText: (trip?.deliverySlipPhotoUrl != null)
                   ? "Đã gửi vào nhóm Zalo khách hàng"
                   : "Chụp biên bản giao nhận hàng hoàn tất chuyến",
               isRecorded: trip?.deliverySlipPhotoUrl != null,
-              buttonLabel: "Phiếu GH",
-              isDisabled: stepDisabled,
+              buttonLabel: "Giao",
+              isDisabled: stepDisabled || trip?.weighSlipPhotoUrl == null,
               onPressed: () => SlipCaptureScreen.show(
                 context,
                 slipType: 'delivery',

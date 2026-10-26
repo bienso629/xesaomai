@@ -146,13 +146,19 @@ class AppState extends ChangeNotifier {
     }
   }
 
-  Future<void> refreshAllFleetGps() async {
+  Future<void> refreshAllFleetGps({bool force = false}) async {
     isLoadingFleetGps = true;
     notifyListeners();
     try {
-      final statuses = await QuanLyXeService.fetchAllVehiclesStatus();
+      final statuses = await QuanLyXeService.fetchAllVehiclesStatus(forceRefresh: force);
       if (statuses.isNotEmpty) {
         allFleetVehiclesStatus = statuses;
+        // Đồng bộ danh sách biển số từ cả 2 nguồn Vietmap + Bình Anh
+        final mergedPlates = statuses.keys.toList()..sort();
+        availableVehicles = mergedPlates;
+        if (!availableVehicles.contains(selectedPlate) && availableVehicles.isNotEmpty) {
+          selectedPlate = availableVehicles.first;
+        }
         // Nếu xe đang chọn có trong danh sách statuses thì cập nhật luôn currentGpsStatus
         if (statuses.containsKey(selectedPlate)) {
           currentGpsStatus = statuses[selectedPlate];

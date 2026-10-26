@@ -2,6 +2,7 @@ import 'customers_screen.dart';
 import 'locations_screen.dart';
 import 'dart:async';
 import 'dart:io';
+import 'dart:math' as math;
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_map/flutter_map.dart';
@@ -10,6 +11,8 @@ import 'package:provider/provider.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import '../services/app_state.dart';
 import '../services/admin_service.dart';
+import '../services/quanlyxe_service.dart';
+import '../models/quanlyxe_model.dart';
 import '../widgets/assign_order_approve_dialog.dart';
 import '../widgets/order_attachments_section.dart';
 import '../models/reminder_model.dart';
@@ -10643,6 +10646,11 @@ class _DispatchSupervisorScreenState extends State<DispatchSupervisorScreen> {
                   decoration: InputDecoration(
                     isDense: true,
                     hintText: hintText,
+                    prefixIcon: Icon(prefixIcon, size: 17),
+                    prefixIconConstraints: const BoxConstraints(
+                      minWidth: 34,
+                      minHeight: 0,
+                    ),
                   ),
                   onSubmitted: (val) => onFieldSubmitted(),
                 ),
@@ -10779,7 +10787,15 @@ class _DispatchSupervisorScreenState extends State<DispatchSupervisorScreen> {
             TextField(
               controller: fieldCtrl,
               focusNode: focusNode,
-              decoration: InputDecoration(isDense: true, hintText: hintText),
+              decoration: InputDecoration(
+                isDense: true,
+                hintText: hintText,
+                prefixIcon: Icon(prefixIcon, size: 17),
+                prefixIconConstraints: const BoxConstraints(
+                  minWidth: 34,
+                  minHeight: 0,
+                ),
+              ),
               onSubmitted: (_) => onFieldSubmitted(),
             ),
           ],
@@ -10962,6 +10978,200 @@ class _DispatchSupervisorScreenState extends State<DispatchSupervisorScreen> {
   }
 
 
+  /// Chuẩn hóa biển số xe để so khớp (bỏ gạch ngang, chấm, khoảng trắng)
+  String _normalizeVehiclePlate(dynamic plate) {
+    return (plate ?? '').toString().replaceAll('-', '').replaceAll('.', '').replaceAll(' ', '').trim().toUpperCase();
+  }
+
+  /// Tính khoảng cách địa lý theo công thức Haversine (km)
+  double _calculateDistanceKm(double lat1, double lon1, double lat2, double lon2) {
+    const p = 0.017453292519943295; // pi / 180
+    final a = 0.5 -
+        math.cos((lat2 - lat1) * p) / 2 +
+        math.cos(lat1 * p) * math.cos(lat2 * p) * (1 - math.cos((lon2 - lon1) * p)) / 2;
+    return 12742 * math.asin(math.sqrt(math.max(0.0, math.min(1.0, a))));
+  }
+
+  /// Sắp xếp và ưu tiên danh sách phương tiện theo các tiêu chí đa tầng:
+  /// - Tầng 1: Xe đang FREE (chưa chở đơn dở dang) + Đã gửi 5 ảnh và Điều phối DUYỆT HÔM NAY.
+  ///           -> Ưu tiên: Gần Nơi nhận hàng nhất (GPS) -> Nhận ít chuyến nhất.
+  /// - Tầng 2 (Fallback): Xe đang FREE (chưa chở đơn dở dang) + Đã từng được Điều phối DUYỆT CHẠY.
+  ///           -> Ưu tiên: Nhận ít chuyến nhất -> Gần Nơi nhận hàng nhất.
+  /// - Tầng 3 (Fallback tiếp theo): Xe đang FREE (chưa chở đơn dở dang) khác.
+  ///           -> Ưu tiên: Nhận ít chuyến nhất -> Gần Nơi nhận hàng nhất.
+  /// - Tầng 4: Các xe đang bận chở đơn hàng (đưa xuống cuối để cảnh báo/tham khảo).
+  List<Map<String, dynamic>> _prioritizeVehiclesForPickup({
+    required List<dynamic> vehicles,
+    required List<dynamic> orders,
+    required List<dynamic> inspections,
+    required Map<String, QuanLyXeStatus> fleetGps,
+    double? pickupLat,
+    double? pickupLng,
+  }) {
+    // 1. Xác định ngày hôm nay dạng YYYY-MM-DD
+    final now = DateTime.now();
+    final todayStr = "${now.year}-${now.month.toString().padLeft(2, '0')}-${now.day.toString().padLeft(2, '0')}";
+
+    // Phân loại xe theo tình trạng kiểm tra 5 ảnh: duyệt hôm nay vs đã từng được duyệt
+    final approvedPlatesToday = <String>{};
+    final approvedPlatesEver = <String>{};
+    for (final insp in inspections) {
+      if (insp is! Map) continue;
+      final flagStatus = (insp['flag_status'] ?? '').toString().toLowerCase();
+      if (flagStatus == 'approved') {
+        final plate = (insp['plate_number'] ?? '').toString();
+        final norm = _normalizeVehiclePlate(plate);
+        if (norm.isNotEmpty) {
+          approvedPlatesEver.add(norm);
+
+          final rawDate = (insp['check_date'] ?? insp['created_at'] ?? '').toString();
+          final dateOnly = rawDate.split('T')[0].split(' ')[0].trim();
+          if (dateOnly == todayStr) {
+            approvedPlatesToday.add(norm);
+          }
+        }
+      }
+    }
+
+    // 2. Đếm số đơn đang chạy (active / not completed) và tổng số chuyến theo từng xe
+    final activeOrdersCountByPlate = <String, int>{};
+    final totalTripsCountByPlate = <String, int>{};
+
+    for (final ord in orders) {
+      if (ord is! Map) continue;
+      final rawPlate = (ord['assigned_vehicle_plate'] ?? '').toString();
+      final norm = _normalizeVehiclePlate(rawPlate);
+      if (norm.isEmpty) continue;
+
+      totalTripsCountByPlate[norm] = (totalTripsCountByPlate[norm] ?? 0) + 1;
+
+      final normStatus = _normalizeOrderStatus((ord['status'] ?? 'assigned').toString());
+      if (normStatus != 'completed' && normStatus != 'cancelled') {
+        activeOrdersCountByPlate[norm] = (activeOrdersCountByPlate[norm] ?? 0) + 1;
+      }
+    }
+
+    // Bản đồ tra cứu GPS theo biển số đã chuẩn hóa
+    final gpsByNormPlate = <String, QuanLyXeStatus>{};
+    for (final entry in fleetGps.entries) {
+      final norm = _normalizeVehiclePlate(entry.key);
+      if (norm.isNotEmpty) {
+        gpsByNormPlate[norm] = entry.value;
+      }
+    }
+
+    // 3. Phân tầng danh sách xe:
+    // tier 1: free == true, approved_today == true
+    // tier 2: free == true, approved_ever == true
+    // tier 3: free == true
+    // tier 4: active_orders > 0 (đang bận)
+    final candidateList = <Map<String, dynamic>>[];
+    for (final v in vehicles) {
+      if (v is! Map) continue;
+      final plate = (v['plate_number'] ?? '').toString().trim();
+      if (plate.isEmpty) continue;
+      final norm = _normalizeVehiclePlate(plate);
+
+      final activeOrders = activeOrdersCountByPlate[norm] ?? 0;
+      final isFree = activeOrders == 0;
+      final isApprovedToday = approvedPlatesToday.contains(norm);
+      final isApprovedEver = approvedPlatesEver.contains(norm);
+      final totalTrips = totalTripsCountByPlate[norm] ?? 0;
+
+      double? distKm;
+      final gps = gpsByNormPlate[norm];
+      if (pickupLat != null && pickupLng != null && gps != null && gps.latitude != 0.0 && gps.longitude != 0.0) {
+        distKm = _calculateDistanceKm(pickupLat, pickupLng, gps.latitude, gps.longitude);
+      }
+
+      int tier = 4;
+      if (isFree) {
+        if (isApprovedToday) {
+          tier = 1;
+        } else if (isApprovedEver) {
+          tier = 2;
+        } else {
+          tier = 3;
+        }
+      }
+
+      candidateList.add({
+        'vehicle': v,
+        'plate': plate,
+        'norm_plate': norm,
+        'is_free': isFree,
+        'active_orders': activeOrders,
+        'is_approved_today': isApprovedToday,
+        'is_approved_ever': isApprovedEver,
+        'tier': tier,
+        'distance_km': distKm,
+        'total_trips': totalTrips,
+        'gps': gps,
+      });
+    }
+
+    // 4. Sắp xếp thứ tự ưu tiên đa tầng:
+    candidateList.sort((a, b) {
+      final int tierA = a['tier'] as int;
+      final int tierB = b['tier'] as int;
+      if (tierA != tierB) {
+        return tierA.compareTo(tierB);
+      }
+
+      // Trong Tier 1 (Free + Duyệt hôm nay): Ưu tiên gần nơi nhận nhất -> ít chuyến nhất
+      if (tierA == 1) {
+        final double? distA = a['distance_km'] as double?;
+        final double? distB = b['distance_km'] as double?;
+        if (distA != null && distB != null) {
+          final diff = distA.compareTo(distB);
+          if (diff != 0) return diff;
+        } else if (distA != null && distB == null) {
+          return -1;
+        } else if (distA == null && distB != null) {
+          return 1;
+        }
+
+        final int tripsA = a['total_trips'] as int;
+        final int tripsB = b['total_trips'] as int;
+        if (tripsA != tripsB) return tripsA.compareTo(tripsB);
+      }
+
+      // Trong Tier 2 & Tier 3 (Free fallback): Ưu tiên ít chuyến nhất -> gần nơi nhận nhất
+      if (tierA == 2 || tierA == 3) {
+        final int tripsA = a['total_trips'] as int;
+        final int tripsB = b['total_trips'] as int;
+        if (tripsA != tripsB) return tripsA.compareTo(tripsB);
+
+        final double? distA = a['distance_km'] as double?;
+        final double? distB = b['distance_km'] as double?;
+        if (distA != null && distB != null) {
+          final diff = distA.compareTo(distB);
+          if (diff != 0) return diff;
+        } else if (distA != null && distB == null) {
+          return -1;
+        } else if (distA == null && distB != null) {
+          return 1;
+        }
+      }
+
+      // Trong Tier 4 (Đang bận): Ít chuyến nhất -> Ít đơn active nhất
+      if (tierA == 4) {
+        final int actA = a['active_orders'] as int;
+        final int actB = b['active_orders'] as int;
+        if (actA != actB) return actA.compareTo(actB);
+
+        final int tripsA = a['total_trips'] as int;
+        final int tripsB = b['total_trips'] as int;
+        if (tripsA != tripsB) return tripsA.compareTo(tripsB);
+      }
+
+      // Tie-breaker: Biển số theo alphabet
+      return (a['plate'] as String).compareTo(b['plate'] as String);
+    });
+
+    return candidateList;
+  }
+
   /// Tải danh mục điểm nhận / giao cho form đơn hàng. Trả về (điểm nhận, điểm giao).
   Future<(List<Map<String, dynamic>>, List<Map<String, dynamic>>)> _loadLocationsForOrder() async {
     final raw = await AdminService.fetchLocations();
@@ -11031,6 +11241,11 @@ class _DispatchSupervisorScreenState extends State<DispatchSupervisorScreen> {
               decoration: const InputDecoration(
                 isDense: true,
                 hintText: "Gõ tên khách hàng để tìm",
+                prefixIcon: Icon(Icons.person_outline, size: 17),
+                prefixIconConstraints: BoxConstraints(
+                  minWidth: 34,
+                  minHeight: 0,
+                ),
               ),
               onSubmitted: (_) => onFieldSubmitted(),
             ),
@@ -11151,9 +11366,28 @@ class _DispatchSupervisorScreenState extends State<DispatchSupervisorScreen> {
 
   // DIALOG: TẠO ĐƠN HÀNG MỚI
   Future<void> _showCreateOrderDialog() async {
-    final (customers, (pickupCatalog, deliveryCatalog)) =
-        await (_loadCustomersForOrder(), _loadLocationsForOrder()).wait;
+    // Tải đồng thời khách hàng, địa điểm, GPS hợp nhất và kết quả kiểm tra xe mới nhất
+    final (customers, (pickupCatalog, deliveryCatalog), freshGps, freshInspections) =
+        await (
+          _loadCustomersForOrder(),
+          _loadLocationsForOrder(),
+          QuanLyXeService.fetchFleetGpsStatusFromServer(),
+          AdminService.fetchInspections(),
+        ).wait;
     if (!mounted) return;
+
+    if (freshInspections.isNotEmpty) {
+      _inspections = freshInspections;
+    }
+
+    // Cập nhật vào AppState nếu có dữ liệu GPS mới
+    if (freshGps.isNotEmpty) {
+      try {
+        final appState = context.read<AppState>();
+        appState.allFleetVehiclesStatus = freshGps;
+      } catch (_) {}
+    }
+
     final customerCodeCtrl = TextEditingController();
     final productDetailCtrl = TextEditingController();
     final carrierNameCtrl = TextEditingController();
@@ -11162,9 +11396,7 @@ class _DispatchSupervisorScreenState extends State<DispatchSupervisorScreen> {
           "DH${DateTime.now().year}${(DateTime.now().month).toString().padLeft(2, '0')}${(DateTime.now().day).toString().padLeft(2, '0')}-${DateTime.now().millisecondsSinceEpoch % 10000}",
     );
     final factoryCodeCtrl = TextEditingController(text: "NM-BIMSON");
-    final pickupAddrCtrl = TextEditingController(
-      text: "Kho Xi Măng Bỉm Sơn, Thanh Hóa",
-    );
+    final pickupAddrCtrl = TextEditingController();
     final deliveryAddrCtrl = TextEditingController();
     const _PointOrig? pickupOrig = null;
     const _PointOrig? deliveryOrig = null;
@@ -11174,9 +11406,38 @@ class _DispatchSupervisorScreenState extends State<DispatchSupervisorScreen> {
         ? (_products[0]['id'] as int?)
         : null;
     final activeVehicles = _activeVehicles;
-    String? selectedVehiclePlate = activeVehicles.isNotEmpty
-        ? (activeVehicles[0]['plate_number']?.toString())
-        : null;
+
+    // Sử dụng GPS hợp nhất từ Vietmap + Bình Anh
+    Map<String, QuanLyXeStatus> fleetGps = freshGps.isNotEmpty
+        ? freshGps
+        : () {
+            try {
+              return Map<String, QuanLyXeStatus>.from(context.read<AppState>().allFleetVehiclesStatus);
+            } catch (_) {
+              return <String, QuanLyXeStatus>{};
+            }
+          }();
+
+    // Hàm tiện ích tính toán và ưu tiên phương tiện theo nơi nhận:
+    // Loại trừ xe đang chạy & chỉ lấy xe đã gửi 5 ảnh được Điều phối duyệt trong ngày
+    List<Map<String, dynamic>> updatePrioritizedVehicles(String pickupText) {
+      final pt = _resolvePointCoords(pickupText, pickupCatalog, pickupOrig);
+      return _prioritizeVehiclesForPickup(
+        vehicles: activeVehicles,
+        orders: _orders,
+        inspections: _inspections,
+        fleetGps: fleetGps,
+        pickupLat: pt.lat,
+        pickupLng: pt.lng,
+      );
+    }
+
+    // Danh sách ban đầu
+    List<Map<String, dynamic>> prioritizedCandidateVehicles =
+        updatePrioritizedVehicles(pickupAddrCtrl.text);
+
+    String? selectedVehiclePlate;
+
     // Danh sách gợi ý Nhà máy, Nơi nhận và Điểm giao hàng
     final factorySuggestions = <String>{
       "NM-BIMSON",
@@ -11238,6 +11499,14 @@ class _DispatchSupervisorScreenState extends State<DispatchSupervisorScreen> {
                               controller: orderCodeCtrl,
                               decoration: const InputDecoration(
                                 isDense: true,
+                                prefixIcon: Icon(
+                                  Icons.receipt_long_outlined,
+                                  size: 17,
+                                ),
+                                prefixIconConstraints: BoxConstraints(
+                                  minWidth: 34,
+                                  minHeight: 0,
+                                ),
                               ),
                             ),
                           ],
@@ -11275,7 +11544,17 @@ class _DispatchSupervisorScreenState extends State<DispatchSupervisorScreen> {
                               value: selectedProductId,
                               isDense: true,
                               isExpanded: true,
-                              decoration: const InputDecoration(isDense: true),
+                              decoration: const InputDecoration(
+                                isDense: true,
+                                prefixIcon: Icon(
+                                  Icons.inventory_2_outlined,
+                                  size: 17,
+                                ),
+                                prefixIconConstraints: BoxConstraints(
+                                  minWidth: 34,
+                                  minHeight: 0,
+                                ),
+                              ),
                               items: _products.map((p) {
                                 final id = p['id'] as int;
                                 final name =
@@ -11307,6 +11586,14 @@ class _DispatchSupervisorScreenState extends State<DispatchSupervisorScreen> {
                               decoration: const InputDecoration(
                                 isDense: true,
                                 hintText: "Nhập tên sản phẩm",
+                                prefixIcon: Icon(
+                                  Icons.label_outline,
+                                  size: 17,
+                                ),
+                                prefixIconConstraints: BoxConstraints(
+                                  minWidth: 34,
+                                  minHeight: 0,
+                                ),
                               ),
                             ),
                           ],
@@ -11325,6 +11612,14 @@ class _DispatchSupervisorScreenState extends State<DispatchSupervisorScreen> {
                     decoration: const InputDecoration(
                       hintText: "Ví dụ: 30.5",
                       isDense: true,
+                      prefixIcon: Icon(
+                        Icons.monitor_weight_outlined,
+                        size: 17,
+                      ),
+                      prefixIconConstraints: BoxConstraints(
+                        minWidth: 34,
+                        minHeight: 0,
+                      ),
                     ),
                   ),
                   const SizedBox(height: 16),
@@ -11342,7 +11637,17 @@ class _DispatchSupervisorScreenState extends State<DispatchSupervisorScreen> {
                               value: transportType,
                               isDense: true,
                               isExpanded: true,
-                              decoration: const InputDecoration(isDense: true),
+                              decoration: const InputDecoration(
+                                isDense: true,
+                                prefixIcon: Icon(
+                                  Icons.alt_route,
+                                  size: 17,
+                                ),
+                                prefixIconConstraints: BoxConstraints(
+                                  minWidth: 34,
+                                  minHeight: 0,
+                                ),
+                              ),
                               items: const [
                                 DropdownMenuItem(
                                   value: "INTERNAL",
@@ -11379,6 +11684,14 @@ class _DispatchSupervisorScreenState extends State<DispatchSupervisorScreen> {
                                 decoration: const InputDecoration(
                                   hintText: "Nhập đơn vị vận chuyển",
                                   isDense: true,
+                                  prefixIcon: Icon(
+                                    Icons.business_outlined,
+                                    size: 17,
+                                  ),
+                                  prefixIconConstraints: BoxConstraints(
+                                    minWidth: 34,
+                                    minHeight: 0,
+                                  ),
                                 ),
                               ),
                             ],
@@ -11396,8 +11709,56 @@ class _DispatchSupervisorScreenState extends State<DispatchSupervisorScreen> {
                     catalog: pickupCatalog,
                     hintText: "Nhập hoặc chọn kho hàng...",
                     isRequired: true,
+                    onCatalogSelected: (loc) {
+                      // Khi chọn điểm từ danh mục, cập nhật ngay tọa độ và tính lại thứ tự ưu tiên xe
+                      final double? lat = double.tryParse((loc['latitude'] ?? '').toString());
+                      final double? lng = double.tryParse((loc['longitude'] ?? '').toString());
+                      if (lat != null && lng != null) {
+                        prioritizedCandidateVehicles = _prioritizeVehiclesForPickup(
+                          vehicles: activeVehicles,
+                          orders: _orders,
+                          inspections: _inspections,
+                          fleetGps: fleetGps,
+                          pickupLat: lat,
+                          pickupLng: lng,
+                        );
+                        if (prioritizedCandidateVehicles.isNotEmpty) {
+                          selectedVehiclePlate = prioritizedCandidateVehicles[0]['plate']?.toString();
+                        } else {
+                          selectedVehiclePlate = null;
+                        }
+                        setDialogState(() {});
+                      }
+                    },
                   ),
                   _buildPointCoordsInfo(pickupAddrCtrl, pickupCatalog, pickupOrig),
+                  ValueListenableBuilder<TextEditingValue>(
+                    valueListenable: pickupAddrCtrl,
+                    builder: (context, val, _) {
+                      final pt = _resolvePointCoords(val.text, pickupCatalog, pickupOrig);
+                      if (pt.lat != null && pt.lng != null) {
+                        // Tự động kiểm tra và cập nhật danh sách ưu tiên nếu vị trí nơi nhận thay đổi
+                        final newList = _prioritizeVehiclesForPickup(
+                          vehicles: activeVehicles,
+                          orders: _orders,
+                          inspections: _inspections,
+                          fleetGps: fleetGps,
+                          pickupLat: pt.lat,
+                          pickupLng: pt.lng,
+                        );
+                        final firstPlate = newList.isNotEmpty ? newList[0]['plate']?.toString() : null;
+                        if (firstPlate != null && selectedVehiclePlate != firstPlate && (prioritizedCandidateVehicles.isEmpty || prioritizedCandidateVehicles[0]['distance_km'] == null)) {
+                          WidgetsBinding.instance.addPostFrameCallback((_) {
+                            setDialogState(() {
+                              prioritizedCandidateVehicles = newList;
+                              selectedVehiclePlate = firstPlate;
+                            });
+                          });
+                        }
+                      }
+                      return const SizedBox.shrink();
+                    },
+                  ),
                   const SizedBox(height: 16),
                   // Điểm giao hàng (Gợi ý tự động Autocomplete)
                   _buildLocationAutocomplete(
@@ -11411,18 +11772,130 @@ class _DispatchSupervisorScreenState extends State<DispatchSupervisorScreen> {
                   _buildPointCoordsInfo(deliveryAddrCtrl, deliveryCatalog, deliveryOrig),
                   const SizedBox(height: 16),
                   // Phương tiện chỉ định
-                  _buildFormLabel("Phương tiện vận chuyển *"),
+                  Builder(
+                    builder: (context) {
+                      final currentPickupPt = _resolvePointCoords(pickupAddrCtrl.text, pickupCatalog, pickupOrig);
+                      return Row(
+                        children: [
+                          _buildFormLabel("Phương tiện vận chuyển *"),
+                          const Spacer(),
+                          if (currentPickupPt.lat != null && currentPickupPt.lng != null)
+                            Text(
+                              "Ưu tiên: Rảnh • Gần kho • Ít chuyến",
+                              style: TextStyle(
+                                fontSize: 11,
+                                fontWeight: FontWeight.w600,
+                                color: Colors.blue.shade700,
+                              ),
+                            ),
+                        ],
+                      );
+                    },
+                  ),
                   DropdownButtonFormField<String?>(
                     value: selectedVehiclePlate,
                     isDense: true,
-                    decoration: const InputDecoration(isDense: true),
+                    isExpanded: true,
+                    decoration: InputDecoration(
+                      isDense: true,
+                      hintText: prioritizedCandidateVehicles.isEmpty
+                          ? "Không có phương tiện khả dụng"
+                          : "Chọn phương tiện",
+                      hintStyle: const TextStyle(fontSize: 12.5),
+                      prefixIcon: const Icon(
+                        Icons.fire_truck,
+                        size: 17,
+                      ),
+                      prefixIconConstraints: const BoxConstraints(
+                        minWidth: 34,
+                        minHeight: 0,
+                      ),
+                    ),
                     items: [
-                      ...activeVehicles.map((v) {
-                        final plate = (v['plate_number'] ?? '').toString();
+                      ...prioritizedCandidateVehicles.map((cand) {
+                        final v = cand['vehicle'] as Map;
+                        final plate = (cand['plate'] ?? '').toString();
                         final vtype = (v['vehicle_type'] ?? '').toString();
+                        final double? distKm = cand['distance_km'] as double?;
+                        final int trips = (cand['total_trips'] as int?) ?? 0;
+                        final int tier = (cand['tier'] as int?) ?? 3;
+                        final int activeOrders = (cand['active_orders'] as int?) ?? 0;
+
+                        // Nhãn phụ thông tin ưu tiên theo tầng (tier)
+                        final tags = <String>[];
+                        Color tagBgColor = Colors.green.shade50;
+                        Color tagBorderColor = Colors.green.shade300;
+                        Color tagTextColor = Colors.green.shade800;
+
+                        if (tier == 1) {
+                          tags.add("Duyệt hôm nay");
+                          if (distKm != null) {
+                            tags.add(distKm < 1 ? "${(distKm * 1000).toStringAsFixed(0)}m" : "${distKm.toStringAsFixed(1)}km");
+                          } else {
+                            tags.add("Mất GPS");
+                          }
+                          tags.add("$trips chuyến");
+                        } else if (tier == 2) {
+                          tagBgColor = Colors.blue.shade50;
+                          tagBorderColor = Colors.blue.shade300;
+                          tagTextColor = Colors.blue.shade800;
+                          tags.add("Đã duyệt chạy");
+                          tags.add("$trips chuyến");
+                          if (distKm != null) {
+                            tags.add(distKm < 1 ? "${(distKm * 1000).toStringAsFixed(0)}m" : "${distKm.toStringAsFixed(1)}km");
+                          }
+                        } else if (tier == 3) {
+                          tagBgColor = Colors.amber.shade50;
+                          tagBorderColor = Colors.amber.shade400;
+                          tagTextColor = Colors.brown.shade800;
+                          tags.add("Xe rảnh");
+                          tags.add("$trips chuyến");
+                          if (distKm != null) {
+                            tags.add(distKm < 1 ? "${(distKm * 1000).toStringAsFixed(0)}m" : "${distKm.toStringAsFixed(1)}km");
+                          }
+                        } else {
+                          // Tier 4: Xe bận
+                          tagBgColor = Colors.red.shade50;
+                          tagBorderColor = Colors.red.shade300;
+                          tagTextColor = Colors.red.shade800;
+                          tags.add("Bận ($activeOrders đơn)");
+                          tags.add("$trips chuyến");
+                        }
+
                         return DropdownMenuItem<String?>(
                           value: plate,
-                          child: Text("$plate ($vtype)", style: const TextStyle(fontSize: 13)),
+                          child: Row(
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              Flexible(
+                                child: Text(
+                                  "$plate ($vtype)",
+                                  style: const TextStyle(fontSize: 13),
+                                  overflow: TextOverflow.ellipsis,
+                                ),
+                              ),
+                              const SizedBox(width: 8),
+                              Container(
+                                padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 1.5),
+                                decoration: BoxDecoration(
+                                  color: tagBgColor,
+                                  border: Border.all(
+                                    color: tagBorderColor,
+                                    width: 0.8,
+                                  ),
+                                  borderRadius: BorderRadius.circular(3),
+                                ),
+                                child: Text(
+                                  tags.join(" • "),
+                                  style: TextStyle(
+                                    fontSize: 10.5,
+                                    fontWeight: FontWeight.w500,
+                                    color: tagTextColor,
+                                  ),
+                                ),
+                              ),
+                            ],
+                          ),
                         );
                       }),
                     ],
@@ -11430,6 +11903,22 @@ class _DispatchSupervisorScreenState extends State<DispatchSupervisorScreen> {
                       setDialogState(() => selectedVehiclePlate = val);
                     },
                   ),
+                  if (prioritizedCandidateVehicles.isEmpty)
+                    Padding(
+                      padding: const EdgeInsets.only(top: 6),
+                      child: Row(
+                        children: [
+                          Icon(Icons.info_outline, size: 14, color: Colors.orange.shade800),
+                          const SizedBox(width: 6),
+                          Expanded(
+                            child: Text(
+                              "Không tìm thấy phương tiện nào khả dụng trong hệ thống.",
+                              style: TextStyle(fontSize: 11.5, color: Colors.orange.shade800),
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
                   // Tài xế đi theo xe (mỗi xe có 1 tài khoản tài xế phụ trách)
                   _buildVehicleDriverInfo(selectedVehiclePlate),
                 ],
@@ -11673,24 +12162,15 @@ class _DispatchSupervisorScreenState extends State<DispatchSupervisorScreen> {
                 mainAxisSize: MainAxisSize.min,
                 crossAxisAlignment: CrossAxisAlignment.stretch,
                 children: [
+                  // Ma don hang khong hien thi tren form sua (da co trong tieu de dialog),
+                  // van giu orderCodeCtrl de gui lai gia tri goc khi luu.
+                  Offstage(
+                    offstage: true,
+                    child: TextField(controller: orderCodeCtrl),
+                  ),
                   Row(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      Expanded(
-                        child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            _buildFormLabel("Mã đơn hàng *"),
-                            TextField(
-                              controller: orderCodeCtrl,
-                              decoration: const InputDecoration(
-                                isDense: true,
-                              ),
-                            ),
-                          ],
-                        ),
-                      ),
-                      const SizedBox(width: 14),
                       Expanded(
                         child: _buildOrderAutocompleteInput(
                           controller: factoryCodeCtrl,
@@ -11722,7 +12202,17 @@ class _DispatchSupervisorScreenState extends State<DispatchSupervisorScreen> {
                               value: selectedProductId,
                               isDense: true,
                               isExpanded: true,
-                              decoration: const InputDecoration(isDense: true),
+                              decoration: const InputDecoration(
+                                isDense: true,
+                                prefixIcon: Icon(
+                                  Icons.inventory_2_outlined,
+                                  size: 17,
+                                ),
+                                prefixIconConstraints: BoxConstraints(
+                                  minWidth: 34,
+                                  minHeight: 0,
+                                ),
+                              ),
                               items: editProducts.map((p) {
                                 final id = p['id'] as int;
                                 final name =
@@ -11754,6 +12244,14 @@ class _DispatchSupervisorScreenState extends State<DispatchSupervisorScreen> {
                               decoration: const InputDecoration(
                                 isDense: true,
                                 hintText: "Nhập tên sản phẩm",
+                                prefixIcon: Icon(
+                                  Icons.label_outline,
+                                  size: 17,
+                                ),
+                                prefixIconConstraints: BoxConstraints(
+                                  minWidth: 34,
+                                  minHeight: 0,
+                                ),
                               ),
                             ),
                           ],
@@ -11772,6 +12270,14 @@ class _DispatchSupervisorScreenState extends State<DispatchSupervisorScreen> {
                     decoration: const InputDecoration(
                       hintText: "Ví dụ: 30.5",
                       isDense: true,
+                      prefixIcon: Icon(
+                        Icons.monitor_weight_outlined,
+                        size: 17,
+                      ),
+                      prefixIconConstraints: BoxConstraints(
+                        minWidth: 34,
+                        minHeight: 0,
+                      ),
                     ),
                   ),
                   const SizedBox(height: 16),
@@ -11789,7 +12295,17 @@ class _DispatchSupervisorScreenState extends State<DispatchSupervisorScreen> {
                               value: transportType,
                               isDense: true,
                               isExpanded: true,
-                              decoration: const InputDecoration(isDense: true),
+                              decoration: const InputDecoration(
+                                isDense: true,
+                                prefixIcon: Icon(
+                                  Icons.alt_route,
+                                  size: 17,
+                                ),
+                                prefixIconConstraints: BoxConstraints(
+                                  minWidth: 34,
+                                  minHeight: 0,
+                                ),
+                              ),
                               items: transportItems.entries
                                   .map((e) => DropdownMenuItem(
                                         value: e.key,
@@ -11818,6 +12334,14 @@ class _DispatchSupervisorScreenState extends State<DispatchSupervisorScreen> {
                                 decoration: const InputDecoration(
                                   hintText: "Nhập đơn vị vận chuyển",
                                   isDense: true,
+                                  prefixIcon: Icon(
+                                    Icons.business_outlined,
+                                    size: 17,
+                                  ),
+                                  prefixIconConstraints: BoxConstraints(
+                                    minWidth: 34,
+                                    minHeight: 0,
+                                  ),
                                 ),
                               ),
                             ],
@@ -11854,7 +12378,17 @@ class _DispatchSupervisorScreenState extends State<DispatchSupervisorScreen> {
                   DropdownButtonFormField<String?>(
                     value: selectedVehiclePlate,
                     isDense: true,
-                    decoration: const InputDecoration(isDense: true),
+                    decoration: const InputDecoration(
+                      isDense: true,
+                      prefixIcon: Icon(
+                        Icons.fire_truck,
+                        size: 17,
+                      ),
+                      prefixIconConstraints: BoxConstraints(
+                        minWidth: 34,
+                        minHeight: 0,
+                      ),
+                    ),
                     items: [
                       ...editVehicles.map((v) {
                         final plate = (v['plate_number'] ?? '').toString();
@@ -12193,6 +12727,49 @@ class _DispatchSupervisorScreenState extends State<DispatchSupervisorScreen> {
     );
   }
 
+  double? _asDouble(dynamic v) {
+    if (v == null) return null;
+    if (v is num) return v.toDouble();
+    return double.tryParse(v.toString().trim());
+  }
+
+  String? _geoSummary(Map<String, dynamic> order, String ptype) {
+    final all = order['photo_geo_check'];
+    if (all is! Map) return null;
+    final c = all[ptype];
+    if (c is! Map) return null;
+    final matched = (c['matched'] ?? '').toString();
+
+    final parts = <String>[];
+    String fmtDist(dynamic m) {
+      final d = m is num ? m.toDouble() : double.tryParse('${m ?? ''}');
+      if (d == null) return '';
+      return d < 1000 ? '${d.round()}m' : '${(d / 1000).toStringAsFixed(1)}km';
+    }
+    if (c['pickup_distance_m'] != null) {
+      parts.add('Nơi nhận ${fmtDist(c['pickup_distance_m'])}');
+    }
+    if (c['delivery_distance_m'] != null) {
+      parts.add('Điểm giao ${fmtDist(c['delivery_distance_m'])}');
+    }
+
+    String head;
+    switch (matched) {
+      case 'PICKUP':
+        head = 'Tại Nơi nhận hàng';
+        break;
+      case 'DELIVERY':
+        head = 'Tại Điểm giao hàng';
+        break;
+      case 'NONE':
+        head = 'Ngoài điểm nhận/giao';
+        break;
+      default:
+        head = 'Đã ghi nhận tọa độ GPS';
+    }
+    return parts.isNotEmpty ? '$head (Cách ${parts.join(', ')})' : head;
+  }
+
   Widget _buildOrderPhotosSummaryCell(dynamic orderData) {
     final o = orderData is Map
         ? Map<String, dynamic>.from(orderData)
@@ -12213,6 +12790,11 @@ class _DispatchSupervisorScreenState extends State<DispatchSupervisorScreen> {
       required IconData icon,
       required Color activeColor,
       bool forceShow = true,
+      double? gpsLat,
+      double? gpsLng,
+      double? gpsAccuracy,
+      String? gpsCapturedAt,
+      String? photoGeoLabel,
     }) {
       if (!forceShow && url.isEmpty) return const SizedBox.shrink();
       final has = url.isNotEmpty;
@@ -12229,6 +12811,11 @@ class _DispatchSupervisorScreenState extends State<DispatchSupervisorScreen> {
                 context,
                 title: "$fullTitle — Đơn ${o['order_code'] ?? ''}",
                 rawUrl: url,
+                gpsLat: gpsLat,
+                gpsLng: gpsLng,
+                gpsAccuracy: gpsAccuracy,
+                gpsCapturedAt: gpsCapturedAt,
+                photoGeoLabel: photoGeoLabel,
               );
             } else {
               _showOrderAttachmentsDialog(o);
@@ -12282,6 +12869,11 @@ class _DispatchSupervisorScreenState extends State<DispatchSupervisorScreen> {
           url: pumpBeforeUrl,
           icon: Icons.local_gas_station_outlined,
           activeColor: const Color(0xFF0284C7),
+          gpsLat: _asDouble(o['pump_slip_before_gps_lat'] ?? o['pump_before_gps_lat']),
+          gpsLng: _asDouble(o['pump_slip_before_gps_lng'] ?? o['pump_before_gps_lng']),
+          gpsAccuracy: _asDouble(o['pump_slip_before_gps_accuracy'] ?? o['pump_before_gps_accuracy']),
+          gpsCapturedAt: (o['pump_slip_before_gps_captured_at'] ?? o['pump_before_gps_captured_at'] ?? '').toString(),
+          photoGeoLabel: _geoSummary(o, 'pump_slip_before'),
         ),
         badge(
           shortLabel: "Bơm xong",
@@ -12289,6 +12881,11 @@ class _DispatchSupervisorScreenState extends State<DispatchSupervisorScreen> {
           url: pumpUrl,
           icon: Icons.local_gas_station,
           activeColor: const Color(0xFF0284C7),
+          gpsLat: _asDouble(o['pump_slip_gps_lat']),
+          gpsLng: _asDouble(o['pump_slip_gps_lng']),
+          gpsAccuracy: _asDouble(o['pump_slip_gps_accuracy']),
+          gpsCapturedAt: (o['pump_slip_gps_captured_at'] ?? '').toString(),
+          photoGeoLabel: _geoSummary(o, 'pump_slip'),
         ),
         badge(
           shortLabel: "Cân",
@@ -12296,6 +12893,11 @@ class _DispatchSupervisorScreenState extends State<DispatchSupervisorScreen> {
           url: weighUrl,
           icon: Icons.scale_outlined,
           activeColor: const Color(0xFF2563EB),
+          gpsLat: _asDouble(o['weigh_slip_gps_lat']),
+          gpsLng: _asDouble(o['weigh_slip_gps_lng']),
+          gpsAccuracy: _asDouble(o['weigh_slip_gps_accuracy']),
+          gpsCapturedAt: (o['weigh_slip_gps_captured_at'] ?? '').toString(),
+          photoGeoLabel: _geoSummary(o, 'weigh_slip'),
         ),
         badge(
           shortLabel: "Giao",
@@ -12303,6 +12905,11 @@ class _DispatchSupervisorScreenState extends State<DispatchSupervisorScreen> {
           url: delivUrl,
           icon: Icons.assignment_turned_in_outlined,
           activeColor: const Color(0xFF15803D),
+          gpsLat: _asDouble(o['delivery_slip_gps_lat']),
+          gpsLng: _asDouble(o['delivery_slip_gps_lng']),
+          gpsAccuracy: _asDouble(o['delivery_slip_gps_accuracy']),
+          gpsCapturedAt: (o['delivery_slip_gps_captured_at'] ?? '').toString(),
+          photoGeoLabel: _geoSummary(o, 'delivery_slip'),
         ),
         if (hasBreakdown)
           badge(
@@ -12311,6 +12918,10 @@ class _DispatchSupervisorScreenState extends State<DispatchSupervisorScreen> {
             url: breakUrl,
             icon: Icons.car_crash_outlined,
             activeColor: const Color(0xFFDC2626),
+            gpsLat: _asDouble(o['breakdown_gps_lat']),
+            gpsLng: _asDouble(o['breakdown_gps_lng']),
+            gpsAccuracy: _asDouble(o['breakdown_gps_accuracy']),
+            gpsCapturedAt: (o['breakdown_gps_captured_at'] ?? '').toString(),
           ),
         if (hasBreakdown || repairUrl.isNotEmpty)
           badge(
@@ -12319,6 +12930,10 @@ class _DispatchSupervisorScreenState extends State<DispatchSupervisorScreen> {
             url: repairUrl,
             icon: Icons.build_circle_outlined,
             activeColor: const Color(0xFFD97706),
+            gpsLat: _asDouble(o['repair_gps_lat']),
+            gpsLng: _asDouble(o['repair_gps_lng']),
+            gpsAccuracy: _asDouble(o['repair_gps_accuracy']),
+            gpsCapturedAt: (o['repair_gps_captured_at'] ?? '').toString(),
           ),
       ],
     );

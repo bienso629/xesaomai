@@ -38,6 +38,8 @@ class QuanLyXeStatus {
   final double heading;
   final int status;
   final int satellite;
+  final String gpsProvider;
+  final String? stateLabel;
 
   QuanLyXeStatus({
     required this.id,
@@ -53,7 +55,16 @@ class QuanLyXeStatus {
     this.heading = 0.0,
     this.status = 0,
     this.satellite = 0,
+    this.gpsProvider = 'vietmap',
+    this.stateLabel,
   });
+
+  String get providerDisplayName {
+    final p = gpsProvider.toLowerCase();
+    if (p == 'binhanh') return 'Bình Anh';
+    if (p == 'vietmap') return 'Vietmap';
+    return gpsProvider.toUpperCase();
+  }
 
   factory QuanLyXeStatus.fromJson(Map<String, dynamic> json) {
     final double lat = (json['Y'] as num?)?.toDouble() ?? 0.0;
@@ -82,6 +93,8 @@ class QuanLyXeStatus {
       heading: hdg,
       status: st,
       satellite: sat,
+      gpsProvider: (json['GpsProvider'] ?? json['gps_provider'] ?? 'vietmap').toString(),
+      stateLabel: json['StateLabel'] as String?,
     );
   }
 }

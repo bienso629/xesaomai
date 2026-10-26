@@ -1,7 +1,9 @@
 import 'dart:io';
 
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
+import 'package:url_launcher/url_launcher.dart';
 import '../services/app_state.dart';
 import '../services/admin_service.dart';
 import '../screens/slip_capture_screen.dart';
@@ -38,6 +40,11 @@ class OrderAttachmentsSection extends StatelessWidget {
     required String title,
     required String rawUrl,
     String? subtitle,
+    double? gpsLat,
+    double? gpsLng,
+    double? gpsAccuracy,
+    String? gpsCapturedAt,
+    String? photoGeoLabel,
   }) {
     final s = rawUrl.trim();
     if (s.isEmpty) return;
@@ -45,13 +52,17 @@ class OrderAttachmentsSection extends StatelessWidget {
         s.startsWith('/') && !s.startsWith('/uploads/') && File(s).existsSync();
     final fullUrl = isLocalFile ? s : resolvePhotoUrl(s);
 
+    final bool hasGps = gpsLat != null &&
+        gpsLng != null &&
+        (gpsLat != 0.0 || gpsLng != 0.0);
+
     showDialog(
       context: context,
       builder: (ctx) => Dialog(
         backgroundColor: const Color(0xFF0F172A),
         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(4)),
         child: ConstrainedBox(
-          constraints: const BoxConstraints(maxWidth: 680, maxHeight: 620),
+          constraints: const BoxConstraints(maxWidth: 680, maxHeight: 660),
           child: Column(
             mainAxisSize: MainAxisSize.min,
             children: [
@@ -111,6 +122,179 @@ class OrderAttachmentsSection extends StatelessWidget {
                   ],
                 ),
               ),
+              // Thanh thông tin tọa độ GPS lúc tài xế chụp ảnh
+              Container(
+                width: double.infinity,
+                padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
+                decoration: BoxDecoration(
+                  color: hasGps
+                      ? const Color(0xFF064E3B).withValues(alpha: 0.85)
+                      : const Color(0xFF78350F).withValues(alpha: 0.85),
+                  border: Border(
+                    bottom: BorderSide(
+                      color: hasGps
+                          ? const Color(0xFF059669).withValues(alpha: 0.4)
+                          : const Color(0xFFD97706).withValues(alpha: 0.4),
+                      width: 1,
+                    ),
+                  ),
+                ),
+                child: Row(
+                  crossAxisAlignment: CrossAxisAlignment.center,
+                  children: [
+                    Icon(
+                      hasGps ? Icons.location_on : Icons.location_off_outlined,
+                      color: hasGps ? const Color(0xFF34D399) : const Color(0xFFFBBF24),
+                      size: 16,
+                    ),
+                    const SizedBox(width: 8),
+                    Expanded(
+                      child: hasGps
+                          ? Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              mainAxisSize: MainAxisSize.min,
+                              children: [
+                                Wrap(
+                                  spacing: 6,
+                                  runSpacing: 2,
+                                  crossAxisAlignment: WrapCrossAlignment.center,
+                                  children: [
+                                    Text(
+                                      "Tọa độ GPS lúc chụp: ${gpsLat.toStringAsFixed(6)}, ${gpsLng.toStringAsFixed(6)}",
+                                      style: const TextStyle(
+                                        color: Colors.white,
+                                        fontSize: 12,
+                                        fontWeight: FontWeight.w600,
+                                      ),
+                                    ),
+                                    if (gpsAccuracy != null && gpsAccuracy > 0)
+                                      Text(
+                                        "(±${gpsAccuracy.round()}m)",
+                                        style: const TextStyle(
+                                          color: Color(0xFF6EE7B7),
+                                          fontSize: 11,
+                                        ),
+                                      ),
+                                  ],
+                                ),
+                                if (photoGeoLabel != null && photoGeoLabel.trim().isNotEmpty) ...[
+                                  const SizedBox(height: 2),
+                                  Text(
+                                    photoGeoLabel,
+                                    style: const TextStyle(
+                                      color: Color(0xFFA7F3D0),
+                                      fontSize: 11,
+                                      fontWeight: FontWeight.w500,
+                                    ),
+                                  ),
+                                ] else if (gpsCapturedAt != null && gpsCapturedAt.trim().isNotEmpty) ...[
+                                  const SizedBox(height: 2),
+                                  Text(
+                                    "Thời điểm ghi nhận: $gpsCapturedAt",
+                                    style: const TextStyle(
+                                      color: Colors.white70,
+                                      fontSize: 11,
+                                    ),
+                                  ),
+                                ],
+                              ],
+                            )
+                          : const Text(
+                              "Không có thông tin tọa độ GPS ghi nhận lúc chụp",
+                              style: TextStyle(
+                                color: Color(0xFFFDE68A),
+                                fontSize: 11.5,
+                                fontStyle: FontStyle.italic,
+                              ),
+                            ),
+                    ),
+                    if (hasGps) ...[
+                      const SizedBox(width: 8),
+                      Wrap(
+                        spacing: 6,
+                        runSpacing: 4,
+                        children: [
+                          InkWell(
+                            onTap: () {
+                              Clipboard.setData(ClipboardData(
+                                text: "${gpsLat.toStringAsFixed(6)}, ${gpsLng.toStringAsFixed(6)}",
+                              ));
+                              ScaffoldMessenger.of(context).showSnackBar(
+                                const SnackBar(
+                                  content: Text("Đã sao chép tọa độ GPS vào clipboard"),
+                                  duration: Duration(seconds: 2),
+                                ),
+                              );
+                            },
+                            borderRadius: BorderRadius.circular(4),
+                            child: Container(
+                              padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 3),
+                              decoration: BoxDecoration(
+                                color: Colors.white.withValues(alpha: 0.15),
+                                borderRadius: BorderRadius.circular(4),
+                                border: Border.all(
+                                  color: Colors.white.withValues(alpha: 0.3),
+                                  width: 0.8,
+                                ),
+                              ),
+                              child: const Row(
+                                mainAxisSize: MainAxisSize.min,
+                                children: [
+                                  Icon(Icons.copy, size: 12, color: Colors.white),
+                                  SizedBox(width: 4),
+                                  Text(
+                                    "Sao chép",
+                                    style: TextStyle(
+                                      color: Colors.white,
+                                      fontSize: 10.5,
+                                      fontWeight: FontWeight.w500,
+                                    ),
+                                  ),
+                                ],
+                              ),
+                            ),
+                          ),
+                          InkWell(
+                            onTap: () async {
+                              final uri = Uri.parse("https://www.google.com/maps/search/?api=1&query=$gpsLat,$gpsLng");
+                              if (await canLaunchUrl(uri)) {
+                                await launchUrl(uri, mode: LaunchMode.externalApplication);
+                              }
+                            },
+                            borderRadius: BorderRadius.circular(4),
+                            child: Container(
+                              padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 3),
+                              decoration: BoxDecoration(
+                                color: const Color(0xFF10B981).withValues(alpha: 0.3),
+                                borderRadius: BorderRadius.circular(4),
+                                border: Border.all(
+                                  color: const Color(0xFF34D399),
+                                  width: 0.8,
+                                ),
+                              ),
+                              child: const Row(
+                                mainAxisSize: MainAxisSize.min,
+                                children: [
+                                  Icon(Icons.map_outlined, size: 12, color: Colors.white),
+                                  SizedBox(width: 4),
+                                  Text(
+                                    "Mở Maps",
+                                    style: TextStyle(
+                                      color: Colors.white,
+                                      fontSize: 10.5,
+                                      fontWeight: FontWeight.w600,
+                                    ),
+                                  ),
+                                ],
+                              ),
+                            ),
+                          ),
+                        ],
+                      ),
+                    ],
+                  ],
+                ),
+              ),
               Expanded(
                 child: Container(
                   width: double.infinity,
@@ -154,6 +338,12 @@ class OrderAttachmentsSection extends StatelessWidget {
     }
   }
 
+  static double? _asDouble(dynamic v) {
+    if (v == null) return null;
+    if (v is num) return v.toDouble();
+    return double.tryParse(v.toString().trim());
+  }
+
   @override
   Widget build(BuildContext context) {
     final state = context.watch<AppState>();
@@ -169,6 +359,7 @@ class OrderAttachmentsSection extends StatelessWidget {
     final isMechanic = allowCapture && roles.contains('mechanic');
     final showGeo = readOnly || isAdminOrManager;
     Widget? geo(String ptype) => showGeo ? _buildGeoCheck(order, ptype) : null;
+    String? geoSummary(String ptype) => _geoLabel(order, ptype);
 
     final int? orderId = order['id'] is int
         ? order['id'] as int
@@ -185,21 +376,37 @@ class OrderAttachmentsSection extends StatelessWidget {
         .trim();
     final pumpBeforeTime = _fmtTime(order['pump_slip_before_time'] ?? order['pump_before_time']);
     final pumpBeforeBy = (order['pump_slip_before_by'] ?? order['pump_before_by'] ?? '').toString().trim();
+    final pumpBeforeLat = _asDouble(order['pump_slip_before_gps_lat'] ?? order['pump_before_gps_lat']);
+    final pumpBeforeLng = _asDouble(order['pump_slip_before_gps_lng'] ?? order['pump_before_gps_lng']);
+    final pumpBeforeAcc = _asDouble(order['pump_slip_before_gps_accuracy'] ?? order['pump_before_gps_accuracy']);
+    final pumpBeforeGpsAt = (order['pump_slip_before_gps_captured_at'] ?? order['pump_before_gps_captured_at'] ?? '').toString();
 
     final pumpPhoto = (order['pump_slip_photo_url'] ?? '').toString().trim();
     final pumpTime = _fmtTime(order['pump_slip_time']);
     final pumpBy = (order['pump_slip_by'] ?? '').toString().trim();
     final pumpNote = (order['pump_slip_note'] ?? '').toString().trim();
+    final pumpLat = _asDouble(order['pump_slip_gps_lat']);
+    final pumpLng = _asDouble(order['pump_slip_gps_lng']);
+    final pumpAcc = _asDouble(order['pump_slip_gps_accuracy']);
+    final pumpGpsAt = (order['pump_slip_gps_captured_at'] ?? '').toString();
 
     final weighPhoto = (order['weigh_slip_photo_url'] ?? '').toString().trim();
     final weighTime = _fmtTime(order['weigh_slip_time']);
     final weighTonnage = order['weigh_slip_tonnage'];
     final weighCode = (order['weigh_slip_code'] ?? '').toString().trim();
+    final weighLat = _asDouble(order['weigh_slip_gps_lat']);
+    final weighLng = _asDouble(order['weigh_slip_gps_lng']);
+    final weighAcc = _asDouble(order['weigh_slip_gps_accuracy']);
+    final weighGpsAt = (order['weigh_slip_gps_captured_at'] ?? '').toString();
 
     final deliveryPhoto =
         (order['delivery_slip_photo_url'] ?? '').toString().trim();
     final deliveryTime = _fmtTime(order['delivery_slip_time']);
     final deliveryNote = (order['delivery_slip_note'] ?? '').toString().trim();
+    final deliveryLat = _asDouble(order['delivery_slip_gps_lat']);
+    final deliveryLng = _asDouble(order['delivery_slip_gps_lng']);
+    final deliveryAcc = _asDouble(order['delivery_slip_gps_accuracy']);
+    final deliveryGpsAt = (order['delivery_slip_gps_captured_at'] ?? '').toString();
 
     final hasBreakdown =
         order['has_breakdown'] == true ||
@@ -214,12 +421,20 @@ class OrderAttachmentsSection extends StatelessWidget {
         (order['breakdown_reported_by'] ?? '').toString().trim();
     final breakdownStatus =
         (order['breakdown_status'] ?? '').toString().trim();
+    final breakdownLat = _asDouble(order['breakdown_gps_lat']);
+    final breakdownLng = _asDouble(order['breakdown_gps_lng']);
+    final breakdownAcc = _asDouble(order['breakdown_gps_accuracy']);
+    final breakdownGpsAt = (order['breakdown_gps_captured_at'] ?? '').toString();
 
     final repairPhoto = (order['repair_photo_url'] ?? '').toString().trim();
     final repairStatus = (order['repair_status'] ?? '').toString().trim();
     final repairNote = (order['repair_note'] ?? '').toString().trim();
     final repairTime = _fmtTime(order['repair_time']);
     final repairBy = (order['repair_by'] ?? '').toString().trim();
+    final repairLat = _asDouble(order['repair_gps_lat']);
+    final repairLng = _asDouble(order['repair_gps_lng']);
+    final repairAcc = _asDouble(order['repair_gps_accuracy']);
+    final repairGpsAt = (order['repair_gps_captured_at'] ?? '').toString();
 
     Future<void> captureType(String slipType) async {
       if (orderId == null) return;
@@ -263,6 +478,11 @@ class OrderAttachmentsSection extends StatelessWidget {
               : "Chụp ảnh Trước khi bơm",
           geoCheck: geo('pump_slip_before'),
           onCapture: () => captureType('pump_before'),
+          gpsLat: pumpBeforeLat,
+          gpsLng: pumpBeforeLng,
+          gpsAccuracy: pumpBeforeAcc,
+          gpsCapturedAt: pumpBeforeGpsAt,
+          photoGeoLabel: geoSummary('pump_slip_before'),
         ),
         const SizedBox(height: 8),
         _buildAttachmentCard(
@@ -282,6 +502,11 @@ class OrderAttachmentsSection extends StatelessWidget {
               : "Chụp ảnh Đã bơm xong",
           geoCheck: geo('pump_slip'),
           onCapture: () => captureType('pump_slip'),
+          gpsLat: pumpLat,
+          gpsLng: pumpLng,
+          gpsAccuracy: pumpAcc,
+          gpsCapturedAt: pumpGpsAt,
+          photoGeoLabel: geoSummary('pump_slip'),
         ),
         const SizedBox(height: 8),
         _buildAttachmentCard(
@@ -303,6 +528,11 @@ class OrderAttachmentsSection extends StatelessWidget {
               weighPhoto.isNotEmpty ? "Chụp lại Phiếu cân" : "Chụp Phiếu cân",
           geoCheck: geo('weigh_slip'),
           onCapture: () => captureType('weigh_slip'),
+          gpsLat: weighLat,
+          gpsLng: weighLng,
+          gpsAccuracy: weighAcc,
+          gpsCapturedAt: weighGpsAt,
+          photoGeoLabel: geoSummary('weigh_slip'),
         ),
         const SizedBox(height: 8),
         _buildAttachmentCard(
@@ -321,6 +551,11 @@ class OrderAttachmentsSection extends StatelessWidget {
               : "Chụp Phiếu giao hàng",
           geoCheck: geo('delivery_slip'),
           onCapture: () => captureType('delivery_slip'),
+          gpsLat: deliveryLat,
+          gpsLng: deliveryLng,
+          gpsAccuracy: deliveryAcc,
+          gpsCapturedAt: deliveryGpsAt,
+          photoGeoLabel: geoSummary('delivery_slip'),
         ),
         const SizedBox(height: 8),
         _buildAttachmentCard(
@@ -344,6 +579,10 @@ class OrderAttachmentsSection extends StatelessWidget {
           captureLabel:
               hasBreakdown ? "Cập nhật ảnh Báo hỏng" : "Chụp & Báo hỏng xe",
           onCapture: () => captureType('breakdown'),
+          gpsLat: breakdownLat,
+          gpsLng: breakdownLng,
+          gpsAccuracy: breakdownAcc,
+          gpsCapturedAt: breakdownGpsAt,
         ),
         const SizedBox(height: 8),
         _buildAttachmentCard(
@@ -365,6 +604,10 @@ class OrderAttachmentsSection extends StatelessWidget {
               ? "Cập nhật ảnh Sửa chữa"
               : "Chụp ảnh Sửa chữa (Kỹ thuật)",
           onCapture: () => captureType('repair'),
+          gpsLat: repairLat,
+          gpsLng: repairLng,
+          gpsAccuracy: repairAcc,
+          gpsCapturedAt: repairGpsAt,
         ),
       ],
     );
@@ -374,6 +617,39 @@ class OrderAttachmentsSection extends StatelessWidget {
     final d = m is num ? m.toDouble() : double.tryParse('${m ?? ''}');
     if (d == null) return '';
     return d < 1000 ? '${d.round()} m' : '${(d / 1000).toStringAsFixed(1)} km';
+  }
+
+  /// Trích xuất chuỗi tóm tắt vị trí/đối chiếu GPS của ảnh
+  static String? _geoLabel(Map<String, dynamic> order, String ptype) {
+    final all = order['photo_geo_check'];
+    if (all is! Map) return null;
+    final c = all[ptype];
+    if (c is! Map) return null;
+    final matched = (c['matched'] ?? '').toString();
+
+    final parts = <String>[];
+    if (c['pickup_distance_m'] != null) {
+      parts.add('Nơi nhận ${_fmtDistance(c['pickup_distance_m'])}');
+    }
+    if (c['delivery_distance_m'] != null) {
+      parts.add('Điểm giao ${_fmtDistance(c['delivery_distance_m'])}');
+    }
+
+    String head;
+    switch (matched) {
+      case 'PICKUP':
+        head = 'Tại Nơi nhận hàng';
+        break;
+      case 'DELIVERY':
+        head = 'Tại Điểm giao hàng';
+        break;
+      case 'NONE':
+        head = 'Ngoài điểm nhận/giao';
+        break;
+      default:
+        head = 'Đã ghi nhận tọa độ GPS';
+    }
+    return parts.isNotEmpty ? '$head (Cách ${parts.join(', ')})' : head;
   }
 
   /// Dòng đối chiếu GPS lúc chụp với Nơi nhận hàng / Điểm giao hàng của đơn.
@@ -459,6 +735,11 @@ class OrderAttachmentsSection extends StatelessWidget {
     required bool canCapture,
     required String captureLabel,
     required VoidCallback onCapture,
+    double? gpsLat,
+    double? gpsLng,
+    double? gpsAccuracy,
+    String? gpsCapturedAt,
+    String? photoGeoLabel,
   }) {
     final hasPhoto = photoUrl.trim().isNotEmpty;
     final bool isLocal =
@@ -491,6 +772,11 @@ class OrderAttachmentsSection extends StatelessWidget {
                     title: title,
                     rawUrl: photoUrl,
                     subtitle: statusText,
+                    gpsLat: gpsLat,
+                    gpsLng: gpsLng,
+                    gpsAccuracy: gpsAccuracy,
+                    gpsCapturedAt: gpsCapturedAt,
+                    photoGeoLabel: photoGeoLabel,
                   )
                 : null,
             child: Container(
@@ -598,6 +884,11 @@ class OrderAttachmentsSection extends StatelessWidget {
                             title: title,
                             rawUrl: photoUrl,
                             subtitle: statusText,
+                            gpsLat: gpsLat,
+                            gpsLng: gpsLng,
+                            gpsAccuracy: gpsAccuracy,
+                            gpsCapturedAt: gpsCapturedAt,
+                            photoGeoLabel: photoGeoLabel,
                           ),
                           icon: const Icon(Icons.visibility_outlined, size: 14),
                           label: const Text(
