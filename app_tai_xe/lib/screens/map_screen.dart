@@ -34,7 +34,7 @@ class _MapScreenState extends State<MapScreen> {
   String _searchQuery = '';
   String? _selectedPlateOnMap;
   bool _showPanel = true;
-  String _statusFilter = 'all'; // 'all', 'running', 'stopped', 'off'
+  String _statusFilter = 'running'; // 'all', 'running', 'stopped', 'off' - Mặc định tab "Đang chạy"
 
   Timer? _autoRefreshTimer;
   List<dynamic> _allOrders = [];
