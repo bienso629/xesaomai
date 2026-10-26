@@ -831,116 +831,16 @@ class _CustomersScreenState extends State<CustomersScreen> {
   }
 
   Future<void> _showForm({Map<String, dynamic>? customer}) async {
-    final isEdit = customer != null;
-    const fields = <(String, String, IconData, TextInputType)>[
-      ('code', 'Mã khách hàng *', Icons.tag, TextInputType.text),
-      ('name', 'Tên khách hàng *', Icons.business, TextInputType.text),
-      ('tax_code', 'Mã số thuế', Icons.receipt_long_outlined, TextInputType.text),
-      ('contact_person', 'Người liên hệ', Icons.person_outline, TextInputType.name),
-      ('phone', 'Số điện thoại', Icons.phone_outlined, TextInputType.phone),
-      ('email', 'Email', Icons.email_outlined, TextInputType.emailAddress),
-      ('address', 'Địa chỉ', Icons.location_on_outlined, TextInputType.streetAddress),
-      ('note', 'Ghi chú', Icons.notes_outlined, TextInputType.multiline),
-    ];
-    final ctrls = {
-      for (final f in fields)
-        f.$1: TextEditingController(text: isEdit ? _s(customer, f.$1) : ''),
-    };
-    final formKey = GlobalKey<FormState>();
-    bool saving = false;
-
-    await showDialog(
+    final result = await showDialog<bool>(
       context: context,
       barrierDismissible: false,
-      builder: (dialogContext) => StatefulBuilder(
-        builder: (dialogContext, setDialogState) => AlertDialog(
-          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(4)),
-          title: Text(
-            isEdit ? "Sửa khách hàng" : "Thêm khách hàng",
-            style: const TextStyle(fontSize: 17, fontWeight: FontWeight.bold),
-          ),
-          content: SizedBox(
-            width: 460,
-            child: Form(
-              key: formKey,
-              child: SingleChildScrollView(
-                child: Column(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    for (final f in fields)
-                      Padding(
-                        padding: const EdgeInsets.only(bottom: 10),
-                        child: TextFormField(
-                          controller: ctrls[f.$1],
-                          keyboardType: f.$4,
-                          maxLines: (f.$1 == 'note' || f.$1 == 'address') ? 2 : 1,
-                          style: const TextStyle(fontSize: 13),
-                          decoration: InputDecoration(
-                            labelText: f.$2,
-                            prefixIcon: Icon(f.$3, size: 18),
-                          ),
-                          validator: (v) {
-                            final t = (v ?? '').trim();
-                            if ((f.$1 == 'code' || f.$1 == 'name') && t.isEmpty) {
-                              return "Không được để trống";
-                            }
-                            if (f.$1 == 'email' &&
-                                t.isNotEmpty &&
-                                !RegExp(r'^[^@\s]+@[^@\s]+\.[^@\s]+$').hasMatch(t)) {
-                              return "Email không hợp lệ";
-                            }
-                            return null;
-                          },
-                        ),
-                      ),
-                  ],
-                ),
-              ),
-            ),
-          ),
-          actions: [
-            TextButton(
-              onPressed: saving ? null : () => Navigator.pop(dialogContext),
-              child: const Text("Hủy bỏ"),
-            ),
-            ElevatedButton(
-              style: ElevatedButton.styleFrom(
-                backgroundColor: Colors.blue.shade800,
-                foregroundColor: Colors.white,
-                minimumSize: const Size(64, 36),
-                shape: RoundedRectangleBorder(
-                  borderRadius: BorderRadius.circular(4),
-                ),
-              ),
-              onPressed: saving
-                  ? null
-                  : () async {
-                      if (!formKey.currentState!.validate()) return;
-                      setDialogState(() => saving = true);
-                      final res = await AdminService.saveCustomer(
-                        id: isEdit ? int.tryParse('${customer['id']}') : null,
-                        data: {
-                          for (final e in ctrls.entries) e.key: e.value.text.trim(),
-                        },
-                      );
-                      if (!dialogContext.mounted) return;
-                      setDialogState(() => saving = false);
-                      if (res['success'] == true) {
-                        Navigator.pop(dialogContext);
-                        _toast(isEdit ? "Đã cập nhật khách hàng" : "Đã thêm khách hàng");
-                        _load();
-                      } else {
-                        _toast(res['message'].toString(), error: true);
-                      }
-                    },
-              child: Text(saving ? "Đang lưu..." : "Lưu"),
-            ),
-          ],
-        ),
+      builder: (dialogContext) => _CustomerFormDialog(
+        customer: customer,
+        onToast: _toast,
       ),
     );
-    for (final c in ctrls.values) {
-      c.dispose();
+    if (result == true) {
+      _load();
     }
   }
 
@@ -982,5 +882,143 @@ class _CustomersScreenState extends State<CustomersScreen> {
     } else {
       _toast("Không xóa được khách hàng", error: true);
     }
+  }
+}
+
+class _CustomerFormDialog extends StatefulWidget {
+  final Map<String, dynamic>? customer;
+  final void Function(String msg, {bool error}) onToast;
+
+  const _CustomerFormDialog({
+    this.customer,
+    required this.onToast,
+  });
+
+  @override
+  State<_CustomerFormDialog> createState() => _CustomerFormDialogState();
+}
+
+class _CustomerFormDialogState extends State<_CustomerFormDialog> {
+  static const _fields = <(String, String, IconData, TextInputType)>[
+    ('code', 'Mã khách hàng *', Icons.tag, TextInputType.text),
+    ('name', 'Tên khách hàng *', Icons.business, TextInputType.text),
+    ('tax_code', 'Mã số thuế', Icons.receipt_long_outlined, TextInputType.text),
+    ('contact_person', 'Người liên hệ', Icons.person_outline, TextInputType.name),
+    ('phone', 'Số điện thoại', Icons.phone_outlined, TextInputType.phone),
+    ('email', 'Email', Icons.email_outlined, TextInputType.emailAddress),
+    ('address', 'Địa chỉ', Icons.location_on_outlined, TextInputType.streetAddress),
+    ('note', 'Ghi chú', Icons.notes_outlined, TextInputType.multiline),
+  ];
+
+  late final Map<String, TextEditingController> _ctrls;
+  final GlobalKey<FormState> _formKey = GlobalKey<FormState>();
+  bool _saving = false;
+
+  bool get _isEdit => widget.customer != null;
+
+  String _val(String key) => (widget.customer?[key] ?? '').toString().trim();
+
+  @override
+  void initState() {
+    super.initState();
+    _ctrls = {
+      for (final f in _fields)
+        f.$1: TextEditingController(text: _isEdit ? _val(f.$1) : ''),
+    };
+  }
+
+  @override
+  void dispose() {
+    for (final c in _ctrls.values) {
+      c.dispose();
+    }
+    super.dispose();
+  }
+
+  Future<void> _handleSave() async {
+    if (!_formKey.currentState!.validate()) return;
+    setState(() => _saving = true);
+    final res = await AdminService.saveCustomer(
+      id: _isEdit ? int.tryParse('${widget.customer!['id']}') : null,
+      data: {
+        for (final e in _ctrls.entries) e.key: e.value.text.trim(),
+      },
+    );
+    if (!mounted) return;
+    setState(() => _saving = false);
+    if (res['success'] == true) {
+      Navigator.of(context).pop(true);
+      widget.onToast(_isEdit ? "Đã cập nhật khách hàng" : "Đã thêm khách hàng");
+    } else {
+      widget.onToast(res['message'].toString(), error: true);
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return AlertDialog(
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(4)),
+      title: Text(
+        _isEdit ? "Sửa khách hàng" : "Thêm khách hàng",
+        style: const TextStyle(fontSize: 17, fontWeight: FontWeight.bold),
+      ),
+      content: SizedBox(
+        width: 460,
+        child: Form(
+          key: _formKey,
+          child: SingleChildScrollView(
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                for (final f in _fields)
+                  Padding(
+                    padding: const EdgeInsets.only(bottom: 10),
+                    child: TextFormField(
+                      controller: _ctrls[f.$1],
+                      keyboardType: f.$4,
+                      maxLines: (f.$1 == 'note' || f.$1 == 'address') ? 2 : 1,
+                      style: const TextStyle(fontSize: 13),
+                      decoration: InputDecoration(
+                        labelText: f.$2,
+                        prefixIcon: Icon(f.$3, size: 18),
+                      ),
+                      validator: (v) {
+                        final t = (v ?? '').trim();
+                        if ((f.$1 == 'code' || f.$1 == 'name') && t.isEmpty) {
+                          return "Không được để trống";
+                        }
+                        if (f.$1 == 'email' &&
+                            t.isNotEmpty &&
+                            !RegExp(r'^[^@\s]+@[^@\s]+\.[^@\s]+$').hasMatch(t)) {
+                          return "Email không hợp lệ";
+                        }
+                        return null;
+                      },
+                    ),
+                  ),
+              ],
+            ),
+          ),
+        ),
+      ),
+      actions: [
+        TextButton(
+          onPressed: _saving ? null : () => Navigator.of(context).pop(false),
+          child: const Text("Hủy bỏ"),
+        ),
+        ElevatedButton(
+          style: ElevatedButton.styleFrom(
+            backgroundColor: Colors.blue.shade800,
+            foregroundColor: Colors.white,
+            minimumSize: const Size(64, 36),
+            shape: RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(4),
+            ),
+          ),
+          onPressed: _saving ? null : _handleSave,
+          child: Text(_saving ? "Đang lưu..." : "Lưu"),
+        ),
+      ],
+    );
   }
 }
