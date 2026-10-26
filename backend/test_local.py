@@ -211,6 +211,53 @@ def run_tests():
     assert res.status_code == 200
     log("11.2. Tài xế bấm mốc BƠM XONG (Kèm lý do chờ): THÀNH CÔNG", "PASS")
 
+    # 12. Kiểm thử logic gửi ảnh trước và sau khi bơm (Bắt buộc trong bán kính 100m của Nơi nhận hàng)
+    pickup_lat = 11.3174
+    pickup_lng = 108.8833
+    sample_b64 = "data:image/jpeg;base64,/9j/4AAQSkZJRg=="
+
+    # 12.1. Thử gửi ảnh Trước khi bơm ngoài bán kính 100m (>100m) -> Phải bị từ chối 400
+    res = requests.post(f"{BASE_URL}/api/v1/orders/{order_id}/attachment", json={
+        "photo_type": "pump_slip_before",
+        "photo_base64": sample_b64,
+        "gps_lat": pickup_lat + 0.002, # Lệch ~220m
+        "gps_lng": pickup_lng,
+    }, headers=headers_driver)
+    assert res.status_code == 400, f"Mong đợi lỗi 400 khi ngoài 100m nhưng nhận {res.status_code}: {res.text}"
+    assert "vượt quá bán kính" in res.text
+    log("12.1. Chặn gửi ảnh Trước khi bơm khi GPS ngoài bán kính 100m Nơi nhận: CHÍNH XÁC", "PASS")
+
+    # 12.2. Gửi ảnh Trước khi bơm hợp lệ (trong bán kính 100m) -> Thành công 200
+    res = requests.post(f"{BASE_URL}/api/v1/orders/{order_id}/attachment", json={
+        "photo_type": "pump_slip_before",
+        "photo_base64": sample_b64,
+        "gps_lat": pickup_lat + 0.0002, # Lệch ~22m
+        "gps_lng": pickup_lng,
+    }, headers=headers_driver)
+    assert res.status_code in (200, 201), f"Gửi ảnh trước khi bơm thất bại: {res.text}"
+    log("12.2. Gửi ảnh Trước khi bơm hợp lệ trong bán kính 100m: THÀNH CÔNG", "PASS")
+
+    # 12.3. Thử gửi ảnh Đã bơm xong ngoài bán kính 100m -> Phải bị từ chối 400
+    res = requests.post(f"{BASE_URL}/api/v1/orders/{order_id}/attachment", json={
+        "photo_type": "pump_slip",
+        "photo_base64": sample_b64,
+        "gps_lat": pickup_lat + 0.003, # Lệch ~330m
+        "gps_lng": pickup_lng,
+    }, headers=headers_driver)
+    assert res.status_code == 400, f"Mong đợi lỗi 400 khi ngoài 100m nhưng nhận {res.status_code}: {res.text}"
+    assert "vượt quá bán kính" in res.text
+    log("12.3. Chặn gửi ảnh Đã bơm xong khi GPS ngoài bán kính 100m Nơi nhận: CHÍNH XÁC", "PASS")
+
+    # 12.4. Gửi ảnh Đã bơm xong hợp lệ (trong bán kính 100m) -> Thành công 200
+    res = requests.post(f"{BASE_URL}/api/v1/orders/{order_id}/attachment", json={
+        "photo_type": "pump_slip",
+        "photo_base64": sample_b64,
+        "gps_lat": pickup_lat + 0.0003, # Lệch ~33m
+        "gps_lng": pickup_lng,
+    }, headers=headers_driver)
+    assert res.status_code in (200, 201), f"Gửi ảnh đã bơm xong thất bại: {res.text}"
+    log("12.4. Gửi ảnh Đã bơm xong hợp lệ trong bán kính 100m: THÀNH CÔNG", "PASS")
+
     log("=== TOÀN BỘ CÁC KỊCH BẢN KIỂM THỬ ĐÃ CHẠY HOÀN HẢO TRÊN MÔI TRƯỜNG LOCAL ===", "SUCCESS")
 
 if __name__ == "__main__":

@@ -678,15 +678,30 @@ def _attach_photo_geo_check(order):
         item = {"label": label, "gps_lat": plat, "gps_lng": plng,
                 "gps_accuracy": _as_float(o.get(f"{ptype}_gps_accuracy"))}
         nearest = None
-        for key, (lat, lng, radius) in points.items():
+
+        if ptype in ("pump_slip_before", "pump_slip"):
+            target_keys = [k for k in ("pickup",) if k in points]
+        elif ptype == "delivery_slip":
+            target_keys = [k for k in ("delivery",) if k in points]
+        else:
+            target_keys = list(points.keys())
+
+        for key in target_keys:
+            lat, lng, radius = points[key]
             dist = round(haversine_distance(plat, plng, lat, lng))
             item[f"{key}_distance_m"] = dist
             item[f"{key}_radius_m"] = radius
             item[f"at_{key}"] = dist <= radius
             if dist <= radius and (nearest is None or dist < nearest[1]):
                 nearest = (key, dist)
-        # matched: PICKUP | DELIVERY | NONE (có tọa độ điểm nhưng ngoài bán kính) | UNKNOWN (đơn chưa có tọa độ)
-        item["matched"] = nearest[0].upper() if nearest else ("NONE" if points else "UNKNOWN")
+
+        if nearest:
+            item["matched"] = nearest[0].upper()
+        elif target_keys:
+            item["matched"] = "NONE"
+        else:
+            item["matched"] = "UNKNOWN"
+
         checks[ptype] = item
     o["photo_geo_check"] = checks
     return o
@@ -3974,6 +3989,7 @@ def submit_order_attachment(
         raise HTTPException(status_code=400, detail=f"Loại hình chụp không hợp lệ: {ptype}")
 
     # 2 ảnh bơm hàng (Trước khi bơm / Đã bơm xong) bắt buộc do tài khoản Tài xế chụp
+    # và GPS phải nằm trong bán kính 100m của tọa độ Nơi nhận hàng (pickup).
     if ptype in ("pump_slip_before", "pump_slip"):
         user_roles = [r.lower() for r in current_user.get("roles", [])]
         if "driver" not in user_roles:
@@ -3991,13 +4007,81 @@ def submit_order_attachment(
                 detail="Phải chụp ảnh TRƯỚC KHI BƠM trước khi gửi ảnh ĐÃ BƠM XONG",
             )
 
-    # Mọi ảnh của tài xế đều bắt buộc có tọa độ GPS lúc chụp
-    try:
-        _validate_gps(payload.gps_lat, payload.gps_lng)
-    except HTTPException:
-        cur.close()
-        conn.close()
-        raise
+        # Kiểm tra GPS phải nằm trong bán kính 100m của Nơi nhận hàng (pickup)
+        p_lat = _as_float(existing.get("pickup_lat"))
+        p_lng = _as_float(existing.get("pickup_lng"))
+        if p_lat is None or p_lng is None:
+            cur.close()
+            conn.close()
+            raise HTTPException(
+                status_code=400,
+                detail="Đơn hàng chưa có tọa độ Nơi nhận hàng. Vui lòng liên hệ Điều phối cập nhật.",
+            )
+
+        # Mọi ảnh của tài xế đều bắt buộc có tọa độ GPS lúc chụp
+        try:
+            _validate_gps(payload.gps_lat, payload.gps_lng)
+        except HTTPException:
+            cur.close()
+            conn.close()
+            raise
+
+        dist_to_pickup = round(haversine_distance(payload.gps_lat, payload.gps_lng, p_lat, p_lng))
+        max_allowed_radius = 100  # Quy chuẩn bắt buộc bán kính 100m tại Nơi nhận hàng
+        if dist_to_pickup > max_allowed_radius:
+            cur.close()
+            conn.close()
+            p_label = "Trước khi bơm" if ptype == "pump_slip_before" else "Đã bơm xong"
+            raise HTTPException(
+                status_code=400,
+                detail=f"Vị trí chụp ảnh ({p_label}) cách Nơi nhận hàng {dist_to_pickup}m, vượt quá bán kính cho phép ({max_allowed_radius}m). Vui lòng chụp tại đúng điểm nhận hàng.",
+            )
+    elif ptype == "delivery_slip":
+        user_roles = [r.lower() for r in current_user.get("roles", [])]
+        if "driver" not in user_roles:
+            cur.close()
+            conn.close()
+            raise HTTPException(
+                status_code=403,
+                detail="Phiếu giao hàng chỉ tài khoản Tài xế mới được chụp và gửi",
+            )
+
+        # Kiểm tra GPS phải nằm trong bán kính 100m của Điểm giao hàng (delivery)
+        d_lat = _as_float(existing.get("delivery_lat"))
+        d_lng = _as_float(existing.get("delivery_lng"))
+        if d_lat is None or d_lng is None:
+            cur.close()
+            conn.close()
+            raise HTTPException(
+                status_code=400,
+                detail="Đơn hàng chưa có tọa độ Điểm giao hàng. Vui lòng liên hệ Điều phối cập nhật.",
+            )
+
+        # Mọi ảnh của tài xế đều bắt buộc có tọa độ GPS lúc chụp
+        try:
+            _validate_gps(payload.gps_lat, payload.gps_lng)
+        except HTTPException:
+            cur.close()
+            conn.close()
+            raise
+
+        dist_to_delivery = round(haversine_distance(payload.gps_lat, payload.gps_lng, d_lat, d_lng))
+        max_allowed_radius = 100  # Quy chuẩn bắt buộc bán kính 100m tại Điểm giao hàng
+        if dist_to_delivery > max_allowed_radius:
+            cur.close()
+            conn.close()
+            raise HTTPException(
+                status_code=400,
+                detail=f"Vị trí chụp ảnh (Phiếu giao hàng) cách Điểm giao hàng {dist_to_delivery}m, vượt quá bán kính cho phép ({max_allowed_radius}m). Vui lòng chụp tại đúng điểm giao hàng.",
+            )
+    else:
+        # Mọi ảnh của tài xế đều bắt buộc có tọa độ GPS lúc chụp
+        try:
+            _validate_gps(payload.gps_lat, payload.gps_lng)
+        except HTTPException:
+            cur.close()
+            conn.close()
+            raise
 
     prefix = ORDER_PHOTO_PREFIX[ptype]
     gps_sql = (

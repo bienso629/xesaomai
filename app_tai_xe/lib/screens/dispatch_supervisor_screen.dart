@@ -12732,7 +12732,13 @@ class _DispatchSupervisorScreenState extends State<DispatchSupervisorScreen> {
         head = 'Tại Điểm giao hàng';
         break;
       case 'NONE':
-        head = 'Ngoài điểm nhận/giao';
+        if (ptype == 'delivery_slip') {
+          head = 'Ngoài điểm giao hàng';
+        } else if (ptype == 'pump_slip_before' || ptype == 'pump_slip') {
+          head = 'Ngoài điểm nhận hàng';
+        } else {
+          head = 'Ngoài điểm nhận/giao';
+        }
         break;
       default:
         head = 'Đã ghi nhận tọa độ GPS';

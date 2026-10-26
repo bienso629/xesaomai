@@ -1119,9 +1119,15 @@ class AdminService {
       if (res.statusCode == 200 || res.statusCode == 201) {
         return jsonDecode(utf8.decode(res.bodyBytes)) as Map<String, dynamic>;
       }
-      return null;
-    } catch (_) {
-      return null;
+      try {
+        final err = jsonDecode(utf8.decode(res.bodyBytes));
+        final msg = err is Map ? (err['detail'] ?? err['message']) : null;
+        return {'_error': msg?.toString() ?? 'Lỗi tải ảnh lên máy chủ (${res.statusCode})'};
+      } catch (_) {
+        return {'_error': 'Lỗi máy chủ (${res.statusCode})'};
+      }
+    } catch (e) {
+      return {'_error': 'Không thể kết nối máy chủ: $e'};
     }
   }
 }

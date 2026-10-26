@@ -56,6 +56,44 @@ class OrderAttachmentsSection extends StatelessWidget {
         gpsLng != null &&
         (gpsLat != 0.0 || gpsLng != 0.0);
 
+    final bool isGeoWarning = photoGeoLabel != null &&
+        (photoGeoLabel.startsWith('Ngoài') ||
+         photoGeoLabel.contains('KHÔNG') ||
+         photoGeoLabel.contains('không khớp') ||
+         photoGeoLabel.contains('Cảnh báo'));
+
+    final Color bgColor = !hasGps
+        ? const Color(0xFF78350F).withValues(alpha: 0.85)
+        : isGeoWarning
+            ? const Color(0xFF7F1D1D).withValues(alpha: 0.92)
+            : const Color(0xFF064E3B).withValues(alpha: 0.85);
+
+    final Color borderColor = !hasGps
+        ? const Color(0xFFD97706).withValues(alpha: 0.4)
+        : isGeoWarning
+            ? const Color(0xFFEF4444).withValues(alpha: 0.5)
+            : const Color(0xFF059669).withValues(alpha: 0.4);
+
+    final IconData statusIcon = !hasGps
+        ? Icons.location_off_outlined
+        : isGeoWarning
+            ? Icons.wrong_location_outlined
+            : Icons.location_on;
+
+    final Color iconColor = !hasGps
+        ? const Color(0xFFFBBF24)
+        : isGeoWarning
+            ? const Color(0xFFF87171)
+            : const Color(0xFF34D399);
+
+    final Color accuracyTextColor = isGeoWarning
+        ? const Color(0xFFFCA5A5)
+        : const Color(0xFF6EE7B7);
+
+    final Color geoLabelTextColor = isGeoWarning
+        ? const Color(0xFFFECDD3)
+        : const Color(0xFFA7F3D0);
+
     showDialog(
       context: context,
       builder: (ctx) => Dialog(
@@ -127,14 +165,10 @@ class OrderAttachmentsSection extends StatelessWidget {
                 width: double.infinity,
                 padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
                 decoration: BoxDecoration(
-                  color: hasGps
-                      ? const Color(0xFF064E3B).withValues(alpha: 0.85)
-                      : const Color(0xFF78350F).withValues(alpha: 0.85),
+                  color: bgColor,
                   border: Border(
                     bottom: BorderSide(
-                      color: hasGps
-                          ? const Color(0xFF059669).withValues(alpha: 0.4)
-                          : const Color(0xFFD97706).withValues(alpha: 0.4),
+                      color: borderColor,
                       width: 1,
                     ),
                   ),
@@ -143,8 +177,8 @@ class OrderAttachmentsSection extends StatelessWidget {
                   crossAxisAlignment: CrossAxisAlignment.center,
                   children: [
                     Icon(
-                      hasGps ? Icons.location_on : Icons.location_off_outlined,
-                      color: hasGps ? const Color(0xFF34D399) : const Color(0xFFFBBF24),
+                      statusIcon,
+                      color: iconColor,
                       size: 16,
                     ),
                     const SizedBox(width: 8),
@@ -170,8 +204,8 @@ class OrderAttachmentsSection extends StatelessWidget {
                                     if (gpsAccuracy != null && gpsAccuracy > 0)
                                       Text(
                                         "(±${gpsAccuracy.round()}m)",
-                                        style: const TextStyle(
-                                          color: Color(0xFF6EE7B7),
+                                        style: TextStyle(
+                                          color: accuracyTextColor,
                                           fontSize: 11,
                                         ),
                                       ),
@@ -181,10 +215,10 @@ class OrderAttachmentsSection extends StatelessWidget {
                                   const SizedBox(height: 2),
                                   Text(
                                     photoGeoLabel,
-                                    style: const TextStyle(
-                                      color: Color(0xFFA7F3D0),
+                                    style: TextStyle(
+                                      color: geoLabelTextColor,
                                       fontSize: 11,
-                                      fontWeight: FontWeight.w500,
+                                      fontWeight: FontWeight.w600,
                                     ),
                                   ),
                                 ] else if (gpsCapturedAt != null && gpsCapturedAt.trim().isNotEmpty) ...[
@@ -644,7 +678,13 @@ class OrderAttachmentsSection extends StatelessWidget {
         head = 'Tại Điểm giao hàng';
         break;
       case 'NONE':
-        head = 'Ngoài điểm nhận/giao';
+        if (ptype == 'delivery_slip') {
+          head = 'Ngoài điểm giao hàng';
+        } else if (ptype == 'pump_slip_before' || ptype == 'pump_slip') {
+          head = 'Ngoài điểm nhận hàng';
+        } else {
+          head = 'Ngoài điểm nhận/giao';
+        }
         break;
       default:
         head = 'Đã ghi nhận tọa độ GPS';
@@ -688,7 +728,11 @@ class OrderAttachmentsSection extends StatelessWidget {
       case 'NONE':
         color = const Color(0xFFDC2626);
         icon = Icons.wrong_location_outlined;
-        text = 'KHÔNG ở Nơi nhận hàng / Điểm giao hàng';
+        text = ptype == 'delivery_slip'
+            ? 'KHÔNG ở Điểm giao hàng'
+            : (ptype == 'pump_slip_before' || ptype == 'pump_slip')
+                ? 'KHÔNG ở Nơi nhận hàng'
+                : 'KHÔNG ở Nơi nhận hàng / Điểm giao hàng';
         break;
       default:
         color = const Color(0xFF64748B);

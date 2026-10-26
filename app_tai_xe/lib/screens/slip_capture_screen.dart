@@ -306,7 +306,7 @@ class _SlipCaptureScreenState extends State<SlipCaptureScreen>
       );
 
       if (targetOrderId != null) {
-        updatedOrder = await AdminService.submitOrderAttachment(
+        final res = await AdminService.submitOrderAttachment(
           orderId: targetOrderId,
           photoType: _normalizedType,
           photoBase64: b64,
@@ -320,20 +320,22 @@ class _SlipCaptureScreenState extends State<SlipCaptureScreen>
           gpsCapturedAt: gps.capturedAt.toIso8601String(),
           repairStatus: _normalizedType == 'repair' ? _repairStatus : null,
         );
-        if (updatedOrder == null) {
+        if (res == null || res.containsKey('_error')) {
           if (mounted) {
             setState(() => _isSubmitting = false);
+            final errorMsg = res != null && res.containsKey('_error')
+                ? res['_error'].toString()
+                : "Không thể tải ảnh phiếu lên máy chủ! Vui lòng kiểm tra kết nối mạng và thử lại.";
             ScaffoldMessenger.of(context).showSnackBar(
               SnackBar(
                 backgroundColor: Colors.red.shade700,
-                content: const Text(
-                  "Không thể tải ảnh phiếu lên máy chủ! Vui lòng kiểm tra kết nối mạng và thử lại.",
-                ),
+                content: Text(errorMsg),
               ),
             );
           }
           return;
         }
+        updatedOrder = res;
       }
 
       final remoteUrl = updatedOrder != null
