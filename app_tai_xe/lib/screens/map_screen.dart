@@ -35,7 +35,7 @@ class _MapScreenState extends State<MapScreen> {
   String _searchQuery = '';
   String? _selectedPlateOnMap;
   bool _showPanel = true;
-  String _statusFilter = 'running'; // 'all', 'running', 'stopped', 'assigned' - Mặc định tab "Đang chạy"
+  String _statusFilter = 'running'; // 'running', 'stopped', 'assigned' - Mặc định tab "Đang chạy"
 
   Timer? _autoRefreshTimer;
   List<dynamic> _allOrders = [];
@@ -499,7 +499,6 @@ class _MapScreenState extends State<MapScreen> {
                       spacing: 4,
                       runSpacing: 4,
                       children: [
-                        _buildFilterChip('Tất cả (${providerFiltered.length})', 'all'),
                         _buildFilterChip('Đang chạy ($runningCount)', 'running'),
                         _buildFilterChip('Đang đỗ (${idlingCount + stoppedCount})', 'stopped'),
                         _buildFilterChip('Đã gắn đơn ($assignedOrderCount)', 'assigned'),
