@@ -604,8 +604,8 @@ class _DispatchSupervisorScreenState extends State<DispatchSupervisorScreen> {
           _buildActiveDispatchersCard(state),
           const SizedBox(height: 16),
 
-          // KHỐI BÁO CÁO REALTIME TRẠNG THÁI TÀI XẾ
-          _buildRealtimeDriverReportsCard(state),
+          // KHỐI BÁO CÁO REALTIME TRẠNG THÁI TÀI XẾ (Đã loại bỏ theo yêu cầu, chuyển hoàn toàn sang Widget Notification Bell trên Header)
+          // _buildRealtimeDriverReportsCard(state),
         ],
       ),
     );
@@ -1738,16 +1738,7 @@ class _DispatchSupervisorScreenState extends State<DispatchSupervisorScreen> {
                                   ),
                                   const DataColumn(
                                     label: Text(
-                                      "Ngày tạo",
-                                      style: TextStyle(
-                                        fontWeight: FontWeight.bold,
-                                        fontSize: 13,
-                                      ),
-                                    ),
-                                  ),
-                                  const DataColumn(
-                                    label: Text(
-                                      "Sản phẩm / Trọng lượng",
+                                      "Sản phẩm",
                                       style: TextStyle(
                                         fontWeight: FontWeight.bold,
                                         fontSize: 13,
@@ -1867,7 +1858,7 @@ class _DispatchSupervisorScreenState extends State<DispatchSupervisorScreen> {
                                   return DataRow(
                                     color: MaterialStateProperty.all(rowColor),
                                     cells: [
-                                      // Cột 1: Mã đơn hàng (bấm để xem chi tiết & hình chụp)
+                                      // Cột 1: Mã đơn hàng (bấm để xem chi tiết & hình chụp) + Ngày tạo tích hợp cùng cột
                                       makeCell(
                                         InkWell(
                                           borderRadius: BorderRadius.circular(4),
@@ -1889,38 +1880,42 @@ class _DispatchSupervisorScreenState extends State<DispatchSupervisorScreen> {
                                                 ),
                                               ),
                                               const SizedBox(width: 8),
-                                              Text(
-                                                orderCode,
-                                                style: TextStyle(
-                                                  fontWeight: FontWeight.bold,
-                                                  fontSize: 13,
-                                                  color: Colors.blue.shade900,
-                                                ),
+                                              Column(
+                                                mainAxisAlignment: MainAxisAlignment.center,
+                                                crossAxisAlignment: CrossAxisAlignment.start,
+                                                children: [
+                                                  Text(
+                                                    orderCode,
+                                                    style: TextStyle(
+                                                      fontWeight: FontWeight.bold,
+                                                      fontSize: 13,
+                                                      color: Colors.blue.shade900,
+                                                    ),
+                                                  ),
+                                                  const SizedBox(height: 2),
+                                                  Row(
+                                                    mainAxisSize: MainAxisSize.min,
+                                                    children: [
+                                                      Icon(
+                                                        Icons.calendar_today,
+                                                        size: 11,
+                                                        color: Colors.grey.shade500,
+                                                      ),
+                                                      const SizedBox(width: 4),
+                                                      Text(
+                                                        dateStr,
+                                                        style: TextStyle(
+                                                          fontSize: 11,
+                                                          color: Colors.grey.shade600,
+                                                          fontWeight: FontWeight.normal,
+                                                        ),
+                                                      ),
+                                                    ],
+                                                  ),
+                                                ],
                                               ),
                                             ],
                                           ),
-                                        ),
-                                      ),
-                                      // Cột 2: Ngày tạo
-                                      makeCell(
-                                        Row(
-                                          mainAxisSize: MainAxisSize.min,
-                                          children: [
-                                            Icon(
-                                              Icons.calendar_today,
-                                              size: 12,
-                                              color: Colors.grey.shade600,
-                                            ),
-                                            const SizedBox(width: 4),
-                                            Text(
-                                              dateStr,
-                                              style: TextStyle(
-                                                fontSize: 12,
-                                                color: Colors.grey.shade800,
-                                                fontWeight: FontWeight.w600,
-                                              ),
-                                            ),
-                                          ],
                                         ),
                                       ),
                                       // Cột 3: Sản phẩm & Trọng lượng
@@ -2241,29 +2236,51 @@ class _DispatchSupervisorScreenState extends State<DispatchSupervisorScreen> {
                           style: TextStyle(fontSize: 12, color: Colors.black87),
                         ),
                         const SizedBox(width: 4),
-                        DropdownButton<int>(
-                          value: _orderPageSize,
-                          underline: const SizedBox(),
-                          isDense: true,
-                          style: const TextStyle(
-                            fontSize: 12,
-                            color: Colors.blueGrey,
-                            fontWeight: FontWeight.bold,
+PopupMenuButton<int>(
+                          tooltip: "Số dòng mỗi trang",
+                          initialValue: _orderPageSize,
+                          position: PopupMenuPosition.over,
+                          constraints: const BoxConstraints(minWidth: 64),
+                          onSelected: (val) => setState(() {
+                            _orderPageSize = val;
+                            _orderCurrentPage = 1;
+                          }),
+                          itemBuilder: (_) => const [5, 10, 20, 50]
+                              .map(
+                                (n) => PopupMenuItem<int>(
+                                  value: n,
+                                  height: 36,
+                                  child: Text(
+                                    "$n",
+                                    style: const TextStyle(fontSize: 12.5),
+                                  ),
+                                ),
+                              )
+                              .toList(),
+                          child: Padding(
+                            padding: const EdgeInsets.symmetric(
+                              horizontal: 4,
+                              vertical: 2,
+                            ),
+                            child: Row(
+                              mainAxisSize: MainAxisSize.min,
+                              children: [
+                                Text(
+                                  "$_orderPageSize",
+                                  style: const TextStyle(
+                                    fontSize: 12,
+                                    color: Colors.blueGrey,
+                                    fontWeight: FontWeight.bold,
+                                  ),
+                                ),
+                                const Icon(
+                                  Icons.arrow_drop_down,
+                                  size: 18,
+                                  color: Colors.blueGrey,
+                                ),
+                              ],
+                            ),
                           ),
-                          items: const [
-                            DropdownMenuItem(value: 5, child: Text("5")),
-                            DropdownMenuItem(value: 10, child: Text("10")),
-                            DropdownMenuItem(value: 20, child: Text("20")),
-                            DropdownMenuItem(value: 50, child: Text("50")),
-                          ],
-                          onChanged: (val) {
-                            if (val != null) {
-                              setState(() {
-                                _orderPageSize = val;
-                                _orderCurrentPage = 1;
-                              });
-                            }
-                          },
                         ),
                         const SizedBox(width: 14),
                         IconButton(
@@ -3130,29 +3147,51 @@ class _DispatchSupervisorScreenState extends State<DispatchSupervisorScreen> {
                           style: TextStyle(fontSize: 12, color: Colors.black87),
                         ),
                         const SizedBox(width: 4),
-                        DropdownButton<int>(
-                          value: _vehiclePageSize,
-                          underline: const SizedBox(),
-                          isDense: true,
-                          style: const TextStyle(
-                            fontSize: 12,
-                            color: Colors.blueGrey,
-                            fontWeight: FontWeight.bold,
+PopupMenuButton<int>(
+                          tooltip: "Số dòng mỗi trang",
+                          initialValue: _vehiclePageSize,
+                          position: PopupMenuPosition.over,
+                          constraints: const BoxConstraints(minWidth: 64),
+                          onSelected: (val) => setState(() {
+                            _vehiclePageSize = val;
+                            _vehicleCurrentPage = 1;
+                          }),
+                          itemBuilder: (_) => const [5, 10, 20, 50]
+                              .map(
+                                (n) => PopupMenuItem<int>(
+                                  value: n,
+                                  height: 36,
+                                  child: Text(
+                                    "$n",
+                                    style: const TextStyle(fontSize: 12.5),
+                                  ),
+                                ),
+                              )
+                              .toList(),
+                          child: Padding(
+                            padding: const EdgeInsets.symmetric(
+                              horizontal: 4,
+                              vertical: 2,
+                            ),
+                            child: Row(
+                              mainAxisSize: MainAxisSize.min,
+                              children: [
+                                Text(
+                                  "$_vehiclePageSize",
+                                  style: const TextStyle(
+                                    fontSize: 12,
+                                    color: Colors.blueGrey,
+                                    fontWeight: FontWeight.bold,
+                                  ),
+                                ),
+                                const Icon(
+                                  Icons.arrow_drop_down,
+                                  size: 18,
+                                  color: Colors.blueGrey,
+                                ),
+                              ],
+                            ),
                           ),
-                          items: const [
-                            DropdownMenuItem(value: 5, child: Text("5")),
-                            DropdownMenuItem(value: 10, child: Text("10")),
-                            DropdownMenuItem(value: 20, child: Text("20")),
-                            DropdownMenuItem(value: 50, child: Text("50")),
-                          ],
-                          onChanged: (val) {
-                            if (val != null) {
-                              setState(() {
-                                _vehiclePageSize = val;
-                                _vehicleCurrentPage = 1;
-                              });
-                            }
-                          },
                         ),
                         const SizedBox(width: 14),
                         // Nút về trang đầu
@@ -4235,29 +4274,51 @@ class _DispatchSupervisorScreenState extends State<DispatchSupervisorScreen> {
                           style: TextStyle(fontSize: 12, color: Colors.black87),
                         ),
                         const SizedBox(width: 4),
-                        DropdownButton<int>(
-                          value: _userPageSize,
-                          underline: const SizedBox(),
-                          isDense: true,
-                          style: const TextStyle(
-                            fontSize: 12,
-                            color: Colors.blueGrey,
-                            fontWeight: FontWeight.bold,
+PopupMenuButton<int>(
+                          tooltip: "Số dòng mỗi trang",
+                          initialValue: _userPageSize,
+                          position: PopupMenuPosition.over,
+                          constraints: const BoxConstraints(minWidth: 64),
+                          onSelected: (val) => setState(() {
+                            _userPageSize = val;
+                            _userCurrentPage = 1;
+                          }),
+                          itemBuilder: (_) => const [5, 10, 20, 50]
+                              .map(
+                                (n) => PopupMenuItem<int>(
+                                  value: n,
+                                  height: 36,
+                                  child: Text(
+                                    "$n",
+                                    style: const TextStyle(fontSize: 12.5),
+                                  ),
+                                ),
+                              )
+                              .toList(),
+                          child: Padding(
+                            padding: const EdgeInsets.symmetric(
+                              horizontal: 4,
+                              vertical: 2,
+                            ),
+                            child: Row(
+                              mainAxisSize: MainAxisSize.min,
+                              children: [
+                                Text(
+                                  "$_userPageSize",
+                                  style: const TextStyle(
+                                    fontSize: 12,
+                                    color: Colors.blueGrey,
+                                    fontWeight: FontWeight.bold,
+                                  ),
+                                ),
+                                const Icon(
+                                  Icons.arrow_drop_down,
+                                  size: 18,
+                                  color: Colors.blueGrey,
+                                ),
+                              ],
+                            ),
                           ),
-                          items: const [
-                            DropdownMenuItem(value: 5, child: Text("5")),
-                            DropdownMenuItem(value: 10, child: Text("10")),
-                            DropdownMenuItem(value: 20, child: Text("20")),
-                            DropdownMenuItem(value: 50, child: Text("50")),
-                          ],
-                          onChanged: (val) {
-                            if (val != null) {
-                              setState(() {
-                                _userPageSize = val;
-                                _userCurrentPage = 1;
-                              });
-                            }
-                          },
                         ),
                         const SizedBox(width: 12),
                         // Nút về trang đầu
@@ -5236,29 +5297,51 @@ class _DispatchSupervisorScreenState extends State<DispatchSupervisorScreen> {
                           style: TextStyle(fontSize: 12, color: Colors.black87),
                         ),
                         const SizedBox(width: 4),
-                        DropdownButton<int>(
-                          value: _gasStationPageSize,
-                          underline: const SizedBox(),
-                          isDense: true,
-                          style: const TextStyle(
-                            fontSize: 12,
-                            color: Colors.blueGrey,
-                            fontWeight: FontWeight.bold,
+PopupMenuButton<int>(
+                          tooltip: "Số dòng mỗi trang",
+                          initialValue: _gasStationPageSize,
+                          position: PopupMenuPosition.over,
+                          constraints: const BoxConstraints(minWidth: 64),
+                          onSelected: (val) => setState(() {
+                            _gasStationPageSize = val;
+                            _gasStationCurrentPage = 1;
+                          }),
+                          itemBuilder: (_) => const [5, 10, 20, 50]
+                              .map(
+                                (n) => PopupMenuItem<int>(
+                                  value: n,
+                                  height: 36,
+                                  child: Text(
+                                    "$n",
+                                    style: const TextStyle(fontSize: 12.5),
+                                  ),
+                                ),
+                              )
+                              .toList(),
+                          child: Padding(
+                            padding: const EdgeInsets.symmetric(
+                              horizontal: 4,
+                              vertical: 2,
+                            ),
+                            child: Row(
+                              mainAxisSize: MainAxisSize.min,
+                              children: [
+                                Text(
+                                  "$_gasStationPageSize",
+                                  style: const TextStyle(
+                                    fontSize: 12,
+                                    color: Colors.blueGrey,
+                                    fontWeight: FontWeight.bold,
+                                  ),
+                                ),
+                                const Icon(
+                                  Icons.arrow_drop_down,
+                                  size: 18,
+                                  color: Colors.blueGrey,
+                                ),
+                              ],
+                            ),
                           ),
-                          items: const [
-                            DropdownMenuItem(value: 5, child: Text("5")),
-                            DropdownMenuItem(value: 10, child: Text("10")),
-                            DropdownMenuItem(value: 20, child: Text("20")),
-                            DropdownMenuItem(value: 50, child: Text("50")),
-                          ],
-                          onChanged: (val) {
-                            if (val != null) {
-                              setState(() {
-                                _gasStationPageSize = val;
-                                _gasStationCurrentPage = 1;
-                              });
-                            }
-                          },
                         ),
                         const SizedBox(width: 14),
                         // Nút về trang đầu
@@ -6403,29 +6486,51 @@ class _DispatchSupervisorScreenState extends State<DispatchSupervisorScreen> {
                           style: TextStyle(fontSize: 12, color: Colors.black87),
                         ),
                         const SizedBox(width: 4),
-                        DropdownButton<int>(
-                          value: _productPageSize,
-                          underline: const SizedBox(),
-                          isDense: true,
-                          style: const TextStyle(
-                            fontSize: 12,
-                            color: Colors.blueGrey,
-                            fontWeight: FontWeight.bold,
+PopupMenuButton<int>(
+                          tooltip: "Số dòng mỗi trang",
+                          initialValue: _productPageSize,
+                          position: PopupMenuPosition.over,
+                          constraints: const BoxConstraints(minWidth: 64),
+                          onSelected: (val) => setState(() {
+                            _productPageSize = val;
+                            _productCurrentPage = 1;
+                          }),
+                          itemBuilder: (_) => const [5, 10, 20, 50]
+                              .map(
+                                (n) => PopupMenuItem<int>(
+                                  value: n,
+                                  height: 36,
+                                  child: Text(
+                                    "$n",
+                                    style: const TextStyle(fontSize: 12.5),
+                                  ),
+                                ),
+                              )
+                              .toList(),
+                          child: Padding(
+                            padding: const EdgeInsets.symmetric(
+                              horizontal: 4,
+                              vertical: 2,
+                            ),
+                            child: Row(
+                              mainAxisSize: MainAxisSize.min,
+                              children: [
+                                Text(
+                                  "$_productPageSize",
+                                  style: const TextStyle(
+                                    fontSize: 12,
+                                    color: Colors.blueGrey,
+                                    fontWeight: FontWeight.bold,
+                                  ),
+                                ),
+                                const Icon(
+                                  Icons.arrow_drop_down,
+                                  size: 18,
+                                  color: Colors.blueGrey,
+                                ),
+                              ],
+                            ),
                           ),
-                          items: const [
-                            DropdownMenuItem(value: 5, child: Text("5")),
-                            DropdownMenuItem(value: 10, child: Text("10")),
-                            DropdownMenuItem(value: 20, child: Text("20")),
-                            DropdownMenuItem(value: 50, child: Text("50")),
-                          ],
-                          onChanged: (val) {
-                            if (val != null) {
-                              setState(() {
-                                _productPageSize = val;
-                                _productCurrentPage = 1;
-                              });
-                            }
-                          },
                         ),
                         const SizedBox(width: 14),
                         // Nút về trang đầu
@@ -9106,41 +9211,51 @@ class _DispatchSupervisorScreenState extends State<DispatchSupervisorScreen> {
                                                 ),
                                               ),
                                               const SizedBox(width: 4),
-                                              DropdownButton<int>(
-                                                value: shiftPageSize,
-                                                underline: const SizedBox(),
-                                                isDense: true,
-                                                style: const TextStyle(
-                                                  fontSize: 12,
-                                                  color: Colors.blueGrey,
-                                                  fontWeight: FontWeight.bold,
+PopupMenuButton<int>(
+                                                tooltip: "Số dòng mỗi trang",
+                                                initialValue: shiftPageSize,
+                                                position: PopupMenuPosition.over,
+                                                constraints: const BoxConstraints(minWidth: 64),
+                                                onSelected: (val) => setDialogState(() {
+                                                  shiftPageSize = val;
+                                                  shiftCurrentPage = 1;
+                                                }),
+                                                itemBuilder: (_) => const [5, 10, 20, 50]
+                                                    .map(
+                                                      (n) => PopupMenuItem<int>(
+                                                        value: n,
+                                                        height: 36,
+                                                        child: Text(
+                                                          "$n",
+                                                          style: const TextStyle(fontSize: 12.5),
+                                                        ),
+                                                      ),
+                                                    )
+                                                    .toList(),
+                                                child: Padding(
+                                                  padding: const EdgeInsets.symmetric(
+                                                    horizontal: 4,
+                                                    vertical: 2,
+                                                  ),
+                                                  child: Row(
+                                                    mainAxisSize: MainAxisSize.min,
+                                                    children: [
+                                                      Text(
+                                                        "",
+                                                        style: const TextStyle(
+                                                          fontSize: 12,
+                                                          color: Colors.blueGrey,
+                                                          fontWeight: FontWeight.bold,
+                                                        ),
+                                                      ),
+                                                      const Icon(
+                                                        Icons.arrow_drop_down,
+                                                        size: 18,
+                                                        color: Colors.blueGrey,
+                                                      ),
+                                                    ],
+                                                  ),
                                                 ),
-                                                items: const [
-                                                  DropdownMenuItem(
-                                                    value: 5,
-                                                    child: Text("5"),
-                                                  ),
-                                                  DropdownMenuItem(
-                                                    value: 10,
-                                                    child: Text("10"),
-                                                  ),
-                                                  DropdownMenuItem(
-                                                    value: 20,
-                                                    child: Text("20"),
-                                                  ),
-                                                  DropdownMenuItem(
-                                                    value: 50,
-                                                    child: Text("50"),
-                                                  ),
-                                                ],
-                                                onChanged: (val) {
-                                                  if (val != null) {
-                                                    setDialogState(() {
-                                                      shiftPageSize = val;
-                                                      shiftCurrentPage = 1;
-                                                    });
-                                                  }
-                                                },
                                               ),
                                               const SizedBox(width: 12),
                                               IconButton(
@@ -11361,10 +11476,8 @@ class _DispatchSupervisorScreenState extends State<DispatchSupervisorScreen> {
     final customerCodeCtrl = TextEditingController();
     final productDetailCtrl = TextEditingController();
     final carrierNameCtrl = TextEditingController();
-    final orderCodeCtrl = TextEditingController(
-      text:
-          "DH${DateTime.now().year}${(DateTime.now().month).toString().padLeft(2, '0')}${(DateTime.now().day).toString().padLeft(2, '0')}-${DateTime.now().millisecondsSinceEpoch % 10000}",
-    );
+    // Mã đơn hàng để trống để Điều phối/Quản lý tự nhập
+    final orderCodeCtrl = TextEditingController();
     final factoryCodeCtrl = TextEditingController(text: "NM-BIMSON");
     final pickupAddrCtrl = TextEditingController();
     final deliveryAddrCtrl = TextEditingController();
