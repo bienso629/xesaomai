@@ -267,7 +267,6 @@ class _MapScreenState extends State<MapScreen> {
     final int runningCount = providerFiltered.where((v) => v.isOnline && v.speed > 0).length;
     final int idlingCount = providerFiltered.where((v) => v.isOnline && v.speed == 0 && v.isAccOn).length;
     final int stoppedCount = providerFiltered.where((v) => v.isOnline && !v.isAccOn).length;
-    final int offlineCount = providerFiltered.where((v) => !v.isOnline).length;
     // So xe da duoc gan don hang (don chua hoan thanh / chua huy)
     final int assignedOrderCount = providerFiltered.where((v) => _hasActiveOrder(v.plate)).length;
 
@@ -454,25 +453,6 @@ class _MapScreenState extends State<MapScreen> {
               ),
               child: Column(
                 children: [
-                  // Thanh trạng thái thống kê màu sắc
-                  Container(
-                    padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 8),
-                    decoration: BoxDecoration(
-                      color: const Color(0xFFF8FAFC),
-                      border: Border(
-                        bottom: BorderSide(color: Colors.grey.shade300, width: 1),
-                      ),
-                    ),
-                    child: Row(
-                      mainAxisAlignment: MainAxisAlignment.spaceAround,
-                      children: [
-                        _buildStatusBadge('Chạy', runningCount, const Color(0xFF16A34A)),
-                        _buildStatusBadge('Dừng máy', idlingCount, const Color(0xFFEAB308)),
-                        _buildStatusBadge('Tắt máy', stoppedCount, const Color(0xFF64748B)),
-                        _buildStatusBadge('Mất tín hiệu', offlineCount, const Color(0xFF94A3B8)),
-                      ],
-                    ),
-                  ),
                   // Ô tìm kiếm biển số
                   Padding(
                     padding: const EdgeInsets.all(8.0),
@@ -825,29 +805,6 @@ class _MapScreenState extends State<MapScreen> {
           ),
         ],
       ),
-    );
-  }
-
-  Widget _buildStatusBadge(String label, int count, Color color) {
-    return Column(
-      mainAxisSize: MainAxisSize.min,
-      children: [
-        Row(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            Container(width: 8, height: 8, decoration: BoxDecoration(color: color, shape: BoxShape.circle)),
-            const SizedBox(width: 4),
-            Text(
-              '$count',
-              style: TextStyle(fontSize: 12, fontWeight: FontWeight.bold, color: color),
-            ),
-          ],
-        ),
-        Text(
-          label,
-          style: TextStyle(fontSize: 9, color: Colors.grey.shade600),
-        ),
-      ],
     );
   }
 
