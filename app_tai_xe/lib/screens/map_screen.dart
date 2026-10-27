@@ -1,3 +1,4 @@
+import '../widgets/realtime_header_notification_bell.dart';
 import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:flutter_map/flutter_map.dart';
@@ -34,7 +35,7 @@ class _MapScreenState extends State<MapScreen> {
   String _searchQuery = '';
   String? _selectedPlateOnMap;
   bool _showPanel = true;
-  String _statusFilter = 'running'; // 'all', 'running', 'stopped', 'off' - Mặc định tab "Đang chạy"
+  String _statusFilter = 'running'; // 'all', 'running', 'stopped', 'assigned' - Mặc định tab "Đang chạy"
 
   Timer? _autoRefreshTimer;
   List<dynamic> _allOrders = [];
@@ -89,6 +90,16 @@ class _MapScreenState extends State<MapScreen> {
     super.dispose();
   }
 
+
+  /// Kiem tra xe co don hang dang thuc hien (chua hoan thanh / chua huy) hay khong
+  bool _hasActiveOrder(String plate) {
+    final cleanPlate = plate.replaceAll('-', '').replaceAll('.', '').trim().toLowerCase();
+    return _allOrders.any((o) {
+      final assignedPlate = (o['assigned_vehicle_plate'] ?? '').toString().replaceAll('-', '').replaceAll('.', '').trim().toLowerCase();
+      final status = (o['status'] ?? 'waiting').toString().toLowerCase();
+      return assignedPlate == cleanPlate && status != 'completed' && status != 'cancelled';
+    });
+  }
 
   Widget _buildOrderInfo(String plate) {
     // Chuẩn hóa biển số xe để so sánh chính xác nhất
@@ -257,6 +268,8 @@ class _MapScreenState extends State<MapScreen> {
     final int idlingCount = providerFiltered.where((v) => v.isOnline && v.speed == 0 && v.isAccOn).length;
     final int stoppedCount = providerFiltered.where((v) => v.isOnline && !v.isAccOn).length;
     final int offlineCount = providerFiltered.where((v) => !v.isOnline).length;
+    // So xe da duoc gan don hang (don chua hoan thanh / chua huy)
+    final int assignedOrderCount = providerFiltered.where((v) => _hasActiveOrder(v.plate)).length;
 
     // Lọc danh sách theo từ khoá và bộ lọc trạng thái
     final filteredVehicles = providerFiltered.where((v) {
@@ -265,7 +278,7 @@ class _MapScreenState extends State<MapScreen> {
       }
       if (_statusFilter == 'running') return v.isOnline && v.speed > 0;
       if (_statusFilter == 'stopped') return v.isOnline && v.speed == 0;
-      if (_statusFilter == 'off') return !v.isOnline;
+      if (_statusFilter == 'assigned') return _hasActiveOrder(v.plate);
       return true;
     }).toList();
 
@@ -399,6 +412,7 @@ class _MapScreenState extends State<MapScreen> {
           ],
         ),
         actions: [
+          const RealtimeHeaderNotificationBell(),
           IconButton(
             tooltip: 'Làm mới toạ độ Vietmap & Bình Anh',
             icon: state.isLoadingFleetGps
@@ -488,7 +502,7 @@ class _MapScreenState extends State<MapScreen> {
                         _buildFilterChip('Tất cả (${providerFiltered.length})', 'all'),
                         _buildFilterChip('Đang chạy ($runningCount)', 'running'),
                         _buildFilterChip('Đang đỗ (${idlingCount + stoppedCount})', 'stopped'),
-                        _buildFilterChip('Offline ($offlineCount)', 'off'),
+                        _buildFilterChip('Đã gắn đơn ($assignedOrderCount)', 'assigned'),
                       ],
                     ),
                   ),
