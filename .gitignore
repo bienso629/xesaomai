@@ -53,3 +53,10 @@ mobile_screenshot*.png
 screen_*.png
 bottom_check.png
 map_preview.png
+
+# iOS signing secrets - khong bao gio commit
+ios-signing/
+docs/AuthKey_*.p8
+*.p12
+*.mobileprovision
+*.cer.der
