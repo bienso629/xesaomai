@@ -159,6 +159,9 @@ class _SlipCaptureScreenState extends State<SlipCaptureScreen>
     super.initState();
     WidgetsBinding.instance.addObserver(this);
     _requestPermissionAndInitCamera();
+    // Yeu cau bat GPS de doi chieu: lay toa do ngay khi vao man hinh chup
+    // de tai xe thay trang thai GPS truoc khi bam chup.
+    _captureGpsFix();
   }
 
   @override
@@ -806,7 +809,8 @@ class _SlipCaptureScreenState extends State<SlipCaptureScreen>
             ],
           ),
         ),
-        if (captured != null) _buildGpsStatusBar(),
+        // Thanh trang thai GPS: hien luon de doi chieu truoc khi chup
+        _buildGpsStatusBar(),
         if (captured != null) _buildExtraMetadataFields(),
         Container(
           color: Colors.black,

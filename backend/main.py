@@ -3996,21 +3996,9 @@ def submit_order_attachment(
                 status_code=403,
                 detail="Ảnh chụp chuyến hàng chỉ tài khoản Tài xế mới được gửi",
             )
-        # Khóa tuần tự theo luồng: 1.Trước bơm -> 2.Phiếu cân -> 3.Đến điểm giao -> 4.Phiếu giao
-        step_before = {
-            "weigh_slip": ("pump_slip_before_photo_url", "TRƯỚC KHI BƠM"),
-            "arrival_photo": ("weigh_slip_photo_url", "PHIẾU CÂN"),
-            "delivery_slip": ("arrival_photo_url", "ĐẾN ĐIỂM GIAO"),
-        }
-        if ptype in step_before:
-            prev_col, prev_label = step_before[ptype]
-            if not (existing.get(prev_col) or "").strip():
-                cur.close()
-                conn.close()
-                raise HTTPException(
-                    status_code=400,
-                    detail=f"Phải gửi bước trước đó ({prev_label}) trước khi gửi bước này",
-                )
+        # 4 bước chụp ĐỘC LẬP (theo luồng mới): Tài xế có thể gửi bước nào trước cũng được,
+        # không còn khóa tuần tự 1 -> 2 -> 3 -> 4. Mỗi ảnh vẫn BẮT BUỘC kèm GPS đối chiếu
+        # với mốc tương ứng bên dưới.
 
         # Chọn mốc đối chiếu GPS: bước 1&2 theo Nơi nhận hàng, bước 3&4 theo Điểm giao hàng
         if ptype in ("pump_slip_before", "weigh_slip"):
