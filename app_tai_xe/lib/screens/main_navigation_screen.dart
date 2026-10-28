@@ -1,3 +1,4 @@
+import '../widgets/realtime_header_notification_bell.dart';
 import 'dart:async';
 
 import 'package:flutter/material.dart';
@@ -11,7 +12,6 @@ import 'vehicle_inspection_screen.dart';
 import 'driver_inspection_history_screen.dart';
 import 'driver_schedule_screen.dart';
 import 'driver_orders_screen.dart';
-import 'login_screen.dart';
 
 class MainNavigationScreen extends StatefulWidget {
   const MainNavigationScreen({super.key});
@@ -246,9 +246,9 @@ class _MainNavigationScreenState extends State<MainNavigationScreen> {
   void _onLogout() async {
     await AuthService.logout();
     if (!mounted) return;
-    Navigator.of(
-      context,
-    ).pushReplacement(MaterialPageRoute(builder: (_) => const LoginScreen()));
+    // Dùng named route '/login' để khớp với cơ chế chặn điều hướng lặp
+    // khi phiên hết hạn (xem AuthService.handleUnauthorizedResponse).
+    Navigator.of(context).pushReplacementNamed('/login');
   }
 
   @override
@@ -307,7 +307,7 @@ class _MainNavigationScreenState extends State<MainNavigationScreen> {
                               )
                             : null,
                         title: _buildAppBarTitle(),
-                        actions: const [],
+                        actions: const [RealtimeHeaderNotificationBell(), SizedBox(width: 8)],
                         backgroundColor:
                             Colors.transparent, // Không dùng màu background
                         foregroundColor: Colors.blueGrey.shade900,
@@ -348,7 +348,7 @@ class _MainNavigationScreenState extends State<MainNavigationScreen> {
                 },
               ),
               title: _buildAppBarTitle(),
-              actions: const [],
+              actions: const [RealtimeHeaderNotificationBell(), SizedBox(width: 8)],
               backgroundColor: Colors.transparent, // Không dùng màu background
               foregroundColor: Colors.blueGrey.shade900,
               bottom: PreferredSize(

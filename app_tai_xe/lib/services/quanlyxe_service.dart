@@ -68,6 +68,12 @@ class QuanLyXeService {
           }
         }
         return results;
+      } else if (response.statusCode == 401) {
+        // Phiên đăng nhập hết hạn: đăng xuất bắt buộc và dừng ngay,
+        // không chạy fallback vì các request sau cũng sẽ dính 401.
+        debugPrint('fetchFleetGpsStatusFromServer HTTP 401: phiên hết hạn');
+        await AuthService.handleUnauthorizedResponse();
+        return results;
       } else {
         debugPrint('fetchFleetGpsStatusFromServer HTTP ${response.statusCode}: ${response.body}');
       }
@@ -114,6 +120,10 @@ class QuanLyXeService {
             results[status.plate] = status;
           }
         }
+      } else if (response.statusCode == 401) {
+        // Phiên đăng nhập hết hạn: đăng xuất bắt buộc về màn hình Đăng nhập
+        debugPrint('fetchBinhanhStatusesFromServer HTTP 401: phiên hết hạn');
+        await AuthService.handleUnauthorizedResponse();
       } else {
         debugPrint('fetchBinhanhStatusesFromServer HTTP ${response.statusCode}: ${response.body}');
       }
@@ -190,6 +200,11 @@ class QuanLyXeService {
       debugPrint('QuanLyXeService _fetchMergedFallback vietmap error: $e');
     }
     // 2. Bình Anh qua Backend (không ghi đè xe đã có của Vietmap)
+    // Bỏ qua nếu không còn token (đã bị đăng xuất do phiên hết hạn)
+    final baToken = await AuthService.getToken();
+    if (baToken == null || baToken.isEmpty) {
+      return merged;
+    }
     try {
       final baStatuses = await fetchBinhanhStatusesFromServer();
       baStatuses.forEach((plate, status) {

@@ -1,12 +1,3 @@
-enum TripStatus {
-  assigned,
-  drivingToPickup,
-  arrived,
-  pumping,
-  pumped,
-  completed,
-}
-
 class TripMilestone {
   int? orderId;
   final String orderCode;
@@ -23,20 +14,18 @@ class TripMilestone {
   double? arrivedLng;
   String? arrivedSource; // 'app', 'GPS', 'tay'
   
-  DateTime? pumpedTime;
-  double? pumpedLat;
-  double? pumpedLng;
-  String? pumpedSource;
-  String? waitingReason; // 1 trong 11 muc khi > 120 phut
-
-  // 2 ảnh bơm hàng bắt buộc do Tài xế chụp (kèm GPS)
+  // Ảnh Phiếu cân (bước 2/4)
+  // Ảnh Trước bơm (bước 1/4) do Tài xế chụp (kèm GPS)
   String? pumpBeforePhotoUrl;
-  String? pumpAfterPhotoUrl;
 
   String? weighSlipPhotoUrl;
   double? weighTonnage;
   DateTime? weighTime;
   String? weighOrderStatus; // 'cho gui Zalo', 'da gui Zalo'
+
+  // Ảnh ĐẾN ĐIỂM GIAO (Tài xế chụp kèm GPS, bước 3 trong luồng mới)
+  String? arrivalPhotoUrl;
+  DateTime? arrivalTime;
 
   String? deliverySlipPhotoUrl;
   DateTime? deliveryTime;
@@ -56,26 +45,15 @@ class TripMilestone {
     this.arrivedLat,
     this.arrivedLng,
     this.arrivedSource,
-    this.pumpedTime,
-    this.pumpedLat,
-    this.pumpedLng,
-    this.pumpedSource,
-    this.waitingReason,
     this.weighSlipPhotoUrl,
     this.weighTonnage,
     this.weighTime,
     this.weighOrderStatus,
+    this.arrivalPhotoUrl,
+    this.arrivalTime,
     this.deliverySlipPhotoUrl,
     this.deliveryTime,
     this.deliveryZaloStatus,
   });
 
-  int get waitDurationMinutes {
-    if (arrivedTime != null && pumpedTime != null) {
-      return pumpedTime!.difference(arrivedTime!).inMinutes;
-    } else if (arrivedTime != null) {
-      return DateTime.now().difference(arrivedTime!).inMinutes;
-    }
-    return 0;
-  }
 }

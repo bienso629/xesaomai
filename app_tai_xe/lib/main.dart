@@ -2,7 +2,12 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'package:flutter/services.dart';
 import 'services/app_state.dart';
+import 'services/auth_service.dart';
 import 'screens/login_screen.dart';
+
+/// GlobalKey điều hướng toàn cục: dùng để đẩy về màn hình Đăng nhập
+/// khi phiên đăng nhập hết hạn (HTTP 401) từ bất kỳ đâu trong app.
+final GlobalKey<NavigatorState> appNavigatorKey = GlobalKey<NavigatorState>();
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
@@ -17,7 +22,25 @@ Future<void> main() async {
       systemNavigationBarIconBrightness: Brightness.dark,
     ),
   );
+  _registerUnauthorizedHandler();
   runApp(const TaxiDriverApp());
+}
+
+/// Đăng ký xử lý phiên hết hạn tập trung: xóa phiên và điều hướng về Đăng nhập.
+void _registerUnauthorizedHandler() {
+  AuthService.onUnauthorized = () {
+    final nav = appNavigatorKey.currentState;
+    if (nav == null) return;
+    // Chặn điều hướng lặp: nếu route đỉnh đã là Login thì không đẩy thêm nữa.
+    // popUntil với predicate luôn true sẽ KHÔNG pop gì, chỉ kiểm tra route đỉnh.
+    bool isOnLogin = false;
+    nav.popUntil((route) {
+      isOnLogin = route.settings.name == '/login';
+      return true;
+    });
+    if (isOnLogin) return;
+    nav.pushNamedAndRemoveUntil('/login', (route) => false);
+  };
 }
 
 class TaxiDriverApp extends StatelessWidget {
@@ -28,6 +51,10 @@ class TaxiDriverApp extends StatelessWidget {
     return MultiProvider(
       providers: [ChangeNotifierProvider(create: (_) => AppState())],
       child: MaterialApp(
+        navigatorKey: appNavigatorKey,
+        routes: {
+          '/login': (context) => const LoginScreen(),
+        },
         title: 'Vận tải VinTrans',
         theme: ThemeData(
           colorScheme: ColorScheme.fromSeed(seedColor: Colors.blue),
@@ -199,7 +226,7 @@ class TaxiDriverApp extends StatelessWidget {
             child: child ?? const SizedBox.shrink(),
           );
         },
-        home: const LoginScreen(),
+        initialRoute: '/login',
         debugShowCheckedModeBanner: false,
       ),
     );

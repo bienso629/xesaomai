@@ -65,21 +65,6 @@ class AppState extends ChangeNotifier {
   bool isLoadingGps = false;
   bool isLoadingFleetGps = false;
 
-  // 11 Lý do chờ bơm (đúng theo đặc tả)
-  static const List<String> waitingReasons = [
-    "Nhà máy chưa mở kho / hết chỗ đỗ",
-    "Chờ bồn nhận hàng của khách xả rỗng",
-    "Sự cố hệ thống bơm / đường ống nhà máy",
-    "Chờ kết quả mẫu thử nghiệm chất lượng",
-    "Ùn tắc phương tiện phía trước",
-    "Chờ nhân viên kỹ thuật bên nhận ký phiếu",
-    "Mất điện / cúp nguồn trạm bơm",
-    "Chờ điều phối đổi bồn nhận khác",
-    "Thời tiết mưa lớn ngập khu vực bơm",
-    "Xe gặp trục trặc kỹ thuật bơm",
-    "Khác (có xác nhận của giám sát kho)"
-  ];
-
   // Trạng thái kiểm tra đầu ngày
   DailyInspectionRecord? todayInspection;
   bool isInspectionCompleted = false;
@@ -213,13 +198,15 @@ class AppState extends ChangeNotifier {
     }
     final pBefore = (order['pump_slip_before_photo_url'] ?? '').toString().trim();
     if (pBefore.isNotEmpty) currentTrip!.pumpBeforePhotoUrl = pBefore;
-    final pAfter = (order['pump_slip_photo_url'] ?? '').toString().trim();
-    if (pAfter.isNotEmpty) currentTrip!.pumpAfterPhotoUrl = pAfter;
     final wPhoto = (order['weigh_slip_photo_url'] ?? '').toString().trim();
     if (wPhoto.isNotEmpty) {
       currentTrip!.weighSlipPhotoUrl = wPhoto;
       final wTon = order['weigh_slip_tonnage'];
       if (wTon is num) currentTrip!.weighTonnage = wTon.toDouble();
+    }
+    final aPhoto = (order['arrival_photo_url'] ?? '').toString().trim();
+    if (aPhoto.isNotEmpty) {
+      currentTrip!.arrivalPhotoUrl = aPhoto;
     }
     final dPhoto = (order['delivery_slip_photo_url'] ?? '').toString().trim();
     if (dPhoto.isNotEmpty) {
@@ -391,32 +378,10 @@ class AppState extends ChangeNotifier {
     return true;
   }
 
-  // Mốc giờ chuyến: BƠM XONG
-  void recordPumpCompleted({
-    required double lat,
-    required double lng,
-    String? reason,
-  }) {
-    if (currentTrip == null) return;
-    currentTrip!.pumpedTime = DateTime.now();
-    currentTrip!.pumpedLat = lat;
-    currentTrip!.pumpedLng = lng;
-    currentTrip!.pumpedSource = "app";
-    currentTrip!.waitingReason = reason;
-    notifyListeners();
-  }
-
   // Ảnh bơm hàng TRƯỚC KHI BƠM (Tài xế chụp, có GPS)
   void recordPumpBeforePhoto({required String photoUrl}) {
     if (currentTrip == null) return;
     currentTrip!.pumpBeforePhotoUrl = photoUrl;
-    notifyListeners();
-  }
-
-  // Ảnh bơm hàng ĐÃ BƠM XONG (Tài xế chụp, có GPS)
-  void recordPumpAfterPhoto({required String photoUrl}) {
-    if (currentTrip == null) return;
-    currentTrip!.pumpAfterPhotoUrl = photoUrl;
     notifyListeners();
   }
 
@@ -431,6 +396,14 @@ class AppState extends ChangeNotifier {
     currentTrip!.weighTonnage = tonnage;
     currentTrip!.weighTime = weighTime;
     currentTrip!.weighOrderStatus = "da gui Zalo";
+    notifyListeners();
+  }
+
+  // Ảnh ĐẾN ĐIỂM GIAO (Tài xế chụp kèm GPS, bước 3 luồng mới)
+  void recordArrivalPhoto({required String photoUrl}) {
+    if (currentTrip == null) return;
+    currentTrip!.arrivalPhotoUrl = photoUrl;
+    currentTrip!.arrivalTime = DateTime.now();
     notifyListeners();
   }
 

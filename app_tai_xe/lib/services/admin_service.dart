@@ -16,6 +16,14 @@ class AdminService {
     };
   }
 
+  /// Kiểm tra phiên hết hạn: nếu máy chủ trả về 401 thì kích hoạt
+  /// đăng xuất bắt buộc (điều hướng về màn hình Đăng nhập) một cách tập trung.
+  static Future<void> _checkUnauthorized(http.Response res) async {
+    if (res.statusCode == 401) {
+      await AuthService.handleUnauthorizedResponse();
+    }
+  }
+
   /// Lấy số liệu thống kê tổng hợp dự án
   static Future<Map<String, dynamic>> fetchSummary() async {
     try {
@@ -23,6 +31,7 @@ class AdminService {
           .get(Uri.parse('$baseUrl/reports/summary'), headers: await _headers())
           .timeout(const Duration(seconds: 6));
 
+      await _checkUnauthorized(res);
       if (res.statusCode == 200) {
         return jsonDecode(res.body) as Map<String, dynamic>;
       }
@@ -48,6 +57,7 @@ class AdminService {
           .get(Uri.parse('$baseUrl/orders'), headers: await _headers())
           .timeout(const Duration(seconds: 6));
 
+      await _checkUnauthorized(res);
       if (res.statusCode == 200) {
         return jsonDecode(res.body) as List<dynamic>;
       }
@@ -68,6 +78,7 @@ class AdminService {
           )
           .timeout(const Duration(seconds: 8));
 
+      await _checkUnauthorized(res);
       if (res.statusCode == 201 || res.statusCode == 200) {
         return {'success': true, 'data': jsonDecode(res.body)};
       } else {
@@ -96,6 +107,7 @@ class AdminService {
           )
           .timeout(const Duration(seconds: 8));
 
+      await _checkUnauthorized(res);
       if (res.statusCode == 200) {
         return {'success': true, 'data': jsonDecode(res.body)};
       } else {
@@ -120,6 +132,7 @@ class AdminService {
           )
           .timeout(const Duration(seconds: 8));
 
+      await _checkUnauthorized(res);
       if (res.statusCode == 200) {
         return {'success': true, 'data': jsonDecode(res.body)};
       } else {
@@ -147,6 +160,7 @@ class AdminService {
           .get(uri, headers: await _headers())
           .timeout(const Duration(seconds: 12));
 
+      await _checkUnauthorized(res);
       if (res.statusCode == 200) {
         return jsonDecode(res.body) as List<dynamic>;
       }
@@ -162,9 +176,11 @@ class AdminService {
           .post(Uri.parse('$baseUrl/vehicles/sync'), headers: await _headers())
           .timeout(const Duration(seconds: 45));
       final body = res.body.isNotEmpty ? jsonDecode(res.body) : null;
+      await _checkUnauthorized(res);
       if (res.statusCode == 200 && body is Map) {
         return {'success': true, 'data': Map<String, dynamic>.from(body)};
       }
+      await _checkUnauthorized(res);
       if (res.statusCode == 404) {
         return {
           'success': false,
@@ -195,6 +211,7 @@ class AdminService {
           )
           .timeout(const Duration(seconds: 8));
 
+      await _checkUnauthorized(res);
       if (res.statusCode == 200) {
         return {'success': true, 'data': jsonDecode(res.body)};
       } else {
@@ -216,6 +233,7 @@ class AdminService {
           .get(Uri.parse('$baseUrl/products'), headers: await _headers())
           .timeout(const Duration(seconds: 6));
 
+      await _checkUnauthorized(res);
       if (res.statusCode == 200) {
         return jsonDecode(res.body) as List<dynamic>;
       }
@@ -247,6 +265,7 @@ class AdminService {
             }),
           )
           .timeout(const Duration(seconds: 8));
+      await _checkUnauthorized(res);
       if (res.statusCode == 201 || res.statusCode == 200) {
         return jsonDecode(res.body) as Map<String, dynamic>;
       }
@@ -279,6 +298,7 @@ class AdminService {
             }),
           )
           .timeout(const Duration(seconds: 8));
+      await _checkUnauthorized(res);
       if (res.statusCode == 200) {
         return jsonDecode(res.body) as Map<String, dynamic>;
       }
@@ -303,6 +323,7 @@ class AdminService {
       final res = await http
           .get(Uri.parse('$baseUrl/customers'), headers: await _headers())
           .timeout(const Duration(seconds: 6));
+      await _checkUnauthorized(res);
       if (res.statusCode == 200) {
         return jsonDecode(utf8.decode(res.bodyBytes)) as List<dynamic>;
       }
@@ -328,6 +349,7 @@ class AdminService {
       final decoded = res.bodyBytes.isEmpty
           ? null
           : jsonDecode(utf8.decode(res.bodyBytes));
+      await _checkUnauthorized(res);
       if (res.statusCode == 200 || res.statusCode == 201) {
         return {'success': true, 'message': 'Đã lưu khách hàng', 'data': decoded};
       }
@@ -380,6 +402,7 @@ class AdminService {
           req = http.get(uri, headers: headers);
       }
       final res = await req.timeout(Duration(seconds: timeoutSeconds));
+      await _checkUnauthorized(res);
       final decoded = res.bodyBytes.isEmpty ? null : jsonDecode(utf8.decode(res.bodyBytes));
       final ok = res.statusCode >= 200 && res.statusCode < 300;
       final detail = decoded is Map ? decoded['detail'] : null;
@@ -453,6 +476,7 @@ class AdminService {
               ? http.post(uri, headers: headers)
               : http.get(uri, headers: headers))
           .timeout(const Duration(seconds: 10));
+      await _checkUnauthorized(res);
       final decoded = res.bodyBytes.isEmpty
           ? null
           : jsonDecode(utf8.decode(res.bodyBytes));
@@ -497,6 +521,7 @@ class AdminService {
           .replace(queryParameters: query);
       final res =
           await http.get(uri, headers: await _headers()).timeout(timeout);
+      await _checkUnauthorized(res);
       final decoded = res.bodyBytes.isEmpty
           ? null
           : jsonDecode(utf8.decode(res.bodyBytes));
@@ -526,6 +551,7 @@ class AdminService {
           .get(Uri.parse('$baseUrl/gas-stations'), headers: await _headers())
           .timeout(const Duration(seconds: 6));
 
+      await _checkUnauthorized(res);
       if (res.statusCode == 200) {
         return jsonDecode(res.body) as List<dynamic>;
       }
@@ -555,6 +581,7 @@ class AdminService {
             }),
           )
           .timeout(const Duration(seconds: 8));
+      await _checkUnauthorized(res);
       if (res.statusCode == 201 || res.statusCode == 200) {
         return jsonDecode(res.body) as Map<String, dynamic>;
       }
@@ -585,6 +612,7 @@ class AdminService {
             }),
           )
           .timeout(const Duration(seconds: 8));
+      await _checkUnauthorized(res);
       if (res.statusCode == 200) {
         return jsonDecode(res.body) as Map<String, dynamic>;
       }
@@ -601,6 +629,7 @@ class AdminService {
             headers: await _headers(),
           )
           .timeout(const Duration(seconds: 8));
+      await _checkUnauthorized(res);
       if (res.statusCode == 200) return true;
     } catch (_) {}
     return false;
@@ -613,6 +642,7 @@ class AdminService {
           .get(Uri.parse('$baseUrl/drivers'), headers: await _headers())
           .timeout(const Duration(seconds: 6));
 
+      await _checkUnauthorized(res);
       if (res.statusCode == 200) {
         return jsonDecode(res.body) as List<dynamic>;
       }
@@ -627,6 +657,7 @@ class AdminService {
           .get(Uri.parse('$baseUrl/users'), headers: await _headers())
           .timeout(const Duration(seconds: 6));
 
+      await _checkUnauthorized(res);
       if (res.statusCode == 200) {
         return jsonDecode(res.body) as List<dynamic>;
       }
@@ -641,6 +672,7 @@ class AdminService {
           .get(Uri.parse('$baseUrl/rbac/roles'), headers: await _headers())
           .timeout(const Duration(seconds: 6));
 
+      await _checkUnauthorized(res);
       if (res.statusCode == 200) {
         return jsonDecode(res.body) as List<dynamic>;
       }
@@ -658,6 +690,7 @@ class AdminService {
           )
           .timeout(const Duration(seconds: 6));
 
+      await _checkUnauthorized(res);
       if (res.statusCode == 200) {
         return jsonDecode(res.body) as List<dynamic>;
       }
@@ -678,6 +711,7 @@ class AdminService {
           )
           .timeout(const Duration(seconds: 8));
 
+      await _checkUnauthorized(res);
       if (res.statusCode == 201) {
         return {'success': true, 'data': jsonDecode(res.body)};
       } else {
@@ -706,6 +740,7 @@ class AdminService {
           )
           .timeout(const Duration(seconds: 8));
 
+      await _checkUnauthorized(res);
       if (res.statusCode == 200) {
         return {'success': true, 'data': jsonDecode(res.body)};
       } else {
@@ -730,6 +765,7 @@ class AdminService {
           )
           .timeout(const Duration(seconds: 8));
 
+      await _checkUnauthorized(res);
       if (res.statusCode == 200) {
         return {'success': true, 'data': jsonDecode(res.body)};
       } else {
@@ -757,6 +793,7 @@ class AdminService {
           )
           .timeout(const Duration(seconds: 8));
 
+      await _checkUnauthorized(res);
       if (res.statusCode == 201) {
         return {'success': true, 'data': jsonDecode(res.body)};
       } else {
@@ -785,6 +822,7 @@ class AdminService {
           )
           .timeout(const Duration(seconds: 8));
 
+      await _checkUnauthorized(res);
       if (res.statusCode == 200) {
         return {'success': true, 'data': jsonDecode(res.body)};
       } else {
@@ -813,6 +851,7 @@ class AdminService {
           )
           .timeout(const Duration(seconds: 8));
 
+      await _checkUnauthorized(res);
       if (res.statusCode == 200) {
         return {'success': true, 'data': jsonDecode(res.body)};
       } else {
@@ -837,6 +876,7 @@ class AdminService {
           )
           .timeout(const Duration(seconds: 8));
 
+      await _checkUnauthorized(res);
       if (res.statusCode == 200) {
         return {'success': true, 'data': jsonDecode(res.body)};
       } else {
@@ -886,6 +926,7 @@ class AdminService {
           .get(Uri.parse('$baseUrl/shifts/active'), headers: await _headers())
           .timeout(const Duration(seconds: 6));
 
+      await _checkUnauthorized(res);
       if (res.statusCode == 200) {
         return jsonDecode(res.body) as List<dynamic>;
       }
@@ -907,6 +948,7 @@ class AdminService {
           )
           .timeout(const Duration(seconds: 8));
 
+      await _checkUnauthorized(res);
       if (res.statusCode == 200 || res.statusCode == 201) {
         return {'success': true, 'data': jsonDecode(res.body)};
       } else {
@@ -918,17 +960,20 @@ class AdminService {
     }
   }
 
-  /// Điều phối viên kết thúc / bàn giao ca
-  static Future<Map<String, dynamic>> checkoutShift({String? note}) async {
+  /// Điều phối viên kết thúc / bàn giao ca.
+  /// [userId] truyền user_id của điều phối viên khác: CHỈ tài khoản Quản trị
+  /// viên (admin) mới được phép, backend sẽ chặn 403 nếu không đủ quyền.
+  static Future<Map<String, dynamic>> checkoutShift({String? note, int? userId}) async {
     try {
       final res = await http
           .post(
             Uri.parse('$baseUrl/shifts/checkout'),
             headers: await _headers(),
-            body: jsonEncode({'note': note}),
+            body: jsonEncode({'note': note, if (userId != null) 'user_id': userId}),
           )
           .timeout(const Duration(seconds: 8));
 
+      await _checkUnauthorized(res);
       if (res.statusCode == 200) {
         return {'success': true, 'data': jsonDecode(res.body)};
       } else {
@@ -957,6 +1002,7 @@ class AdminService {
           .get(Uri.parse(url), headers: await _headers())
           .timeout(const Duration(seconds: 8));
 
+      await _checkUnauthorized(res);
       if (res.statusCode == 200) {
         return jsonDecode(res.body) as List<dynamic>;
       }
@@ -981,6 +1027,7 @@ class AdminService {
           .get(Uri.parse(url), headers: await _headers())
           .timeout(const Duration(seconds: 8));
 
+      await _checkUnauthorized(res);
       if (res.statusCode == 200) {
         return jsonDecode(res.body) as List<dynamic>;
       }
@@ -1029,6 +1076,7 @@ class AdminService {
           )
           .timeout(const Duration(seconds: 10));
 
+      await _checkUnauthorized(res);
       if (res.statusCode == 201 || res.statusCode == 200) {
         return {'success': true, 'data': jsonDecode(res.body)};
       } else {
@@ -1061,6 +1109,7 @@ class AdminService {
           )
           .timeout(const Duration(seconds: 8));
 
+      await _checkUnauthorized(res);
       if (res.statusCode == 200) {
         return {'success': true, 'data': jsonDecode(res.body)};
       } else {
@@ -1076,7 +1125,7 @@ class AdminService {
   }
 
   /// Gửi hình chụp chứng từ / sự cố gắn vào đơn hàng vận tải:
-  /// photoType: 'pump_slip_before' | 'pump_slip' | 'weigh_slip' | 'delivery_slip' | 'breakdown' | 'repair'
+  /// photoType: 'pump_slip_before' | 'weigh_slip' | 'arrival_photo' | 'delivery_slip' | 'breakdown' | 'repair'
   /// Mọi ảnh của tài xế đều kèm tọa độ GPS lúc chụp (gps_lat, gps_lng, gps_accuracy, gps_captured_at).
   static Future<Map<String, dynamic>?> submitOrderAttachment({
     required int orderId,
@@ -1116,6 +1165,7 @@ class AdminService {
             body: jsonEncode(body),
           )
           .timeout(const Duration(seconds: 15));
+      await _checkUnauthorized(res);
       if (res.statusCode == 200 || res.statusCode == 201) {
         return jsonDecode(utf8.decode(res.bodyBytes)) as Map<String, dynamic>;
       }

@@ -359,6 +359,8 @@ class ShiftCheckin(BaseModel):
 
 class ShiftCheckout(BaseModel):
     note: Optional[str] = None
+    # Đóng ca giúp điều phối viên khác: CHỈ tài khoản Quản trị viên (admin) mới được phép dùng
+    user_id: Optional[int] = None
 
 class FuelConfirm(BaseModel):
     order_id: int
@@ -378,17 +380,10 @@ class MilestoneArrive(BaseModel):
     arrive_lat: float
     arrive_lng: float
 
-class MilestonePumpDone(BaseModel):
-    order_id: int
-    plate_number: str
-    pump_done_lat: float
-    pump_done_lng: float
-    wait_reason_code: Optional[str] = None
-    wait_reason_note: Optional[str] = None
-
 class OrderAttachmentSubmit(BaseModel):
     # Hình chụp chứng từ / sự cố gắn vào đơn hàng (POST /api/v1/orders/{order_id}/attachment)
-    # pump_slip_before (Trước khi bơm) | pump_slip (Đã bơm xong) | weigh_slip | delivery_slip | breakdown | repair
+    # DUY NHẤT 4 trạng thái: pump_slip_before (Trước bơm) | weigh_slip (Phiếu cân) |
+    # arrival_photo (Đến điểm giao) | delivery_slip (Phiếu giao) — ngoài lề: breakdown, repair
     photo_type: str
     photo_base64: str
     note: Optional[str] = None
@@ -524,11 +519,17 @@ ZALO_OA_DDL = [
 ]
 
 # Loại ảnh gắn vào đơn hàng -> tiền tố cột trong bảng orders
+# DUY NHẤT 4 trạng thái chụp hình của Tài xế theo luồng nghiệp vụ:
+#   1. Trước bơm        -> so GPS với Nơi nhận hàng
+#   2. Phiếu cân        -> so GPS với Nơi nhận hàng
+#   3. Đến điểm giao    -> so GPS với Điểm giao hàng
+#   4. Phiếu giao       -> so GPS với Điểm giao hàng
 ORDER_PHOTO_PREFIX = {
-    "pump_slip_before": "pump_slip_before",  # Bơm hàng - Trước khi bơm (Tài xế)
-    "pump_slip": "pump_slip",                # Bơm hàng - Đã bơm xong (Tài xế)
-    "weigh_slip": "weigh_slip",
-    "delivery_slip": "delivery_slip",
+    "pump_slip_before": "pump_slip_before",  # 1. Trước khi bơm (Tài xế)
+    "weigh_slip": "weigh_slip",              # 2. Phiếu cân (Tài xế)
+    "arrival_photo": "arrival_photo",        # 3. Đến điểm giao (Tài xế)
+    "delivery_slip": "delivery_slip",        # 4. Phiếu giao hàng (Tài xế)
+    # Ngoài 4 trạng thái trên, vẫn giữ loại báo cáo sự cố của tài xế:
     "breakdown": "breakdown",
     "repair": "repair",
 }
@@ -549,16 +550,16 @@ ORDER_ATTACHMENT_DDL = [
     "ALTER TABLE orders ADD COLUMN IF NOT EXISTS pump_slip_before_time TIMESTAMP WITH TIME ZONE",
     "ALTER TABLE orders ADD COLUMN IF NOT EXISTS pump_slip_before_by VARCHAR(150)",
     "ALTER TABLE orders ADD COLUMN IF NOT EXISTS pump_slip_before_note TEXT",
-    "ALTER TABLE orders ADD COLUMN IF NOT EXISTS pump_slip_photo_url TEXT",
-    "ALTER TABLE orders ADD COLUMN IF NOT EXISTS pump_slip_time TIMESTAMP WITH TIME ZONE",
-    "ALTER TABLE orders ADD COLUMN IF NOT EXISTS pump_slip_by VARCHAR(150)",
-    "ALTER TABLE orders ADD COLUMN IF NOT EXISTS pump_slip_note TEXT",
     # Phiếu cân
     "ALTER TABLE orders ADD COLUMN IF NOT EXISTS weigh_slip_photo_url TEXT",
     "ALTER TABLE orders ADD COLUMN IF NOT EXISTS weigh_slip_time TIMESTAMP WITH TIME ZONE",
     "ALTER TABLE orders ADD COLUMN IF NOT EXISTS weigh_slip_tonnage DOUBLE PRECISION",
     "ALTER TABLE orders ADD COLUMN IF NOT EXISTS weigh_slip_code VARCHAR(100)",
     # Phiếu giao hàng
+    # 3. Ảnh Đến điểm giao hàng (luồng 4 trạng thái mới)
+    "ALTER TABLE orders ADD COLUMN IF NOT EXISTS arrival_photo_url TEXT",
+    "ALTER TABLE orders ADD COLUMN IF NOT EXISTS arrival_photo_time TIMESTAMP WITH TIME ZONE",
+    "ALTER TABLE orders ADD COLUMN IF NOT EXISTS arrival_photo_note TEXT",
     "ALTER TABLE orders ADD COLUMN IF NOT EXISTS delivery_slip_photo_url TEXT",
     "ALTER TABLE orders ADD COLUMN IF NOT EXISTS delivery_slip_time TIMESTAMP WITH TIME ZONE",
     "ALTER TABLE orders ADD COLUMN IF NOT EXISTS delivery_slip_note TEXT",
@@ -631,9 +632,9 @@ DEFAULT_ORDER_POINT_RADIUS_M = 100
 
 # Loại ảnh -> nhãn hiển thị, dùng khi đối chiếu GPS ảnh với Nơi nhận / Điểm giao
 ORDER_PHOTO_GEO_LABELS = {
-    "pump_slip_before": "Bơm hàng - Trước khi bơm",
-    "pump_slip": "Bơm hàng - Đã bơm xong",
+    "pump_slip_before": "Trước khi bơm",
     "weigh_slip": "Phiếu cân",
+    "arrival_photo": "Đến điểm giao",
     "delivery_slip": "Phiếu giao hàng",
     "breakdown": "Báo hỏng xe",
     "repair": "Sửa chữa xe",
@@ -679,9 +680,10 @@ def _attach_photo_geo_check(order):
                 "gps_accuracy": _as_float(o.get(f"{ptype}_gps_accuracy"))}
         nearest = None
 
-        if ptype in ("pump_slip_before", "pump_slip"):
+        # 1&2. Truoc bom / Phieu can -> Nơi nhận hàng; 3&4. Den diem giao / Phieu giao -> Điểm giao hàng
+        if ptype in ("pump_slip_before", "weigh_slip"):
             target_keys = [k for k in ("pickup",) if k in points]
-        elif ptype == "delivery_slip":
+        elif ptype in ("arrival_photo", "delivery_slip"):
             target_keys = [k for k in ("delivery",) if k in points]
         else:
             target_keys = list(points.keys())
@@ -3792,7 +3794,7 @@ def confirm_fuel(fuel: FuelConfirm, current_user: dict = Depends(get_current_use
         conn.close()
         raise HTTPException(status_code=400, detail=str(e))
 
-# 9. NGHIỆP VỤ MỐC GIỜ CHUYẾN (ĐẾN & BƠM XONG)
+# 9. NGHIỆP VỤ MỐC GIỜ CHUYẾN (ĐẾN điểm giao)
 @app.post("/api/v1/trip/arrive")
 def milestone_arrive(m: MilestoneArrive, current_user: dict = Depends(get_current_user)):
     conn = get_db()
@@ -3812,36 +3814,6 @@ def milestone_arrive(m: MilestoneArrive, current_user: dict = Depends(get_curren
         conn.rollback()
         conn.close()
         raise HTTPException(status_code=400, detail=str(e))
-
-@app.post("/api/v1/trip/pump-done")
-def milestone_pump_done(m: MilestonePumpDone, current_user: dict = Depends(get_current_user)):
-    conn = get_db()
-    cur = conn.cursor()
-    cur.execute(
-        "SELECT * FROM moc_chuyen WHERE order_id = %s ORDER BY id DESC LIMIT 1",
-        (m.order_id,)
-    )
-    rec = cur.fetchone()
-    if not rec or not rec["arrive_time"]:
-        conn.close()
-        raise HTTPException(status_code=400, detail="Chua ghi nhan moc gio DEN cua don hang nay")
-
-    cur.execute("""
-        UPDATE moc_chuyen 
-        SET pump_done_time = CURRENT_TIMESTAMP,
-            pump_done_lat = %s,
-            pump_done_lng = %s,
-            wait_duration_minutes = EXTRACT(EPOCH FROM (CURRENT_TIMESTAMP - arrive_time))/60,
-            wait_reason_code = %s,
-            wait_reason_note = %s
-        WHERE id = %s RETURNING *
-    """, (m.pump_done_lat, m.pump_done_lng, m.wait_reason_code, m.wait_reason_note, rec["id"]))
-    
-    conn.commit()
-    updated = cur.fetchone()
-    cur.close()
-    conn.close()
-    return {"status": "success", "message": "Da ghi nhan moc gio BOM XONG", "record": updated}
 
 # 10. QUẢN LÝ CA TRỰC ĐIỀU PHỐI (DISPATCHER SHIFTS)
 @app.get("/api/v1/shifts/active")
@@ -3924,7 +3896,23 @@ def checkin_shift(req: ShiftCheckin, current_user: dict = Depends(get_current_us
 
 @app.post("/api/v1/shifts/checkout")
 def checkout_shift(req: ShiftCheckout, current_user: dict = Depends(get_current_user)):
-    user_id = current_user["id"]
+    me_id = current_user["id"]
+    user_roles = current_user.get("roles", [])
+    # Quản trị viên (username 'admin' hoặc vai trò admin) được đóng ca trực
+    # của BẤT KỲ điều phối viên nào, vào BẤT KỲ lúc nào.
+    is_admin = current_user["username"] == "admin" or "admin" in user_roles
+
+    # Đối tượng bị đóng ca: mặc định là chính mình.
+    # Nếu req.user_id trỏ tới tài khoản khác thì chỉ admin mới có quyền.
+    target_user_id = me_id
+    if req.user_id is not None and req.user_id != me_id:
+        if not is_admin:
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="Chỉ Quản trị viên mới được phép đóng ca trực của điều phối viên khác."
+            )
+        target_user_id = req.user_id
+
     conn = get_db()
     cur = conn.cursor()
     try:
@@ -3935,12 +3923,14 @@ def checkout_shift(req: ShiftCheckout, current_user: dict = Depends(get_current_
                 handover_note = COALESCE(%s, handover_note)
             WHERE user_id = %s AND status = 'active'
             RETURNING *
-        """, (req.note, user_id))
+        """, (req.note, target_user_id))
         conn.commit()
         updated = cur.fetchone()
         cur.close()
         conn.close()
         if not updated:
+            if target_user_id != me_id:
+                return {"status": "warning", "message": "Điều phối viên này hiện không có ca trực đang mở"}
             return {"status": "warning", "message": "Không tìm thấy ca trực đang mở của bạn"}
         return {"status": "success", "message": "Kết thúc ca trực thành công", "shift": updated}
     except Exception as e:
@@ -3981,41 +3971,64 @@ def submit_order_attachment(
 
     actor = current_user.get("full_name") or current_user.get("username") or "Người dùng"
     ptype = (payload.photo_type or "").strip().lower()
-    if ptype in ("pump_before", "pump_slip_after", "pump_after"):
-        ptype = "pump_slip_before" if ptype == "pump_before" else "pump_slip"
+    if ptype in ("pump_before",):
+        ptype = "pump_slip_before"
+    elif ptype in ("weigh",):
+        ptype = "weigh_slip"
+    elif ptype in ("arrival",):
+        ptype = "arrival_photo"
+    elif ptype in ("delivery",):
+        ptype = "delivery_slip"
     if ptype not in ORDER_PHOTO_PREFIX:
         cur.close()
         conn.close()
         raise HTTPException(status_code=400, detail=f"Loại hình chụp không hợp lệ: {ptype}")
 
-    # 2 ảnh bơm hàng (Trước khi bơm / Đã bơm xong) bắt buộc do tài khoản Tài xế chụp
-    # và GPS phải nằm trong bán kính 100m của tọa độ Nơi nhận hàng (pickup).
-    if ptype in ("pump_slip_before", "pump_slip"):
+    # DUY NHẤT 4 trạng thái chụp hình của Tài xế. Bán kính GPS lấy theo cấu hình
+    # từng điểm của đơn (pickup_radius_m / delivery_radius_m, mặc định 100m).
+    DRIVER_ONLY_PHOTOS = ("pump_slip_before", "weigh_slip", "arrival_photo", "delivery_slip")
+    if ptype in DRIVER_ONLY_PHOTOS:
         user_roles = [r.lower() for r in current_user.get("roles", [])]
         if "driver" not in user_roles:
             cur.close()
             conn.close()
             raise HTTPException(
                 status_code=403,
-                detail="Ảnh bơm hàng chỉ tài khoản Tài xế mới được chụp và gửi",
+                detail="Ảnh chụp chuyến hàng chỉ tài khoản Tài xế mới được gửi",
             )
-        if ptype == "pump_slip" and not (existing.get("pump_slip_before_photo_url") or "").strip():
-            cur.close()
-            conn.close()
-            raise HTTPException(
-                status_code=400,
-                detail="Phải chụp ảnh TRƯỚC KHI BƠM trước khi gửi ảnh ĐÃ BƠM XONG",
-            )
+        # Khóa tuần tự theo luồng: 1.Trước bơm -> 2.Phiếu cân -> 3.Đến điểm giao -> 4.Phiếu giao
+        step_before = {
+            "weigh_slip": ("pump_slip_before_photo_url", "TRƯỚC KHI BƠM"),
+            "arrival_photo": ("weigh_slip_photo_url", "PHIẾU CÂN"),
+            "delivery_slip": ("arrival_photo_url", "ĐẾN ĐIỂM GIAO"),
+        }
+        if ptype in step_before:
+            prev_col, prev_label = step_before[ptype]
+            if not (existing.get(prev_col) or "").strip():
+                cur.close()
+                conn.close()
+                raise HTTPException(
+                    status_code=400,
+                    detail=f"Phải gửi bước trước đó ({prev_label}) trước khi gửi bước này",
+                )
 
-        # Kiểm tra GPS phải nằm trong bán kính 100m của Nơi nhận hàng (pickup)
-        p_lat = _as_float(existing.get("pickup_lat"))
-        p_lng = _as_float(existing.get("pickup_lng"))
-        if p_lat is None or p_lng is None:
+        # Chọn mốc đối chiếu GPS: bước 1&2 theo Nơi nhận hàng, bước 3&4 theo Điểm giao hàng
+        if ptype in ("pump_slip_before", "weigh_slip"):
+            target_lat = _as_float(existing.get("pickup_lat"))
+            target_lng = _as_float(existing.get("pickup_lng"))
+            target_radius = existing.get("pickup_radius_m") or DEFAULT_ORDER_POINT_RADIUS_M
+            target_label = "Nơi nhận hàng"
+        else:
+            target_lat = _as_float(existing.get("delivery_lat"))
+            target_lng = _as_float(existing.get("delivery_lng"))
+            target_radius = existing.get("delivery_radius_m") or DEFAULT_ORDER_POINT_RADIUS_M
+            target_label = "Điểm giao hàng"
+        if target_lat is None or target_lng is None:
             cur.close()
             conn.close()
             raise HTTPException(
                 status_code=400,
-                detail="Đơn hàng chưa có tọa độ Nơi nhận hàng. Vui lòng liên hệ Điều phối cập nhật.",
+                detail=f"Đơn hàng chưa có tọa độ {target_label}. Vui lòng liên hệ Điều phối cập nhật.",
             )
 
         # Mọi ảnh của tài xế đều bắt buộc có tọa độ GPS lúc chụp
@@ -4026,53 +4039,15 @@ def submit_order_attachment(
             conn.close()
             raise
 
-        dist_to_pickup = round(haversine_distance(payload.gps_lat, payload.gps_lng, p_lat, p_lng))
-        max_allowed_radius = 100  # Quy chuẩn bắt buộc bán kính 100m tại Nơi nhận hàng
-        if dist_to_pickup > max_allowed_radius:
+        dist_to_target = round(haversine_distance(payload.gps_lat, payload.gps_lng, target_lat, target_lng))
+        max_allowed_radius = int(target_radius)
+        if dist_to_target > max_allowed_radius:
             cur.close()
             conn.close()
-            p_label = "Trước khi bơm" if ptype == "pump_slip_before" else "Đã bơm xong"
+            p_label = ORDER_PHOTO_GEO_LABELS.get(ptype, ptype)
             raise HTTPException(
                 status_code=400,
-                detail=f"Vị trí chụp ảnh ({p_label}) cách Nơi nhận hàng {dist_to_pickup}m, vượt quá bán kính cho phép ({max_allowed_radius}m). Vui lòng chụp tại đúng điểm nhận hàng.",
-            )
-    elif ptype == "delivery_slip":
-        user_roles = [r.lower() for r in current_user.get("roles", [])]
-        if "driver" not in user_roles:
-            cur.close()
-            conn.close()
-            raise HTTPException(
-                status_code=403,
-                detail="Phiếu giao hàng chỉ tài khoản Tài xế mới được chụp và gửi",
-            )
-
-        # Kiểm tra GPS phải nằm trong bán kính 100m của Điểm giao hàng (delivery)
-        d_lat = _as_float(existing.get("delivery_lat"))
-        d_lng = _as_float(existing.get("delivery_lng"))
-        if d_lat is None or d_lng is None:
-            cur.close()
-            conn.close()
-            raise HTTPException(
-                status_code=400,
-                detail="Đơn hàng chưa có tọa độ Điểm giao hàng. Vui lòng liên hệ Điều phối cập nhật.",
-            )
-
-        # Mọi ảnh của tài xế đều bắt buộc có tọa độ GPS lúc chụp
-        try:
-            _validate_gps(payload.gps_lat, payload.gps_lng)
-        except HTTPException:
-            cur.close()
-            conn.close()
-            raise
-
-        dist_to_delivery = round(haversine_distance(payload.gps_lat, payload.gps_lng, d_lat, d_lng))
-        max_allowed_radius = 100  # Quy chuẩn bắt buộc bán kính 100m tại Điểm giao hàng
-        if dist_to_delivery > max_allowed_radius:
-            cur.close()
-            conn.close()
-            raise HTTPException(
-                status_code=400,
-                detail=f"Vị trí chụp ảnh (Phiếu giao hàng) cách Điểm giao hàng {dist_to_delivery}m, vượt quá bán kính cho phép ({max_allowed_radius}m). Vui lòng chụp tại đúng điểm giao hàng.",
+                detail=f"Vị trí chụp ảnh ({p_label}) cách {target_label} {dist_to_target}m, vượt quá bán kính cho phép ({max_allowed_radius}m). Vui lòng chụp tại đúng {target_label.lower()}.",
             )
     else:
         # Mọi ảnh của tài xế đều bắt buộc có tọa độ GPS lúc chụp
@@ -4113,22 +4088,6 @@ def submit_order_attachment(
                 """,
                 (saved_path, actor, payload.note, *gps_params, order_id),
             )
-        elif ptype == "pump_slip":
-            cur.execute(
-                f"""
-                UPDATE orders
-                SET pump_slip_photo_url = %s,
-                    pump_slip_time = CURRENT_TIMESTAMP,
-                    pump_slip_by = %s,
-                    pump_slip_note = COALESCE(%s, pump_slip_note),
-                    {gps_sql}
-                    status = CASE WHEN status IN ('waiting', 'assigned') THEN 'in_progress' ELSE status END,
-                    updated_at = CURRENT_TIMESTAMP
-                WHERE id = %s
-                RETURNING *
-                """,
-                (saved_path, actor, payload.note, *gps_params, order_id),
-            )
         elif ptype == "weigh_slip":
             cur.execute(
                 f"""
@@ -4144,6 +4103,20 @@ def submit_order_attachment(
                 RETURNING *
                 """,
                 (saved_path, payload.tonnage, payload.slip_code, *gps_params, order_id),
+            )
+        elif ptype == "arrival_photo":
+            cur.execute(
+                f"""
+                UPDATE orders
+                SET arrival_photo_url = %s,
+                    arrival_photo_time = CURRENT_TIMESTAMP,
+                    arrival_photo_note = COALESCE(%s, arrival_photo_note),
+                    {gps_sql}
+                    updated_at = CURRENT_TIMESTAMP
+                WHERE id = %s
+                RETURNING *
+                """,
+                (saved_path, payload.note, *gps_params, order_id),
             )
         elif ptype == "delivery_slip":
             cur.execute(

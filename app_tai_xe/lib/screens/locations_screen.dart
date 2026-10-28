@@ -789,35 +789,45 @@ class _LocationsScreenState extends State<LocationsScreen> {
   }
 
   Widget _rowCheckbox(Map<String, dynamic> m) {
-    if (!_canPick(m)) return const SizedBox(width: 32);
-    return Checkbox(
-      value: _isPicked(m),
-      visualDensity: VisualDensity.compact,
-      onChanged: _bulkBusy
-          ? null
-          : (v) => setState(() => _setPicked(m, v == true)),
+    if (!_canPick(m)) return const SizedBox(width: 24);
+    return SizedBox(
+      width: 24,
+      height: 24,
+      child: Checkbox(
+        value: _isPicked(m),
+        materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
+        visualDensity: const VisualDensity(horizontal: -4, vertical: -4),
+        onChanged: _bulkBusy
+            ? null
+            : (v) => setState(() => _setPicked(m, v == true)),
+      ),
     );
   }
 
   /// Ô ở tiêu đề: chọn / bỏ chọn mọi dòng chọn được (điểm và gợi ý chờ duyệt) của trang đang xem.
   Widget _headerCheckbox(List<Map<String, dynamic>> items) {
     final pickable = items.where(_canPick).toList();
-    if (pickable.isEmpty) return const SizedBox(width: 32);
+    if (pickable.isEmpty) return const SizedBox(width: 24);
     final picked = pickable.where(_isPicked).length;
     return Tooltip(
       message: "Chọn tất cả dòng trong trang này",
-      child: Checkbox(
-        tristate: true,
-        value: picked == 0 ? false : (picked == pickable.length ? true : null),
-        visualDensity: VisualDensity.compact,
-        onChanged: _bulkBusy
-            ? null
-            : (_) => setState(() {
-                final v = picked != pickable.length;
-                for (final m in pickable) {
-                  _setPicked(m, v);
-                }
-              }),
+      child: SizedBox(
+        width: 24,
+        height: 24,
+        child: Checkbox(
+          tristate: true,
+          value: picked == 0 ? false : (picked == pickable.length ? true : null),
+          materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
+          visualDensity: const VisualDensity(horizontal: -4, vertical: -4),
+          onChanged: _bulkBusy
+              ? null
+              : (_) => setState(() {
+                  final v = picked != pickable.length;
+                  for (final m in pickable) {
+                    _setPicked(m, v);
+                  }
+                }),
+        ),
       ),
     );
   }

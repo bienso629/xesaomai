@@ -8,12 +8,15 @@ import '../services/app_state.dart';
 import '../services/admin_service.dart';
 import '../screens/slip_capture_screen.dart';
 
-/// Khối hiển thị & thao tác đầy đủ 5 nhóm hình chụp của một Đơn hàng vận tải:
-/// 1. Ảnh bơm hàng: 2 ảnh bắt buộc Trước khi bơm và Đã bơm xong (do Tài xế chụp, có GPS)
-/// 2. Phiếu cân (do Tài xế chụp ở Bước 3)
-/// 3. Phiếu giao hàng (do Tài xế chụp ở Bước 4)
-/// 4. Tình trạng Báo hỏng xe (do Tài xế chụp ảnh & báo hỏng trong lúc vận chuyển)
-/// 5. Tình trạng Sửa chữa xe (do tài khoản Kỹ thuật chụp ảnh & cập nhật)
+/// Khối hiển thị & thao tác đầy đủ các nhóm hình chụp của một Đơn hàng vận tải
+/// theo luồng chụp mới (Tài xế chụp theo thứ tự, kèm GPS đối chiếu bán kính):
+/// 1a. Ảnh bơm hàng - Trước khi bơm (GPS so với Nơi nhận hàng)
+/// 1b. Ảnh bơm hàng - Đã bơm xong (bổ sung, GPS so với Nơi nhận hàng)
+/// 2.  Phiếu cân (GPS so với Nơi nhận hàng)
+/// 3.  Ảnh Đến điểm giao hàng (GPS so với Điểm giao hàng)
+/// 4.  Phiếu giao hàng (GPS so với Điểm giao hàng)
+/// 5.  Tình trạng Báo hỏng xe (do Tài xế chụp ảnh & báo hỏng trong lúc vận chuyển)
+/// 6.  Tình trạng Sửa chữa xe (do tài khoản Kỹ thuật chụp ảnh & cập nhật)
 class OrderAttachmentsSection extends StatelessWidget {
   const OrderAttachmentsSection({
     super.key,
@@ -415,15 +418,6 @@ class OrderAttachmentsSection extends StatelessWidget {
     final pumpBeforeAcc = _asDouble(order['pump_slip_before_gps_accuracy'] ?? order['pump_before_gps_accuracy']);
     final pumpBeforeGpsAt = (order['pump_slip_before_gps_captured_at'] ?? order['pump_before_gps_captured_at'] ?? '').toString();
 
-    final pumpPhoto = (order['pump_slip_photo_url'] ?? '').toString().trim();
-    final pumpTime = _fmtTime(order['pump_slip_time']);
-    final pumpBy = (order['pump_slip_by'] ?? '').toString().trim();
-    final pumpNote = (order['pump_slip_note'] ?? '').toString().trim();
-    final pumpLat = _asDouble(order['pump_slip_gps_lat']);
-    final pumpLng = _asDouble(order['pump_slip_gps_lng']);
-    final pumpAcc = _asDouble(order['pump_slip_gps_accuracy']);
-    final pumpGpsAt = (order['pump_slip_gps_captured_at'] ?? '').toString();
-
     final weighPhoto = (order['weigh_slip_photo_url'] ?? '').toString().trim();
     final weighTime = _fmtTime(order['weigh_slip_time']);
     final weighTonnage = order['weigh_slip_tonnage'];
@@ -432,6 +426,13 @@ class OrderAttachmentsSection extends StatelessWidget {
     final weighLng = _asDouble(order['weigh_slip_gps_lng']);
     final weighAcc = _asDouble(order['weigh_slip_gps_accuracy']);
     final weighGpsAt = (order['weigh_slip_gps_captured_at'] ?? '').toString();
+
+    final arrivalPhoto = (order['arrival_photo_url'] ?? '').toString().trim();
+    final arrivalTime = _fmtTime(order['arrival_photo_time']);
+    final arrivalLat = _asDouble(order['arrival_photo_gps_lat']);
+    final arrivalLng = _asDouble(order['arrival_photo_gps_lng']);
+    final arrivalAcc = _asDouble(order['arrival_photo_gps_accuracy']);
+    final arrivalGpsAt = (order['arrival_photo_gps_captured_at'] ?? '').toString();
 
     final deliveryPhoto =
         (order['delivery_slip_photo_url'] ?? '').toString().trim();
@@ -521,33 +522,9 @@ class OrderAttachmentsSection extends StatelessWidget {
         const SizedBox(height: 8),
         _buildAttachmentCard(
           context,
-          icon: Icons.local_gas_station_outlined,
-          accentColor: const Color(0xFF0284C7),
-          title: "1b. Bơm hàng - Đã bơm xong (Tài xế, bắt buộc)",
-          photoUrl: pumpPhoto,
-          statusText: pumpPhoto.isNotEmpty
-              ? "Đã chụp${pumpTime.isNotEmpty ? ' • $pumpTime' : ''}${pumpBy.isNotEmpty ? ' • $pumpBy' : ''}"
-              : "Chưa có ảnh ĐÃ BƠM XONG",
-          detailText: pumpNote.isNotEmpty ? "Ghi chú: $pumpNote" : null,
-          // Ảnh "Đã bơm xong" chỉ mở khi đã có ảnh "Trước khi bơm"
-          canCapture: isDriver && orderId != null && pumpBeforePhoto.isNotEmpty,
-          captureLabel: pumpPhoto.isNotEmpty
-              ? "Chụp lại (Đã bơm xong)"
-              : "Chụp ảnh Đã bơm xong",
-          geoCheck: geo('pump_slip'),
-          onCapture: () => captureType('pump_slip'),
-          gpsLat: pumpLat,
-          gpsLng: pumpLng,
-          gpsAccuracy: pumpAcc,
-          gpsCapturedAt: pumpGpsAt,
-          photoGeoLabel: geoSummary('pump_slip'),
-        ),
-        const SizedBox(height: 8),
-        _buildAttachmentCard(
-          context,
           icon: Icons.scale_outlined,
           accentColor: const Color(0xFF2563EB),
-          title: "2. Phiếu cân hàng (Tài xế - Bước 3)",
+          title: "2. Phiếu cân hàng (Tài xế - Bước 2)",
           photoUrl: weighPhoto,
           statusText: weighPhoto.isNotEmpty
               ? "Đã chụp${weighTime.isNotEmpty ? ' • $weighTime' : ''}"
@@ -571,9 +548,31 @@ class OrderAttachmentsSection extends StatelessWidget {
         const SizedBox(height: 8),
         _buildAttachmentCard(
           context,
+          icon: Icons.where_to_vote_outlined,
+          accentColor: const Color(0xFF7C3AED),
+          title: "3. Ảnh Đến điểm giao hàng (Tài xế - Bước 3)",
+          photoUrl: arrivalPhoto,
+          statusText: arrivalPhoto.isNotEmpty
+              ? "Đã chụp${arrivalTime.isNotEmpty ? ' • $arrivalTime' : ''}"
+              : "Chưa có ảnh Đến điểm giao",
+          canCapture: isDriver && orderId != null && weighPhoto.isNotEmpty,
+          captureLabel: arrivalPhoto.isNotEmpty
+              ? "Chụp lại ảnh Đến điểm giao"
+              : "Chụp ảnh Đến điểm giao",
+          geoCheck: geo('arrival_photo'),
+          onCapture: () => captureType('arrival'),
+          gpsLat: arrivalLat,
+          gpsLng: arrivalLng,
+          gpsAccuracy: arrivalAcc,
+          gpsCapturedAt: arrivalGpsAt,
+          photoGeoLabel: geoSummary('arrival_photo'),
+        ),
+        const SizedBox(height: 8),
+        _buildAttachmentCard(
+          context,
           icon: Icons.assignment_turned_in_outlined,
           accentColor: const Color(0xFF15803D),
-          title: "3. Phiếu giao hàng (Tài xế - Bước 4)",
+          title: "4. Phiếu giao hàng (Tài xế - Bước 4)",
           photoUrl: deliveryPhoto,
           statusText: deliveryPhoto.isNotEmpty
               ? "Đã chụp${deliveryTime.isNotEmpty ? ' • $deliveryTime' : ''}"
@@ -598,7 +597,7 @@ class OrderAttachmentsSection extends StatelessWidget {
           accentColor: hasBreakdown
               ? const Color(0xFFDC2626)
               : const Color(0xFF64748B),
-          title: "4. Tình trạng Báo hỏng xe (Tài xế báo sự cố)",
+          title: "5. Tình trạng Báo hỏng xe (Tài xế báo sự cố)",
           photoUrl: breakdownPhoto,
           statusText: hasBreakdown
               ? (breakdownStatus == 'resolved'
@@ -623,7 +622,7 @@ class OrderAttachmentsSection extends StatelessWidget {
           context,
           icon: Icons.build_circle_outlined,
           accentColor: const Color(0xFFD97706),
-          title: "5. Báo cáo Sửa chữa xe (Tài khoản Kỹ thuật)",
+          title: "6. Báo cáo Sửa chữa xe (Tài khoản Kỹ thuật)",
           photoUrl: repairPhoto,
           statusText: repairPhoto.isNotEmpty
               ? "${repairStatus == 'fixed' ? 'Đã sửa chữa hoàn tất' : 'Đang sửa chữa'}${repairTime.isNotEmpty ? ' • $repairTime' : ''}${repairBy.isNotEmpty ? ' • KT: $repairBy' : ''}"
@@ -680,7 +679,7 @@ class OrderAttachmentsSection extends StatelessWidget {
       case 'NONE':
         if (ptype == 'delivery_slip') {
           head = 'Ngoài điểm giao hàng';
-        } else if (ptype == 'pump_slip_before' || ptype == 'pump_slip') {
+        } else if (ptype == 'pump_slip_before') {
           head = 'Ngoài điểm nhận hàng';
         } else {
           head = 'Ngoài điểm nhận/giao';
@@ -730,7 +729,7 @@ class OrderAttachmentsSection extends StatelessWidget {
         icon = Icons.wrong_location_outlined;
         text = ptype == 'delivery_slip'
             ? 'KHÔNG ở Điểm giao hàng'
-            : (ptype == 'pump_slip_before' || ptype == 'pump_slip')
+            : (ptype == 'pump_slip_before')
                 ? 'KHÔNG ở Nơi nhận hàng'
                 : 'KHÔNG ở Nơi nhận hàng / Điểm giao hàng';
         break;

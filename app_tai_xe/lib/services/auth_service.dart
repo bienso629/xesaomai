@@ -11,6 +11,32 @@ class AuthService {
   static const String baseUrl = '${ApiConfig.apiV1}/auth';
   static const String apiV1Url = ApiConfig.apiV1;
 
+  /// Callback toàn cục: được main.dart đăng ký để điều hướng về màn hình Đăng nhập
+  /// khi phiên đăng nhập hết hạn (nhận HTTP 401 từ bất kỳ service nào).
+  static void Function()? onUnauthorized;
+
+  /// Cờ chống gọi lặp: chỉ điều hướng về Login một lần duy nhất mỗi phiên chết.
+  static bool _isHandlingUnauthorized = false;
+
+  /// Gọi khi một request API trả về 401 (phiên hết hạn):
+  /// xóa phiên lưu tại máy và báo cho UI điều hướng về màn hình Đăng nhập.
+  static Future<void> handleUnauthorizedResponse() async {
+    if (_isHandlingUnauthorized) return;
+    _isHandlingUnauthorized = true;
+    try {
+      await logout();
+    } catch (_) {}
+    final callback = onUnauthorized;
+    if (callback != null) {
+      callback();
+    }
+  }
+
+  /// Reset cờ chặn lặp sau khi người dùng đăng nhập lại thành công.
+  static void markSessionRecovered() {
+    _isHandlingUnauthorized = false;
+  }
+
   /// Khởi tạo hoặc lấy Device Token cố định của thiết bị hiện tại
   static Future<Map<String, String>> getOrCreateDeviceMetadata() async {
     final prefs = await SharedPreferences.getInstance();
@@ -97,6 +123,8 @@ class AuthService {
       final data = jsonDecode(response.body);
 
       if (response.statusCode == 200) {
+        // Đăng nhập lại thành công: cho phép xử lý 401 ở các phiên sau
+        markSessionRecovered();
         final prefs = await SharedPreferences.getInstance();
         final token = data['access_token'] as String?;
         if (token != null) {

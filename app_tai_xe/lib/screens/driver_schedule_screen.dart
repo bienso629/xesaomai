@@ -187,7 +187,7 @@ class _DriverScheduleScreenState extends State<DriverScheduleScreen> {
               _buildDailyInspectionStatusCard(context, state),
               const SizedBox(height: 12),
 
-              // 4. Lịch trình chuyến hàng & Bấm mốc giờ (ĐẾN / BƠM XONG / PHIẾU CÂN / PHIẾU GIAO HÀNG)
+              // 4. Lịch trình chuyến hàng & 4 bước chụp hình (Trước bơm / Phiếu cân / Đến điểm giao / Phiếu giao)
               _buildActiveScheduleMilestonesCard(context, state, isLocked),
               const SizedBox(height: 12),
 
@@ -806,7 +806,7 @@ class _DriverScheduleScreenState extends State<DriverScheduleScreen> {
                   : "Bắt buộc: chụp đồng hồ/vòi bơm trước khi bơm",
               isRecorded: trip?.pumpBeforePhotoUrl != null,
               buttonLabel: trip?.pumpBeforePhotoUrl != null ? "Chụp lại" : "Trước bơm",
-              isDisabled: stepDisabled || trip?.pumpedTime != null,
+              isDisabled: stepDisabled,
               onPressed: () => SlipCaptureScreen.show(
                 context,
                 slipType: 'pump_before',
@@ -816,38 +816,40 @@ class _DriverScheduleScreenState extends State<DriverScheduleScreen> {
             ),
             const SizedBox(height: 8),
 
-            // Trạng thái 2: BƠM XONG (Chụp ảnh Đã bơm xong)
+            // Trạng thái 2: PHIẾU CÂN (so GPS với Nơi nhận hàng)
             _buildMilestoneStepRow(
-              title: "2. Chụp ảnh ĐÃ BƠM XONG",
-              timeText: (trip?.pumpAfterPhotoUrl != null)
-                  ? "Đã gửi Điều phối (kèm GPS)"
+              title: "2. Chụp & Gửi Phiếu Cân",
+              timeText: (trip?.weighSlipPhotoUrl != null)
+                  ? "Khối lượng: ${trip!.weighTonnage} Tấn (Đã đồng bộ Zalo OA)"
                   : (trip?.pumpBeforePhotoUrl != null
-                      ? "Bắt buộc: chụp đồng hồ/phiếu sau khi bơm xong"
+                      ? "Chụp phiếu cân OCR khối lượng & mã lệnh (tại nơi nhận hàng)"
                       : "Cần hoàn tất Chụp ảnh TRƯỚC KHI BƠM"),
-              isRecorded: trip?.pumpAfterPhotoUrl != null,
-              buttonLabel: trip?.pumpAfterPhotoUrl != null ? "Chụp lại" : "Bơm xong",
-              isDisabled: stepDisabled || trip?.pumpBeforePhotoUrl == null || trip?.pumpedTime != null,
+              isRecorded: trip?.weighSlipPhotoUrl != null,
+              buttonLabel: "Cân",
+              isDisabled: stepDisabled || trip?.pumpBeforePhotoUrl == null,
               onPressed: () => SlipCaptureScreen.show(
                 context,
-                slipType: 'pump_after',
-                orderId: trip?.orderId,
+                slipType: 'weigh',
                 orderCode: trip?.orderCode ?? '',
               ),
             ),
             const SizedBox(height: 8),
 
-            // Trạng thái 3: CÂN (Chụp & gửi Phiếu Cân)
+            // Trạng thái 3: ĐẾN ĐIỂM GIAO (so GPS với Điểm giao hàng)
             _buildMilestoneStepRow(
-              title: "3. Chụp & Gửi Phiếu Cân",
-              timeText: (trip?.weighSlipPhotoUrl != null)
-                  ? "Khối lượng: ${trip!.weighTonnage} Tấn (Đã đồng bộ Zalo OA)"
-                  : "Chụp phiếu cân OCR khối lượng & mã lệnh",
-              isRecorded: trip?.weighSlipPhotoUrl != null,
-              buttonLabel: "Cân",
-              isDisabled: stepDisabled || trip?.pumpAfterPhotoUrl == null,
+              title: "3. Chụp ảnh ĐẾN ĐIỂM GIAO",
+              timeText: (trip?.arrivalPhotoUrl != null)
+                  ? "Đã gửi Điều phối (kèm GPS)"
+                  : (trip?.weighSlipPhotoUrl != null
+                      ? "Bắt buộc: chụp hiện trạng xe khi đến điểm giao hàng"
+                      : "Cần hoàn tất Chụp & Gửi Phiếu Cân"),
+              isRecorded: trip?.arrivalPhotoUrl != null,
+              buttonLabel: trip?.arrivalPhotoUrl != null ? "Chụp lại" : "Đến giao",
+              isDisabled: stepDisabled || trip?.weighSlipPhotoUrl == null,
               onPressed: () => SlipCaptureScreen.show(
                 context,
-                slipType: 'weigh',
+                slipType: 'arrival',
+                orderId: trip?.orderId,
                 orderCode: trip?.orderCode ?? '',
               ),
             ),
@@ -858,10 +860,12 @@ class _DriverScheduleScreenState extends State<DriverScheduleScreen> {
               title: "4. Chụp & Gửi Phiếu Giao Hàng",
               timeText: (trip?.deliverySlipPhotoUrl != null)
                   ? "Đã gửi vào nhóm Zalo khách hàng"
-                  : "Chụp biên bản giao nhận hàng hoàn tất chuyến",
+                  : (trip?.arrivalPhotoUrl != null
+                      ? "Chụp biên bản giao nhận hàng hoàn tất chuyến"
+                      : "Cần hoàn tất Chụp ảnh ĐẾN ĐIỂM GIAO"),
               isRecorded: trip?.deliverySlipPhotoUrl != null,
               buttonLabel: "Giao",
-              isDisabled: stepDisabled || trip?.weighSlipPhotoUrl == null,
+              isDisabled: stepDisabled || trip?.arrivalPhotoUrl == null,
               onPressed: () => SlipCaptureScreen.show(
                 context,
                 slipType: 'delivery',
@@ -1059,120 +1063,4 @@ class _DriverScheduleScreenState extends State<DriverScheduleScreen> {
     );
   }
 
-  void _handleArrived(BuildContext context, AppState state) {
-    const mockLat = 10.7325;
-    const mockLng = 106.9152;
-
-    showDialog(
-      context: context,
-      builder: (ctx) => AlertDialog(
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(4)),
-        title: const Text("Xác nhận vị trí ĐẾN điểm giao", style: TextStyle(fontWeight: FontWeight.bold)),
-        content: const Text(
-          "Tọa độ GPS hiện tại đang cách tâm điểm giao hơn 2.0 km. Bạn có chắc chắn xe đã vào trạm giao hàng không?",
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.of(ctx).pop(),
-            child: const Text("Kiểm tra lại", style: TextStyle(fontSize: 14, fontWeight: FontWeight.w600)),
-          ),
-          ElevatedButton(
-            style: ElevatedButton.styleFrom(
-              backgroundColor: Colors.blue.shade800,
-              foregroundColor: Colors.white,
-              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(4)),
-            ),
-            onPressed: () {
-              state.recordArrival(lat: mockLat, lng: mockLng, forceConfirm: true);
-              Navigator.of(ctx).pop();
-              ScaffoldMessenger.of(context).showSnackBar(
-                SnackBar(
-                  backgroundColor: Colors.green.shade700,
-                  content: const Text("Đã ghi nhận mốc ĐẾN điểm giao hàng thành công!"),
-                ),
-              );
-            },
-            child: const Text("Xác nhận đã đến", style: TextStyle(fontSize: 14, fontWeight: FontWeight.bold)),
-          ),
-        ],
-      ),
-    );
-  }
-
-  void _handlePumped(BuildContext context, AppState state) {
-    showDialog(
-      context: context,
-      barrierDismissible: false,
-      builder: (ctx) {
-        String selectedReason = AppState.waitingReasons.first;
-        return StatefulBuilder(
-          builder: (context, setDlgState) {
-            return AlertDialog(
-              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(4)),
-              title: Row(
-                children: [
-                  Icon(Icons.hourglass_bottom, color: Colors.amber.shade800),
-                  const SizedBox(width: 8),
-                  const Expanded(
-                    child: Text(
-                      "Xác nhận BƠM XONG (>120 phút)",
-                      style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
-                    ),
-                  ),
-                ],
-              ),
-              content: SingleChildScrollView(
-                child: Column(
-                  mainAxisSize: MainAxisSize.min,
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    const Text(
-                      "Thời gian từ lúc ĐẾN đến lúc BƠM XONG vượt quá 120 phút. Vui lòng chọn nguyên nhân chờ từ danh mục:",
-                    ),
-                    const SizedBox(height: 12),
-                    DropdownButtonFormField<String>(
-                      value: selectedReason,
-                      isExpanded: true,
-                      decoration: InputDecoration(
-                        border: OutlineInputBorder(borderRadius: BorderRadius.circular(4)),
-                      ),
-                      items: AppState.waitingReasons.map((r) {
-                        return DropdownMenuItem(
-                          value: r,
-                          child: Text(r, style: const TextStyle(fontSize: 14)),
-                        );
-                      }).toList(),
-                      onChanged: (val) {
-                        if (val != null) setDlgState(() => selectedReason = val);
-                      },
-                    ),
-                  ],
-                ),
-              ),
-              actions: [
-                ElevatedButton(
-                  style: ElevatedButton.styleFrom(
-                    backgroundColor: Colors.blue.shade800,
-                    foregroundColor: Colors.white,
-                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(4)),
-                  ),
-                  onPressed: () {
-                    state.recordPumpCompleted(lat: 10.7025, lng: 106.9452, reason: selectedReason);
-                    Navigator.of(ctx).pop();
-                    ScaffoldMessenger.of(context).showSnackBar(
-                      SnackBar(
-                        backgroundColor: Colors.green.shade700,
-                        content: const Text("Đã ghi nhận mốc BƠM XONG và nguyên nhân chờ!"),
-                      ),
-                    );
-                  },
-                  child: const Text("Xác nhận BƠM XONG"),
-                ),
-              ],
-            );
-          },
-        );
-      },
-    );
-  }
 }

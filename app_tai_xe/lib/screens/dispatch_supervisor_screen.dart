@@ -7937,6 +7937,9 @@ PopupMenuButton<int>(
         !userRoles.contains('admin') &&
         !userRoles.contains('manager') &&
         username != 'admin';
+    // Quản trị viên (admin) được quyền đóng ca trực của điều phối viên khác
+    // vào bất kỳ lúc nào mà không phụ thuộc ca của chính mình.
+    final bool isAdmin = userRoles.contains('admin') || username == 'admin';
 
     // Kiểm tra xem tài khoản hiện tại có đang trong ca trực hay không
     final myActiveShift = _activeShifts.firstWhere(
@@ -8213,6 +8216,34 @@ PopupMenuButton<int>(
                             ),
                           ],
                         ),
+                        if (isAdmin && !isMe) ...[
+                          const SizedBox(width: 10),
+                          OutlinedButton.icon(
+                            style: OutlinedButton.styleFrom(
+                              foregroundColor: Colors.red.shade700,
+                              side: BorderSide(color: Colors.red.shade300),
+                              minimumSize: const Size(0, 28),
+                              padding: const EdgeInsets.symmetric(
+                                horizontal: 8,
+                              ),
+                              shape: RoundedRectangleBorder(
+                                borderRadius: BorderRadius.circular(4),
+                              ),
+                              tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                              visualDensity: VisualDensity.compact,
+                            ),
+                            icon: const Icon(Icons.highlight_off, size: 13),
+                            label: const Text(
+                              "Đóng ca",
+                              style: TextStyle(
+                                fontSize: 10.5,
+                                fontWeight: FontWeight.w600,
+                              ),
+                            ),
+                            onPressed: () =>
+                                _handleCheckoutShift(targetShift: shift),
+                          ),
+                        ],
                       ],
                     ),
                   );
@@ -8341,20 +8372,29 @@ PopupMenuButton<int>(
     }
   }
 
-  Future<void> _handleCheckoutShift() async {
+  Future<void> _handleCheckoutShift({Map<String, dynamic>? targetShift}) async {
     final noteCtrl = TextEditingController();
+    final bool isForOther = targetShift != null;
+    final String targetName =
+        (targetShift?['full_name'] ?? targetShift?['username'] ?? '')
+            .toString();
 
     final confirmed = await showDialog<bool>(
       context: context,
       builder: (dialogCtx) => AlertDialog(
         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(4)),
-        title: const Row(
+        title: Row(
           children: [
-            Icon(Icons.assignment_turned_in, color: Colors.teal),
-            SizedBox(width: 8),
-            Text(
-              "Bàn giao ca trực & Kết thúc",
-              style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16),
+            const Icon(Icons.assignment_turned_in, color: Colors.teal),
+            const SizedBox(width: 8),
+            Expanded(
+              child: Text(
+                isForOther
+                    ? "Đóng ca trực của $targetName"
+                    : "Bàn giao ca trực & Kết thúc",
+                style: const TextStyle(
+                    fontWeight: FontWeight.bold, fontSize: 16),
+              ),
             ),
           ],
         ),
@@ -8364,14 +8404,19 @@ PopupMenuButton<int>(
             mainAxisSize: MainAxisSize.min,
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              const Text(
-                "Bạn có chắc muốn kết thúc ca trực hiện tại? Hãy nhập ghi chú bàn giao cho các điều phối viên ca tiếp theo nếu có.",
-                style: TextStyle(fontSize: 13, height: 1.4),
+              Text(
+                isForOther
+                    ? "Bạn đang đóng ca trực của $targetName với vai trò Quản trị viên. Ca trực này sẽ kết thúc ngay lập tức. Bạn có chắc không?"
+                    : "Bạn có chắc muốn kết thúc ca trực hiện tại? Hãy nhập ghi chú bàn giao cho các điều phối viên ca tiếp theo nếu có.",
+                style: const TextStyle(fontSize: 13, height: 1.4),
               ),
               const SizedBox(height: 12),
-              const Text(
-                "Nội dung bàn giao / Ghi chú ca sau:",
-                style: TextStyle(fontSize: 12, fontWeight: FontWeight.bold),
+              Text(
+                isForOther
+                    ? "Ghi chú (do Quản trị viên đóng ca):"
+                    : "Nội dung bàn giao / Ghi chú ca sau:",
+                style: const TextStyle(
+                    fontSize: 12, fontWeight: FontWeight.bold),
               ),
               const SizedBox(height: 6),
               TextField(
@@ -8404,7 +8449,7 @@ PopupMenuButton<int>(
               ),
             ),
             onPressed: () => Navigator.of(dialogCtx).pop(true),
-            child: const Text("Xác nhận Bàn giao"),
+            child: Text(isForOther ? "Đóng ca giúp" : "Xác nhận Bàn giao"),
           ),
         ],
       ),
@@ -8412,18 +8457,26 @@ PopupMenuButton<int>(
 
     if (confirmed == true) {
       setState(() => _isLoading = true);
+      int? targetUserId;
+      if (targetShift != null) {
+        targetUserId = (targetShift['user_id'] as num?)?.toInt();
+      }
       final res = await AdminService.checkoutShift(
         note: noteCtrl.text.trim().isNotEmpty ? noteCtrl.text.trim() : null,
+        userId: targetUserId,
       );
       await _loadAllManagementData();
 
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
-          backgroundColor: res['success'] == true ? Colors.green : Colors.red,
+          backgroundColor:
+              res['success'] == true ? Colors.green : Colors.orange.shade800,
           content: Text(
             res['success'] == true
-                ? "Đã bàn giao và kết thúc ca trực thành công!"
+                ? (isForOther
+                    ? "Đã đóng ca trực của $targetName."
+                    : "Đã bàn giao và kết thúc ca trực thành công!")
                 : "Lỗi: ${res['message']}",
           ),
         ),
@@ -11078,13 +11131,14 @@ PopupMenuButton<int>(
   }
 
   /// Sắp xếp và ưu tiên danh sách phương tiện theo các tiêu chí đa tầng:
+  /// Lưu ý nghiệp vụ: kết quả duyệt kiểm tra 5 ảnh chỉ có hiệu lực trong ngày
+  /// (mỗi ngày tài xế phải gửi lại 5 ảnh và Điều phối duyệt mới), nên chỉ xét
+  /// xe được DUYỆT TRONG NGÀY HIỆN TẠI, không tính lượt duyệt của các ngày trước.
   /// - Tầng 1: Xe đang FREE (chưa chở đơn dở dang) + Đã gửi 5 ảnh và Điều phối DUYỆT HÔM NAY.
   ///           -> Ưu tiên: Gần Nơi nhận hàng nhất (GPS) -> Nhận ít chuyến nhất.
-  /// - Tầng 2 (Fallback): Xe đang FREE (chưa chở đơn dở dang) + Đã từng được Điều phối DUYỆT CHẠY.
+  /// - Tầng 2 (Fallback): Xe đang FREE (chưa chở đơn dở dang) khác (kể cả xe từng được duyệt ngày trước).
   ///           -> Ưu tiên: Nhận ít chuyến nhất -> Gần Nơi nhận hàng nhất.
-  /// - Tầng 3 (Fallback tiếp theo): Xe đang FREE (chưa chở đơn dở dang) khác.
-  ///           -> Ưu tiên: Nhận ít chuyến nhất -> Gần Nơi nhận hàng nhất.
-  /// - Tầng 4: Các xe đang bận chở đơn hàng (đưa xuống cuối để cảnh báo/tham khảo).
+  /// - Tầng 3: Các xe đang bận chở đơn hàng (đưa xuống cuối để cảnh báo/tham khảo).
   List<Map<String, dynamic>> _prioritizeVehiclesForPickup({
     required List<dynamic> vehicles,
     required List<dynamic> orders,
@@ -11097,24 +11151,20 @@ PopupMenuButton<int>(
     final now = DateTime.now();
     final todayStr = "${now.year}-${now.month.toString().padLeft(2, '0')}-${now.day.toString().padLeft(2, '0')}";
 
-    // Phân loại xe theo tình trạng kiểm tra 5 ảnh: duyệt hôm nay vs đã từng được duyệt
+    // Phân loại xe theo tình trạng kiểm tra 5 ảnh: CHỈ tính xe được duyệt trong ngày hiện tại.
+    // Lượt duyệt của các ngày trước không còn hiệu lực vì tài xế phải gửi lại 5 ảnh hằng ngày.
     final approvedPlatesToday = <String>{};
-    final approvedPlatesEver = <String>{};
     for (final insp in inspections) {
       if (insp is! Map) continue;
       final flagStatus = (insp['flag_status'] ?? '').toString().toLowerCase();
-      if (flagStatus == 'approved') {
-        final plate = (insp['plate_number'] ?? '').toString();
-        final norm = _normalizeVehiclePlate(plate);
-        if (norm.isNotEmpty) {
-          approvedPlatesEver.add(norm);
-
-          final rawDate = (insp['check_date'] ?? insp['created_at'] ?? '').toString();
-          final dateOnly = rawDate.split('T')[0].split(' ')[0].trim();
-          if (dateOnly == todayStr) {
-            approvedPlatesToday.add(norm);
-          }
-        }
+      if (flagStatus != 'approved') continue;
+      final rawDate = (insp['check_date'] ?? insp['created_at'] ?? '').toString();
+      final dateOnly = rawDate.split('T')[0].split(' ')[0].trim();
+      if (dateOnly != todayStr) continue;
+      final plate = (insp['plate_number'] ?? '').toString();
+      final norm = _normalizeVehiclePlate(plate);
+      if (norm.isNotEmpty) {
+        approvedPlatesToday.add(norm);
       }
     }
 
@@ -11147,9 +11197,8 @@ PopupMenuButton<int>(
 
     // 3. Phân tầng danh sách xe:
     // tier 1: free == true, approved_today == true
-    // tier 2: free == true, approved_ever == true
-    // tier 3: free == true
-    // tier 4: active_orders > 0 (đang bận)
+    // tier 2: free == true (chưa được duyệt hôm nay)
+    // tier 3: active_orders > 0 (đang bận)
     final candidateList = <Map<String, dynamic>>[];
     for (final v in vehicles) {
       if (v is! Map) continue;
@@ -11160,7 +11209,6 @@ PopupMenuButton<int>(
       final activeOrders = activeOrdersCountByPlate[norm] ?? 0;
       final isFree = activeOrders == 0;
       final isApprovedToday = approvedPlatesToday.contains(norm);
-      final isApprovedEver = approvedPlatesEver.contains(norm);
       final totalTrips = totalTripsCountByPlate[norm] ?? 0;
 
       double? distKm;
@@ -11169,14 +11217,12 @@ PopupMenuButton<int>(
         distKm = _calculateDistanceKm(pickupLat, pickupLng, gps.latitude, gps.longitude);
       }
 
-      int tier = 4;
+      int tier = 3;
       if (isFree) {
         if (isApprovedToday) {
           tier = 1;
-        } else if (isApprovedEver) {
-          tier = 2;
         } else {
-          tier = 3;
+          tier = 2;
         }
       }
 
@@ -11187,7 +11233,6 @@ PopupMenuButton<int>(
         'is_free': isFree,
         'active_orders': activeOrders,
         'is_approved_today': isApprovedToday,
-        'is_approved_ever': isApprovedEver,
         'tier': tier,
         'distance_km': distKm,
         'total_trips': totalTrips,
@@ -11221,8 +11266,8 @@ PopupMenuButton<int>(
         if (tripsA != tripsB) return tripsA.compareTo(tripsB);
       }
 
-      // Trong Tier 2 & Tier 3 (Free fallback): Ưu tiên ít chuyến nhất -> gần nơi nhận nhất
-      if (tierA == 2 || tierA == 3) {
+      // Trong Tier 2 (Free fallback): Ưu tiên ít chuyến nhất -> gần nơi nhận nhất
+      if (tierA == 2) {
         final int tripsA = a['total_trips'] as int;
         final int tripsB = b['total_trips'] as int;
         if (tripsA != tripsB) return tripsA.compareTo(tripsB);
@@ -11239,8 +11284,8 @@ PopupMenuButton<int>(
         }
       }
 
-      // Trong Tier 4 (Đang bận): Ít chuyến nhất -> Ít đơn active nhất
-      if (tierA == 4) {
+      // Trong Tier 3 (Đang bận): Ít chuyến nhất -> Ít đơn active nhất
+      if (tierA == 3) {
         final int actA = a['active_orders'] as int;
         final int actB = b['active_orders'] as int;
         if (actA != actB) return actA.compareTo(actB);
@@ -11901,7 +11946,7 @@ PopupMenuButton<int>(
                         final vtype = (v['vehicle_type'] ?? '').toString();
                         final double? distKm = cand['distance_km'] as double?;
                         final int trips = (cand['total_trips'] as int?) ?? 0;
-                        final int tier = (cand['tier'] as int?) ?? 3;
+                        final int tier = (cand['tier'] as int?) ?? 2;
                         final int activeOrders = (cand['active_orders'] as int?) ?? 0;
 
                         // Nhãn phụ thông tin ưu tiên theo tầng (tier)
@@ -11919,15 +11964,6 @@ PopupMenuButton<int>(
                           }
                           tags.add("$trips chuyến");
                         } else if (tier == 2) {
-                          tagBgColor = Colors.blue.shade50;
-                          tagBorderColor = Colors.blue.shade300;
-                          tagTextColor = Colors.blue.shade800;
-                          tags.add("Đã duyệt chạy");
-                          tags.add("$trips chuyến");
-                          if (distKm != null) {
-                            tags.add(distKm < 1 ? "${(distKm * 1000).toStringAsFixed(0)}m" : "${distKm.toStringAsFixed(1)}km");
-                          }
-                        } else if (tier == 3) {
                           tagBgColor = Colors.amber.shade50;
                           tagBorderColor = Colors.amber.shade400;
                           tagTextColor = Colors.brown.shade800;
@@ -11937,7 +11973,7 @@ PopupMenuButton<int>(
                             tags.add(distKm < 1 ? "${(distKm * 1000).toStringAsFixed(0)}m" : "${distKm.toStringAsFixed(1)}km");
                           }
                         } else {
-                          // Tier 4: Xe bận
+                          // Tier 3: Xe bận
                           tagBgColor = Colors.red.shade50;
                           tagBorderColor = Colors.red.shade300;
                           tagTextColor = Colors.red.shade800;
@@ -12847,7 +12883,7 @@ PopupMenuButton<int>(
       case 'NONE':
         if (ptype == 'delivery_slip') {
           head = 'Ngoài điểm giao hàng';
-        } else if (ptype == 'pump_slip_before' || ptype == 'pump_slip') {
+        } else if (ptype == 'pump_slip_before') {
           head = 'Ngoài điểm nhận hàng';
         } else {
           head = 'Ngoài điểm nhận/giao';
@@ -12865,8 +12901,8 @@ PopupMenuButton<int>(
         : <String, dynamic>{};
     final pumpBeforeUrl =
         (o['pump_slip_before_photo_url'] ?? '').toString().trim();
-    final pumpUrl = (o['pump_slip_photo_url'] ?? '').toString().trim();
     final weighUrl = (o['weigh_slip_photo_url'] ?? '').toString().trim();
+    final arrivalUrl = (o['arrival_photo_url'] ?? '').toString().trim();
     final delivUrl = (o['delivery_slip_photo_url'] ?? '').toString().trim();
     final breakUrl = (o['breakdown_photo_url'] ?? '').toString().trim();
     final hasBreakdown = o['has_breakdown'] == true || breakUrl.isNotEmpty;
@@ -12965,18 +13001,6 @@ PopupMenuButton<int>(
           photoGeoLabel: _geoSummary(o, 'pump_slip_before'),
         ),
         badge(
-          shortLabel: "Bơm xong",
-          fullTitle: "Bơm hàng - Đã bơm xong (Tài xế)",
-          url: pumpUrl,
-          icon: Icons.local_gas_station,
-          activeColor: const Color(0xFF0284C7),
-          gpsLat: _asDouble(o['pump_slip_gps_lat']),
-          gpsLng: _asDouble(o['pump_slip_gps_lng']),
-          gpsAccuracy: _asDouble(o['pump_slip_gps_accuracy']),
-          gpsCapturedAt: (o['pump_slip_gps_captured_at'] ?? '').toString(),
-          photoGeoLabel: _geoSummary(o, 'pump_slip'),
-        ),
-        badge(
           shortLabel: "Cân",
           fullTitle: "Phiếu cân hàng (Tài xế)",
           url: weighUrl,
@@ -12987,6 +13011,18 @@ PopupMenuButton<int>(
           gpsAccuracy: _asDouble(o['weigh_slip_gps_accuracy']),
           gpsCapturedAt: (o['weigh_slip_gps_captured_at'] ?? '').toString(),
           photoGeoLabel: _geoSummary(o, 'weigh_slip'),
+        ),
+        badge(
+          shortLabel: "Đến giao",
+          fullTitle: "Ảnh Đến điểm giao hàng (Tài xế)",
+          url: arrivalUrl,
+          icon: Icons.where_to_vote_outlined,
+          activeColor: const Color(0xFF7C3AED),
+          gpsLat: _asDouble(o['arrival_photo_gps_lat']),
+          gpsLng: _asDouble(o['arrival_photo_gps_lng']),
+          gpsAccuracy: _asDouble(o['arrival_photo_gps_accuracy']),
+          gpsCapturedAt: (o['arrival_photo_gps_captured_at'] ?? '').toString(),
+          photoGeoLabel: _geoSummary(o, 'arrival_photo'),
         ),
         badge(
           shortLabel: "Giao",
@@ -14290,16 +14326,6 @@ PopupMenuButton<int>(
                 ),
                 const SizedBox(height: 12),
                 _buildRuleItem(
-                  icon: Icons.hourglass_bottom_outlined,
-                  title: "3. Cảnh báo thời gian xả bồn quá hạn mức",
-                  desc:
-                      "Thời gian từ lúc bấm ĐẾN vượt quá 120 phút nhưng chưa bấm 'BƠM XONG'. Bắt buộc tài xế giải trình lý do chờ.",
-                  thresholdText: "> 120 phút xả bồn",
-                  statusTag: "Yêu cầu giải trình",
-                  color: Colors.red.shade700,
-                ),
-                const SizedBox(height: 12),
-                _buildRuleItem(
                   icon: Icons.fact_check_outlined,
                   title: "4. Nhắc nộp phiếu cân & Chốt bàn giao hết ca trực",
                   desc:
@@ -14425,47 +14451,6 @@ PopupMenuButton<int>(
                                 "Đã kích hoạt cảnh báo: Dừng 15 phút chưa bấm ĐẾN.",
                               ),
                               backgroundColor: Colors.amber,
-                              duration: Duration(seconds: 2),
-                            ),
-                          );
-                        },
-                      ),
-                    ),
-                    SizedBox(
-                      height: 38,
-                      child: ElevatedButton.icon(
-                        style: ElevatedButton.styleFrom(
-                          backgroundColor: Colors.white,
-                          foregroundColor: Colors.deepOrange.shade800,
-                          side: BorderSide(color: Colors.deepOrange.shade300),
-                          elevation: 0,
-                          padding: const EdgeInsets.symmetric(horizontal: 14),
-                          shape: RoundedRectangleBorder(
-                            borderRadius: BorderRadius.circular(4),
-                          ),
-                        ),
-                        icon: const Icon(
-                          Icons.hourglass_empty_outlined,
-                          size: 16,
-                        ),
-                        label: const Text(
-                          "Đến >120p chưa bơm xong",
-                          style: TextStyle(
-                            fontSize: 12,
-                            fontWeight: FontWeight.bold,
-                          ),
-                        ),
-                        onPressed: () {
-                          state.triggerReminder(
-                            ReminderType.pumpingOverdue,
-                            "Cảnh báo: Đã quá 120 phút kể từ lúc đến trạm. Vui lòng cập nhật trạng thái xả bồn hoặc báo lý do chờ bồn!",
-                          );
-                          ScaffoldMessenger.of(context).showSnackBar(
-                            const SnackBar(
-                              content: Text(
-                                "Đã kích hoạt cảnh báo: Xả bồn quá 120 phút.",
-                              ),
-                              backgroundColor: Colors.deepOrange,
                               duration: Duration(seconds: 2),
                             ),
                           );
@@ -14611,8 +14596,6 @@ PopupMenuButton<int>(
                                 : item.type ==
                                       ReminderType.arrivedZoneNotConfirmed
                                 ? Icons.timer_outlined
-                                : item.type == ReminderType.pumpingOverdue
-                                ? Icons.hourglass_bottom
                                 : Icons.alarm,
                             size: 18,
                             color: Colors.blue.shade800,

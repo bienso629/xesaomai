@@ -728,8 +728,6 @@ class _DriverOrdersScreenState extends State<DriverOrdersScreen> {
         .toString()
         .trim()
         .isNotEmpty;
-    final hasPump =
-        (order['pump_slip_photo_url'] ?? '').toString().trim().isNotEmpty;
     final hasWeigh =
         (order['weigh_slip_photo_url'] ?? '').toString().trim().isNotEmpty;
     final hasDelivery =
@@ -782,12 +780,6 @@ class _DriverOrdersScreenState extends State<DriverOrdersScreen> {
           hasPumpBefore,
           const Color(0xFF0284C7),
           Icons.local_gas_station_outlined,
-        ),
-        chip(
-          "Bơm xong",
-          hasPump,
-          const Color(0xFF0284C7),
-          Icons.local_gas_station,
         ),
         chip(
           "Phiếu cân",
