@@ -21,30 +21,25 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v4
 
-      # Chan doan: buoc nao CHAY nghia la secret do BI THIEU (xem ten buoc trong tab Actions)
-      - name: THIEU secret IOS_DIST_CERT_P12_BASE64
-        if: secrets.IOS_DIST_CERT_P12_BASE64 == ''
-        run: echo "::error::Chua co secret IOS_DIST_CERT_P12_BASE64 (base64 cua file .p12)"
-
-      - name: THIEU secret IOS_PROVISION_PROFILE_BASE64
-        if: secrets.IOS_PROVISION_PROFILE_BASE64 == ''
-        run: echo "::error::Chua co secret IOS_PROVISION_PROFILE_BASE64 (base64 cua file .mobileprovision)"
-
-      - name: THIEU APPLE_TEAM_ID (ca Variables va Secrets deu trong)
-        if: vars.APPLE_TEAM_ID == '' && secrets.APPLE_TEAM_ID == ''
-        run: echo "::error::Chua co APPLE_TEAM_ID o tab Variables hoac Secrets"
-
-      - name: THIEU secret APPSTORE_API_PRIVATE_KEY
-        if: secrets.APPSTORE_API_PRIVATE_KEY == ''
-        run: echo "::error::Chua co secret APPSTORE_API_PRIVATE_KEY (noi dung file .p8)"
-
-      - name: THIEU secret APPSTORE_API_ISSUER_ID
-        if: secrets.APPSTORE_API_ISSUER_ID == ''
-        run: echo "::error::Chua co secret APPSTORE_API_ISSUER_ID"
-
-      - name: THIEU secret APPSTORE_API_KEY_ID
-        if: secrets.APPSTORE_API_KEY_ID == ''
-        run: echo "::error::Chua co secret APPSTORE_API_KEY_ID"
+      - name: Chan doan secrets con thieu
+        env:
+          HAS_P12: ${{ secrets.IOS_DIST_CERT_P12_BASE64 }}
+          HAS_PROFILE: ${{ secrets.IOS_PROVISION_PROFILE_BASE64 }}
+          HAS_TEAM_VAR: ${{ vars.APPLE_TEAM_ID }}
+          HAS_TEAM_SECRET: ${{ secrets.APPLE_TEAM_ID }}
+          HAS_P8: ${{ secrets.APPSTORE_API_PRIVATE_KEY }}
+          HAS_ISSUER: ${{ secrets.APPSTORE_API_ISSUER_ID }}
+          HAS_KEYID: ${{ secrets.APPSTORE_API_KEY_ID }}
+        run: |
+          echo "=== CHAN DOAN SECRETS ==="
+          [ -n "$HAS_P12" ]      && echo "OK: IOS_DIST_CERT_P12_BASE64 co"     || echo "THIEU: IOS_DIST_CERT_P12_BASE64"
+          [ -n "$HAS_PROFILE" ]  && echo "OK: IOS_PROVISION_PROFILE_BASE64 co" || echo "THIEU: IOS_PROVISION_PROFILE_BASE64"
+          [ -n "$HAS_TEAM_VAR" ] && echo "OK: APPLE_TEAM_ID (Variables) co"    || echo "THIEU: APPLE_TEAM_ID o Variables"
+          [ -n "$HAS_TEAM_SECRET" ] && echo "OK: APPLE_TEAM_ID (Secrets) co"   || echo "THIEU: APPLE_TEAM_ID o Secrets"
+          [ -n "$HAS_P8" ]       && echo "OK: APPSTORE_API_PRIVATE_KEY co"     || OK=1
+          [ -n "$HAS_ISSUER" ]   && echo "OK: APPSTORE_API_ISSUER_ID co"       || OK=1
+          [ -n "$HAS_KEYID" ]    && echo "OK: APPSTORE_API_KEY_ID co"          || OK=1
+          echo "=== KET QUA: kiem tra tab Actions de xem dong THIEU ==="
 
       - name: Setup Flutter
         uses: subosito/flutter-action@v2
@@ -165,6 +160,26 @@ jobs:
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
+
+      - name: Chan doan secrets con thieu
+        env:
+          HAS_P12: ${{ secrets.IOS_DIST_CERT_P12_BASE64 }}
+          HAS_PROFILE: ${{ secrets.IOS_PROVISION_PROFILE_BASE64 }}
+          HAS_TEAM_VAR: ${{ vars.APPLE_TEAM_ID }}
+          HAS_TEAM_SECRET: ${{ secrets.APPLE_TEAM_ID }}
+          HAS_P8: ${{ secrets.APPSTORE_API_PRIVATE_KEY }}
+          HAS_ISSUER: ${{ secrets.APPSTORE_API_ISSUER_ID }}
+          HAS_KEYID: ${{ secrets.APPSTORE_API_KEY_ID }}
+        run: |
+          echo "=== CHAN DOAN SECRETS ==="
+          [ -n "$HAS_P12" ]      && echo "OK: IOS_DIST_CERT_P12_BASE64 co"     || echo "THIEU: IOS_DIST_CERT_P12_BASE64"
+          [ -n "$HAS_PROFILE" ]  && echo "OK: IOS_PROVISION_PROFILE_BASE64 co" || echo "THIEU: IOS_PROVISION_PROFILE_BASE64"
+          [ -n "$HAS_TEAM_VAR" ] && echo "OK: APPLE_TEAM_ID (Variables) co"    || echo "THIEU: APPLE_TEAM_ID o Variables"
+          [ -n "$HAS_TEAM_SECRET" ] && echo "OK: APPLE_TEAM_ID (Secrets) co"   || echo "THIEU: APPLE_TEAM_ID o Secrets"
+          [ -n "$HAS_P8" ]       && echo "OK: APPSTORE_API_PRIVATE_KEY co"     || OK=1
+          [ -n "$HAS_ISSUER" ]   && echo "OK: APPSTORE_API_ISSUER_ID co"       || OK=1
+          [ -n "$HAS_KEYID" ]    && echo "OK: APPSTORE_API_KEY_ID co"          || OK=1
+          echo "=== KET QUA: kiem tra tab Actions de xem dong THIEU ==="
 
       - name: Setup Flutter
         uses: subosito/flutter-action@v2
