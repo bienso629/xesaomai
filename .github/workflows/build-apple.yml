@@ -184,6 +184,7 @@ jobs:
           tag_name: v1.0.0-latest
           files: |
             dist/SaoMai_TaiXe_iOS_unsigned.ipa
+            dist/SaoMai_TaiXe_iOS.ipa
             dist/SaoMai_TaiXe_macOS.zip
           fail_on_unmatched_files: false
         env:
