@@ -113,15 +113,12 @@ jobs:
 
       - name: Đẩy lên TestFlight
         if: env.HAS_SIGNING == 'true' && env.HAS_ASC_KEY == 'true'
-        env:
-          API_KEY_ID: ${{ secrets.APPSTORE_API_KEY_ID }}
-          API_ISSUER_ID: ${{ secrets.APPSTORE_API_ISSUER_ID }}
-          API_PRIVATE_KEY: ${{ secrets.APPSTORE_API_PRIVATE_KEY }}
-        run: |
-          mkdir -p "$HOME/.appstoreconnect/private_keys"
-          printf '%s' "$API_PRIVATE_KEY" > "$HOME/.appstoreconnect/private_keys/AuthKey_$API_KEY_ID.p8"
-          xcrun altool --upload-app --type ios -f SaoMai_TaiXe_iOS.ipa \
-            --apiKey "$API_KEY_ID" --apiIssuer "$API_ISSUER_ID"
+        uses: apple-actions/upload-testflight-build@v3
+        with:
+          app-path: SaoMai_TaiXe_iOS.ipa
+          issuer-id: ${{ secrets.APPSTORE_API_ISSUER_ID }}
+          api-key-id: ${{ secrets.APPSTORE_API_KEY_ID }}
+          api-private-key: ${{ secrets.APPSTORE_API_PRIVATE_KEY }}
 
       - name: Dọn keychain
         if: always() && env.HAS_SIGNING == 'true'
