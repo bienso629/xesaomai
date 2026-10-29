@@ -155,9 +155,9 @@ jobs:
 
   build-macos:
     name: Build macOS (.app + .pkg, ký và đẩy App Store nếu có Secrets)
-    runs-on: macos-latest
+    runs-on: macos-13
     env:
-      HAS_MAC_SIGNING: ${{ secrets.IOS_DIST_CERT_P12_BASE64 != '' && secrets.MAC_INSTALLER_P12_BASE64 != '' && secrets.MAC_PROVISION_PROFILE_BASE64 != '' && (vars.APPLE_TEAM_ID != '' || secrets.APPLE_TEAM_ID != '') }}
+      HAS_MAC_SIGNING: ${{ secrets.IOS_DIST_CERT_P12_BASE64 != '' && secrets.MAC_PROVISION_PROFILE_BASE64 != '' && (vars.APPLE_TEAM_ID != '' || secrets.APPLE_TEAM_ID != '') }}
       HAS_ASC_KEY: ${{ secrets.APPSTORE_API_PRIVATE_KEY != '' }}
       BUILD_NUMBER: ${{ github.run_number }}
 
@@ -217,14 +217,14 @@ jobs:
         run: |
           KEYCHAIN="$RUNNER_TEMP/build-macos.keychain-db"
           echo "$P12_BASE64" | base64 --decode > "$RUNNER_TEMP/dist.p12"
-          echo "$INSTALLER_P12_BASE64" | base64 --decode > "$RUNNER_TEMP/installer.p12"
+          if [ -n "$INSTALLER_P12_BASE64" ]; then echo "$INSTALLER_P12_BASE64" | base64 --decode > "$RUNNER_TEMP/installer.p12"; fi
           echo "$PROFILE_BASE64" | base64 --decode > "$RUNNER_TEMP/mac.mobileprovision"
 
           security create-keychain -p "$KEYCHAIN_PASSWORD" "$KEYCHAIN"
           security set-keychain-settings -lut 21600 "$KEYCHAIN"
           security unlock-keychain -p "$KEYCHAIN_PASSWORD" "$KEYCHAIN"
           security import "$RUNNER_TEMP/dist.p12" -P "$P12_PASSWORD" -A -t cert -f pkcs12 -k "$KEYCHAIN"
-          security import "$RUNNER_TEMP/installer.p12" -P "$INSTALLER_P12_PASSWORD" -A -t cert -f pkcs12 -k "$KEYCHAIN"
+          if [ -f "$RUNNER_TEMP/installer.p12" ]; then security import "$RUNNER_TEMP/installer.p12" -P "$INSTALLER_P12_PASSWORD" -A -t cert -f pkcs12 -k "$KEYCHAIN"; fi
           security set-key-partition-list -S apple-tool:,apple: -k "$KEYCHAIN_PASSWORD" "$KEYCHAIN"
           security list-keychains -d user -s "$KEYCHAIN" $(security list-keychains -d user | tr -d '"')
 
@@ -242,6 +242,8 @@ jobs:
         working-directory: ./app_tai_xe/macos
         env:
           TEAM_ID: ${{ vars.APPLE_TEAM_ID || secrets.APPLE_TEAM_ID }}
+          ASC_KEY_P8: ${{ secrets.APPSTORE_API_PRIVATE_KEY }}
+          ASC_KEY_ID: ${{ secrets.APPSTORE_API_KEY_ID }}
         run: |
           perl -0pi -e 's/(\n(\t+)CODE_SIGN_ENTITLEMENTS = Runner\/(Release|DebugProfile)\.entitlements;)/\n$2CODE_SIGN_STYLE = Manual;\n$2DEVELOPMENT_TEAM = $ENV{TEAM_ID};\n$2CODE_SIGN_IDENTITY = "Apple Distribution";\n$2PROVISIONING_PROFILE_SPECIFIER = "$ENV{MAC_PROFILE_NAME}";$1/g' Runner.xcodeproj/project.pbxproj
           grep -c "PROVISIONING_PROFILE_SPECIFIER" Runner.xcodeproj/project.pbxproj
@@ -266,6 +268,10 @@ jobs:
           </plist>
           PLIST
 
+          # Dat API key vao vi tri chuan de xcodebuild -allowProvisioningUpdates tu ky Installer
+          mkdir -p "$HOME/private_keys"
+          printf '%s' "$ASC_KEY_P8" > "$HOME/private_keys/AuthKey_$ASC_KEY_ID.p8"
+
       - name: Build macOS App (bản dùng trực tiếp)
         if: env.HAS_MAC_SIGNING == 'true'
         working-directory: ./app_tai_xe
@@ -277,8 +283,8 @@ jobs:
         if: env.HAS_MAC_SIGNING == 'true'
         working-directory: ./app_tai_xe
         run: |
-          xcodebuild -workspace macos/Runner.xcworkspace -scheme Runner -configuration Release -destination "generic/platform=macOS" -archivePath build/macos/app.xcarchive archive
-          xcodebuild -exportArchive -archivePath build/macos/app.xcarchive -exportOptionsPlist "$RUNNER_TEMP/ExportOptions-macOS.plist" -exportPath build/macos/export
+          xcodebuild -workspace macos/Runner.xcworkspace -scheme Runner -configuration Release -destination "generic/platform=macOS" -archivePath build/macos/app.xcarchive archive -allowProvisioningUpdates
+          xcodebuild -exportArchive -archivePath build/macos/app.xcarchive -exportOptionsPlist "$RUNNER_TEMP/ExportOptions-macOS.plist" -exportPath build/macos/export -allowProvisioningUpdates
           cp build/macos/export/*.pkg "$GITHUB_WORKSPACE/SaoMai_TaiXe_macOS.pkg"
 
       - name: Đẩy PKG lên App Store Connect
