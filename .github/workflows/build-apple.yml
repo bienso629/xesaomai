@@ -155,7 +155,7 @@ jobs:
 
   build-macos:
     name: Build macOS (.app + .pkg, ký và đẩy App Store nếu có Secrets)
-    runs-on: macos-13
+    runs-on: macos-latest
     timeout-minutes: 45
     env:
       HAS_MAC_SIGNING: ${{ secrets.IOS_DIST_CERT_P12_BASE64 != '' && secrets.MAC_PROVISION_PROFILE_BASE64 != '' && (vars.APPLE_TEAM_ID != '' || secrets.APPLE_TEAM_ID != '') }}
