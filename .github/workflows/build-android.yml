@@ -92,5 +92,6 @@ jobs:
           tag_name: v1.0.0-latest
           files: |
             SaoMai_TaiXe_Android.apk
+            SaoMai_TaiXe_Android.aab
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
