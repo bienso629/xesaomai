@@ -249,25 +249,8 @@ jobs:
           perl -0pi -e 's/(\n(\t+)CODE_SIGN_ENTITLEMENTS = Runner\/(Release|DebugProfile)\.entitlements;)/\n$2CODE_SIGN_STYLE = Manual;\n$2DEVELOPMENT_TEAM = $ENV{TEAM_ID};\n$2CODE_SIGN_IDENTITY = "Apple Distribution";\n$2PROVISIONING_PROFILE_SPECIFIER = "$ENV{MAC_PROFILE_NAME}";$1/g' Runner.xcodeproj/project.pbxproj
           grep -c "PROVISIONING_PROFILE_SPECIFIER" Runner.xcodeproj/project.pbxproj
 
-          cat > "$RUNNER_TEMP/ExportOptions-macOS.plist" <<PLIST
-          <?xml version="1.0" encoding="UTF-8"?>
-          <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
-          <plist version="1.0">
-          <dict>
-            <key>method</key><string>app-store</string>
-            <key>teamID</key><string>$TEAM_ID</string>
-            <key>signingStyle</key><string>manual</string>
-            <key>signingCertificate</key><string>Apple Distribution</string>
-            <key>installerSigningCertificate</key><string>3rd Party Mac Installer Application</string>
-            <key>provisioningProfiles</key>
-            <dict>
-              <key>com.taxilogistics.driver.saomai</key><string>$MAC_PROFILE_NAME</string>
-            </dict>
-            <key>uploadSymbols</key><true/>
-            <key>manageAppVersionAndBuildNumber</key><false/>
-          </dict>
-          </plist>
-          PLIST
+          python3 -c "import plistlib; plistlib.dump({'method':'app-store','teamID':'$TEAM_ID','signingStyle':'manual','signingCertificate':'Apple Distribution','installerSigningCertificate':'3rd Party Mac Installer Application','provisioningProfiles':{'com.taxilogistics.driver.saomai':'$MAC_PROFILE_NAME'},'uploadSymbols':True,'manageAppVersionAndBuildNumber':False}, open('$RUNNER_TEMP/ExportOptions-macOS.plist','wb'), fmt=plistlib.FMT_XML)"
+          cat "$RUNNER_TEMP/ExportOptions-macOS.plist"
 
           # Dat API key vao vi tri chuan de xcodebuild -allowProvisioningUpdates tu ky Installer
           mkdir -p "$HOME/private_keys"
