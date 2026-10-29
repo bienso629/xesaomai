@@ -109,7 +109,7 @@ jobs:
           <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
           <plist version="1.0">
           <dict>
-            <key>method</key><string>app-store-connect</string>
+            <key>method</key><string>app-store</string>
             <key>teamID</key><string>$TEAM_ID</string>
             <key>signingStyle</key><string>manual</string>
             <key>signingCertificate</key><string>Apple Distribution</string>
@@ -155,7 +155,8 @@ jobs:
 
   build-macos:
     name: Build macOS (.app + .pkg, ký và đẩy App Store nếu có Secrets)
-    runs-on: macos-latest
+    runs-on: macos-13
+    timeout-minutes: 45
     env:
       HAS_MAC_SIGNING: ${{ secrets.IOS_DIST_CERT_P12_BASE64 != '' && secrets.MAC_PROVISION_PROFILE_BASE64 != '' && (vars.APPLE_TEAM_ID != '' || secrets.APPLE_TEAM_ID != '') }}
       HAS_ASC_KEY: ${{ secrets.APPSTORE_API_PRIVATE_KEY != '' }}
@@ -253,7 +254,7 @@ jobs:
           <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
           <plist version="1.0">
           <dict>
-            <key>method</key><string>app-store-connect</string>
+            <key>method</key><string>app-store</string>
             <key>teamID</key><string>$TEAM_ID</string>
             <key>signingStyle</key><string>manual</string>
             <key>signingCertificate</key><string>Apple Distribution</string>
