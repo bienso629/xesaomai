@@ -154,8 +154,12 @@ jobs:
           retention-days: 30
 
   build-macos:
-    name: Build macOS (.app)
+    name: Build macOS (.app + .pkg, ký và đẩy App Store nếu có Secrets)
     runs-on: macos-latest
+    env:
+      HAS_MAC_SIGNING: ${{ secrets.IOS_DIST_CERT_P12_BASE64 != '' && secrets.MAC_INSTALLER_P12_BASE64 != '' && secrets.MAC_PROVISION_PROFILE_BASE64 != '' && (vars.APPLE_TEAM_ID != '' || secrets.APPLE_TEAM_ID != '') }}
+      HAS_ASC_KEY: ${{ secrets.APPSTORE_API_PRIVATE_KEY != '' }}
+      BUILD_NUMBER: ${{ github.run_number }}
 
     steps:
       - name: Checkout repository
@@ -164,21 +168,17 @@ jobs:
       - name: Chan doan secrets con thieu
         env:
           HAS_P12: ${{ secrets.IOS_DIST_CERT_P12_BASE64 }}
-          HAS_PROFILE: ${{ secrets.IOS_PROVISION_PROFILE_BASE64 }}
+          HAS_MAC_INSTALLER: ${{ secrets.MAC_INSTALLER_P12_BASE64 }}
+          HAS_MAC_PROFILE: ${{ secrets.MAC_PROVISION_PROFILE_BASE64 }}
           HAS_TEAM_VAR: ${{ vars.APPLE_TEAM_ID }}
           HAS_TEAM_SECRET: ${{ secrets.APPLE_TEAM_ID }}
-          HAS_P8: ${{ secrets.APPSTORE_API_PRIVATE_KEY }}
-          HAS_ISSUER: ${{ secrets.APPSTORE_API_ISSUER_ID }}
-          HAS_KEYID: ${{ secrets.APPSTORE_API_KEY_ID }}
         run: |
-          echo "=== CHAN DOAN SECRETS ==="
-          [ -n "$HAS_P12" ]      && echo "OK: IOS_DIST_CERT_P12_BASE64 co"     || echo "THIEU: IOS_DIST_CERT_P12_BASE64"
-          [ -n "$HAS_PROFILE" ]  && echo "OK: IOS_PROVISION_PROFILE_BASE64 co" || echo "THIEU: IOS_PROVISION_PROFILE_BASE64"
-          [ -n "$HAS_TEAM_VAR" ] && echo "OK: APPLE_TEAM_ID (Variables) co"    || echo "THIEU: APPLE_TEAM_ID o Variables"
-          [ -n "$HAS_TEAM_SECRET" ] && echo "OK: APPLE_TEAM_ID (Secrets) co"   || echo "THIEU: APPLE_TEAM_ID o Secrets"
-          [ -n "$HAS_P8" ]       && echo "OK: APPSTORE_API_PRIVATE_KEY co"     || OK=1
-          [ -n "$HAS_ISSUER" ]   && echo "OK: APPSTORE_API_ISSUER_ID co"       || OK=1
-          [ -n "$HAS_KEYID" ]    && echo "OK: APPSTORE_API_KEY_ID co"          || OK=1
+          echo "=== CHAN DOAN SECRETS MACOS ==="
+          [ -n "$HAS_P12" ]           && echo "OK: IOS_DIST_CERT_P12_BASE64 co"     || echo "THIEU: IOS_DIST_CERT_P12_BASE64"
+          [ -n "$HAS_MAC_INSTALLER" ] && echo "OK: MAC_INSTALLER_P12_BASE64 co"     || echo "THIEU: MAC_INSTALLER_P12_BASE64"
+          [ -n "$HAS_MAC_PROFILE" ]   && echo "OK: MAC_PROVISION_PROFILE_BASE64 co" || echo "THIEU: MAC_PROVISION_PROFILE_BASE64"
+          [ -n "$HAS_TEAM_VAR" ]      && echo "OK: APPLE_TEAM_ID (Variables) co"    || echo "THIEU: APPLE_TEAM_ID o Variables"
+          [ -n "$HAS_TEAM_SECRET" ]   && echo "OK: APPLE_TEAM_ID (Secrets) co"      || echo "THIEU: APPLE_TEAM_ID o Secrets"
           echo "=== KET QUA: kiem tra tab Actions de xem dong THIEU ==="
 
       - name: Setup Flutter
@@ -191,19 +191,119 @@ jobs:
         working-directory: ./app_tai_xe
         run: flutter pub get
 
-      - name: Build macOS Release
+      # ---------- Không đủ Secrets macOS: giữ cách build cũ (ZIP chưa ký) ----------
+      - name: Build macOS Release (no codesign)
+        if: env.HAS_MAC_SIGNING != 'true'
         working-directory: ./app_tai_xe
-        run: flutter build macos --release
+        run: |
+          echo "::warning::Chưa đủ Secrets ký macOS App Store, đang build bản ZIP chưa ký."
+          flutter build macos --release --build-number=$BUILD_NUMBER
 
       - name: Package macOS app into ZIP
+        if: env.HAS_MAC_SIGNING != 'true'
         working-directory: ./app_tai_xe/build/macos/Build/Products/Release
         run: ditto -c -k --sequesterRsrc --keepParent app_tai_xe.app "$GITHUB_WORKSPACE/SaoMai_TaiXe_macOS.zip"
+
+      # ---------- Có đủ Secrets: build bản App Store (PKG đã ký) ----------
+      - name: Cài chứng chỉ và provisioning profile macOS
+        if: env.HAS_MAC_SIGNING == 'true'
+        env:
+          P12_BASE64: ${{ secrets.IOS_DIST_CERT_P12_BASE64 }}
+          P12_PASSWORD: ${{ secrets.IOS_DIST_CERT_PASSWORD }}
+          INSTALLER_P12_BASE64: ${{ secrets.MAC_INSTALLER_P12_BASE64 }}
+          INSTALLER_P12_PASSWORD: ${{ secrets.MAC_INSTALLER_P12_PASSWORD }}
+          PROFILE_BASE64: ${{ secrets.MAC_PROVISION_PROFILE_BASE64 }}
+          KEYCHAIN_PASSWORD: ${{ secrets.KEYCHAIN_PASSWORD }}
+        run: |
+          KEYCHAIN="$RUNNER_TEMP/build-macos.keychain-db"
+          echo "$P12_BASE64" | base64 --decode > "$RUNNER_TEMP/dist.p12"
+          echo "$INSTALLER_P12_BASE64" | base64 --decode > "$RUNNER_TEMP/installer.p12"
+          echo "$PROFILE_BASE64" | base64 --decode > "$RUNNER_TEMP/mac.mobileprovision"
+
+          security create-keychain -p "$KEYCHAIN_PASSWORD" "$KEYCHAIN"
+          security set-keychain-settings -lut 21600 "$KEYCHAIN"
+          security unlock-keychain -p "$KEYCHAIN_PASSWORD" "$KEYCHAIN"
+          security import "$RUNNER_TEMP/dist.p12" -P "$P12_PASSWORD" -A -t cert -f pkcs12 -k "$KEYCHAIN"
+          security import "$RUNNER_TEMP/installer.p12" -P "$INSTALLER_P12_PASSWORD" -A -t cert -f pkcs12 -k "$KEYCHAIN"
+          security set-key-partition-list -S apple-tool:,apple: -k "$KEYCHAIN_PASSWORD" "$KEYCHAIN"
+          security list-keychains -d user -s "$KEYCHAIN" $(security list-keychains -d user | tr -d '"')
+
+          security cms -D -i "$RUNNER_TEMP/mac.mobileprovision" > "$RUNNER_TEMP/profile.plist"
+          UUID=$(/usr/libexec/PlistBuddy -c "Print UUID" "$RUNNER_TEMP/profile.plist")
+          NAME=$(/usr/libexec/PlistBuddy -c "Print Name" "$RUNNER_TEMP/profile.plist")
+          mkdir -p "$HOME/Library/MobileDevice/Provisioning Profiles"
+          mkdir -p "$HOME/Library/Developer/Xcode/UserData/Provisioning Profiles"
+          cp "$RUNNER_TEMP/mac.mobileprovision" "$HOME/Library/MobileDevice/Provisioning Profiles/$UUID.mobileprovision"
+          cp "$RUNNER_TEMP/mac.mobileprovision" "$HOME/Library/Developer/Xcode/UserData/Provisioning Profiles/$UUID.mobileprovision"
+          echo "MAC_PROFILE_NAME=$NAME" >> "$GITHUB_ENV"
+
+      - name: Bật ký thủ công cho target Runner macOS
+        if: env.HAS_MAC_SIGNING == 'true'
+        working-directory: ./app_tai_xe/macos
+        env:
+          TEAM_ID: ${{ vars.APPLE_TEAM_ID || secrets.APPLE_TEAM_ID }}
+        run: |
+          perl -0pi -e 's/(\n(\t+)CODE_SIGN_ENTITLEMENTS = Runner\/(Release|DebugProfile)\.entitlements;)/\n$2CODE_SIGN_STYLE = Manual;\n$2DEVELOPMENT_TEAM = $ENV{TEAM_ID};\n$2CODE_SIGN_IDENTITY = "Apple Distribution";\n$2PROVISIONING_PROFILE_SPECIFIER = "$ENV{MAC_PROFILE_NAME}";$1/g' Runner.xcodeproj/project.pbxproj
+          grep -c "PROVISIONING_PROFILE_SPECIFIER" Runner.xcodeproj/project.pbxproj
+
+          cat > "$RUNNER_TEMP/ExportOptions-macOS.plist" <<PLIST
+          <?xml version="1.0" encoding="UTF-8"?>
+          <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+          <plist version="1.0">
+          <dict>
+            <key>method</key><string>app-store-connect</string>
+            <key>teamID</key><string>$TEAM_ID</string>
+            <key>signingStyle</key><string>manual</string>
+            <key>signingCertificate</key><string>Apple Distribution</string>
+            <key>installerSigningCertificate</key><string>3rd Party Mac Installer Application</string>
+            <key>provisioningProfiles</key>
+            <dict>
+              <key>com.taxilogistics.driver.saomai</key><string>$MAC_PROFILE_NAME</string>
+            </dict>
+            <key>uploadSymbols</key><true/>
+            <key>manageAppVersionAndBuildNumber</key><false/>
+          </dict>
+          </plist>
+          PLIST
+
+      - name: Build macOS App (bản dùng trực tiếp)
+        if: env.HAS_MAC_SIGNING == 'true'
+        working-directory: ./app_tai_xe
+        run: |
+          flutter build macos --release --build-number=$BUILD_NUMBER
+          ditto -c -k --sequesterRsrc --keepParent build/macos/Build/Products/Release/app_tai_xe.app "$GITHUB_WORKSPACE/SaoMai_TaiXe_macOS.zip"
+
+      - name: Archive và xuất PKG App Store
+        if: env.HAS_MAC_SIGNING == 'true'
+        working-directory: ./app_tai_xe
+        run: |
+          xcodebuild -workspace macos/Runner.xcworkspace -scheme Runner -configuration Release -destination "generic/platform=macOS" -archivePath build/macos/app.xcarchive archive
+          xcodebuild -exportArchive -archivePath build/macos/app.xcarchive -exportOptionsPlist "$RUNNER_TEMP/ExportOptions-macOS.plist" -exportPath build/macos/export
+          cp build/macos/export/*.pkg "$GITHUB_WORKSPACE/SaoMai_TaiXe_macOS.pkg"
+
+      - name: Đẩy PKG lên App Store Connect
+        if: env.HAS_MAC_SIGNING == 'true' && env.HAS_ASC_KEY == 'true'
+        uses: apple-actions/upload-testflight-build@v3
+        with:
+          app-path: SaoMai_TaiXe_macOS.pkg
+          issuer-id: ${{ secrets.APPSTORE_API_ISSUER_ID }}
+          api-key-id: ${{ secrets.APPSTORE_API_KEY_ID }}
+          api-private-key: ${{ secrets.APPSTORE_API_PRIVATE_KEY }}
+
+      - name: Dọn keychain
+        if: always() && env.HAS_MAC_SIGNING == 'true'
+        run: |
+          security delete-keychain "$RUNNER_TEMP/build-macos.keychain-db" || true
+          rm -f "$RUNNER_TEMP/dist.p12" "$RUNNER_TEMP/installer.p12" "$RUNNER_TEMP/mac.mobileprovision" "$HOME/.appstoreconnect/private_keys/"*.p8
 
       - name: Upload macOS Artifact
         uses: actions/upload-artifact@v4
         with:
           name: SaoMai_TaiXe_macOS
-          path: SaoMai_TaiXe_macOS.zip
+          path: |
+            SaoMai_TaiXe_macOS.zip
+            SaoMai_TaiXe_macOS.pkg
+          if-no-files-found: error
           retention-days: 30
 
   release:
@@ -226,6 +326,7 @@ jobs:
             dist/SaoMai_TaiXe_iOS_unsigned.ipa
             dist/SaoMai_TaiXe_iOS.ipa
             dist/SaoMai_TaiXe_macOS.zip
+            dist/SaoMai_TaiXe_macOS.pkg
           fail_on_unmatched_files: false
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
