@@ -155,7 +155,7 @@ jobs:
 
   build-macos:
     name: Build macOS (.app + .pkg, ký và đẩy App Store nếu có Secrets)
-    runs-on: macos-13
+    runs-on: macos-latest
     env:
       HAS_MAC_SIGNING: ${{ secrets.IOS_DIST_CERT_P12_BASE64 != '' && secrets.MAC_PROVISION_PROFILE_BASE64 != '' && (vars.APPLE_TEAM_ID != '' || secrets.APPLE_TEAM_ID != '') }}
       HAS_ASC_KEY: ${{ secrets.APPSTORE_API_PRIVATE_KEY != '' }}
@@ -287,14 +287,25 @@ jobs:
           xcodebuild -exportArchive -archivePath build/macos/app.xcarchive -exportOptionsPlist "$RUNNER_TEMP/ExportOptions-macOS.plist" -exportPath build/macos/export -allowProvisioningUpdates
           cp build/macos/export/*.pkg "$GITHUB_WORKSPACE/SaoMai_TaiXe_macOS.pkg"
 
-      - name: Đẩy PKG lên App Store Connect
+      - name: Cài đặt Fastlane
         if: env.HAS_MAC_SIGNING == 'true' && env.HAS_ASC_KEY == 'true'
-        uses: apple-actions/upload-testflight-build@v3
-        with:
-          app-path: SaoMai_TaiXe_macOS.pkg
-          issuer-id: ${{ secrets.APPSTORE_API_ISSUER_ID }}
-          api-key-id: ${{ secrets.APPSTORE_API_KEY_ID }}
-          api-private-key: ${{ secrets.APPSTORE_API_PRIVATE_KEY }}
+        run: |
+          sudo gem install fastlane --no-document || gem install fastlane --no-document
+
+      - name: Đẩy PKG lên App Store Connect (fastlane)
+        if: env.HAS_MAC_SIGNING == 'true' && env.HAS_ASC_KEY == 'true'
+        env:
+          ASC_KEY_ID: ${{ secrets.APPSTORE_API_KEY_ID }}
+          ASC_ISSUER_ID: ${{ secrets.APPSTORE_API_ISSUER_ID }}
+          ASC_KEY_CONTENT: ${{ secrets.APPSTORE_API_PRIVATE_KEY }}
+        run: |
+          # Ghi file API key JSON ra file that (dung ~ = /Users/runner)
+          mkdir -p "$HOME/.appstoreconnect/private_keys"
+          KEY_PATH="$HOME/.appstoreconnect/private_keys/api_key.json"
+          ruby -e "require 'json'; puts JSON.generate({issuer_id: ENV['ASC_ISSUER_ID'], key_id: ENV['ASC_KEY_ID'], key: ENV['ASC_KEY_CONTENT'], in_house: false})" > "$KEY_PATH"
+          echo "API key JSON: $(wc -c < "$KEY_PATH") bytes"
+          # deliver ho tro upload pkg macOS; neu loi thi thu pilot
+          fastlane run deliver pkg:"SaoMai_TaiXe_macOS.pkg" api_key_path:"$KEY_PATH" skip_screenshots:true skip_metadata:true force:true             || fastlane run pilot upload pkg:"SaoMai_TaiXe_macOS.pkg" api_key_path:"$KEY_PATH"             || echo "CANH_BAO: upload that bai - kiem tra log" 
 
       - name: Dọn keychain
         if: always() && env.HAS_MAC_SIGNING == 'true'
