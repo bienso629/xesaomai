@@ -891,6 +891,62 @@ class AdminService {
     }
   }
 
+  // ===== HỒ SƠ CÁ NHÂN (SELF-SERVICE) =====
+
+  /// Lấy thông tin hồ sơ của tài khoản đang đăng nhập (GET /auth/me)
+  static Future<Map<String, dynamic>?> fetchMyProfile() async {
+    try {
+      final res = await http
+          .get(Uri.parse('$baseUrl/auth/me'), headers: await _headers())
+          .timeout(const Duration(seconds: 8));
+      await _checkUnauthorized(res);
+      if (res.statusCode == 200) {
+        return jsonDecode(res.body) as Map<String, dynamic>;
+      }
+    } catch (_) {}
+    return null;
+  }
+
+  /// Cập nhật hồ sơ cá nhân của chính mình (PUT /me/profile)
+  static Future<Map<String, dynamic>> updateMyProfile(Map<String, dynamic> body) async {
+    try {
+      final res = await http
+          .put(Uri.parse('$baseUrl/me/profile'), headers: await _headers(), body: jsonEncode(body))
+          .timeout(const Duration(seconds: 8));
+      await _checkUnauthorized(res);
+      final data = jsonDecode(res.body);
+      if (res.statusCode == 200) {
+        return {'success': true, 'data': data};
+      }
+      return {'success': false, 'message': data['detail'] ?? 'Cập nhật hồ sơ thất bại.'};
+    } catch (e) {
+      return {'success': false, 'message': 'Không thể kết nối API: $e'};
+    }
+  }
+
+  /// Đổi mật khẩu của chính mình (PUT /me/password)
+  static Future<Map<String, dynamic>> changeMyPassword({
+    required String currentPassword,
+    required String newPassword,
+  }) async {
+    try {
+      final res = await http
+          .put(Uri.parse('$baseUrl/me/password'), headers: await _headers(), body: jsonEncode({
+            'current_password': currentPassword,
+            'new_password': newPassword,
+          }))
+          .timeout(const Duration(seconds: 8));
+      await _checkUnauthorized(res);
+      final data = jsonDecode(res.body);
+      if (res.statusCode == 200) {
+        return {'success': true, 'message': data['message'] ?? 'Đổi mật khẩu thành công.'};
+      }
+      return {'success': false, 'message': data['detail'] ?? 'Đổi mật khẩu thất bại.'};
+    } catch (e) {
+      return {'success': false, 'message': 'Không thể kết nối API: $e'};
+    }
+  }
+
   /// Tải tệp hình ảnh lên server và nhận URL lưu trữ
   static Future<Map<String, dynamic>> uploadImage(String filePath) async {
     try {

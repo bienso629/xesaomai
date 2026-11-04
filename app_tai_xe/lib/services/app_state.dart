@@ -24,18 +24,36 @@ class AppState extends ChangeNotifier {
   String? currentFullName;
   List<String> userRoles = [];
 
+  // Thông tin hồ sơ cá nhân (đồng bộ từ GET /auth/me và PUT /me/profile)
+  String? currentPhone;
+  String? currentEmail;
+  String? currentAddress;
+  String? currentAvatarUrl;
+
+  /// Bộ đếm phiên hồ sơ: tăng lên 1 mỗi khi lưu hồ sơ thành công.
+  /// Các màn hình khác (vd: danh sách Tài khoản) dựa vào đó để tự làm mới.
+  int profileVersion = 0;
+
   void setLoggedInUser({
     required String token,
     required int userId,
     required String username,
     required String fullName,
     required List<String> roles,
+    String? phone,
+    String? email,
+    String? address,
+    String? avatarUrl,
   }) {
     authToken = token;
     currentUserId = userId;
     currentUsername = username;
     currentFullName = fullName;
     userRoles = roles;
+    currentPhone = phone;
+    currentEmail = email;
+    currentAddress = address;
+    currentAvatarUrl = avatarUrl;
     currentDriverName = fullName;
     currentDriverId = "TX-${userId.toString().padLeft(4, '0')}";
     if (roles.contains('admin') || roles.contains('manager') || roles.contains('dispatcher') || roles.contains('mechanic') || username.toLowerCase() == 'admin') {
@@ -44,6 +62,68 @@ class AppState extends ChangeNotifier {
       currentRole = UserRole.driver;
     }
     notifyListeners();
+  }
+
+  /// Tải hồ sơ cá nhân chi tiết từ server (GET /auth/me) và cập nhật AppState.
+  Future<void> fetchMyProfile() async {
+    try {
+      final data = await AdminService.fetchMyProfile();
+      if (data == null) return;
+      currentUserId = (data['id'] is int) ? data['id'] as int : int.tryParse('${data['id'] ?? ''}');
+      currentUsername = (data['username'] ?? currentUsername ?? '').toString();
+      currentFullName = (data['full_name'] ?? '').toString();
+      currentPhone = (data['phone'] ?? '').toString();
+      currentEmail = (data['email'] ?? '').toString();
+      currentAddress = (data['address'] ?? '').toString();
+      currentAvatarUrl = (data['avatar_url'] ?? '').toString();
+      if (data['roles'] is List && (data['roles'] as List).isNotEmpty) {
+        userRoles = List<String>.from((data['roles'] as List).map((e) => e.toString()));
+      }
+      notifyListeners();
+    } catch (e) {
+      debugPrint('fetchMyProfile error: $e');
+    }
+  }
+
+  /// Cập nhật hồ sơ cá nhân lên server (PUT /me/profile) và đồng bộ AppState.
+  /// Trả về null nếu thành công, ngược lại trả về chuỗi thông báo lỗi.
+  Future<String?> updateMyProfile({
+    required String fullName,
+    required String phone,
+    required String email,
+    required String address,
+    String? avatarUrl,
+  }) async {
+    final body = <String, dynamic>{
+      'full_name': fullName,
+      'phone': phone,
+      'email': email,
+      'address': address,
+      if (avatarUrl != null && avatarUrl.isNotEmpty) 'avatar_url': avatarUrl,
+    };
+    final res = await AdminService.updateMyProfile(body);
+    if (res['success'] == true) {
+      final data = res['data'];
+      // Backend trả về {"status", "message", "profile": {...}} -> lấy 'profile' nếu có
+      final Map profile = (data is Map && data['profile'] is Map)
+          ? data['profile'] as Map
+          : (data is Map ? data : <String, dynamic>{});
+      currentFullName = (profile['full_name'] ?? fullName).toString();
+      currentPhone = (profile['phone'] ?? phone).toString();
+      currentEmail = (profile['email'] ?? email).toString();
+      currentAddress = (profile['address'] ?? address).toString();
+      if (avatarUrl != null && avatarUrl.isNotEmpty) {
+        currentAvatarUrl = avatarUrl;
+      }
+      if (profile['avatar_url'] != null &&
+          profile['avatar_url'].toString().trim().isNotEmpty) {
+        currentAvatarUrl = profile['avatar_url'].toString();
+      }
+      profileVersion++; // Báo cho các màn hình khác biết hồ sơ vừa đổi
+      notifyListeners();
+      return null;
+    }
+    return (res['message'] ?? 'Không thể cập nhật hồ sơ.').toString();
   }
 
   void setRole(UserRole role) {

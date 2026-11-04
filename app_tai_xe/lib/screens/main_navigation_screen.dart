@@ -4,6 +4,7 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import '../services/app_state.dart';
+import '../config/api_config.dart';
 import '../services/auth_service.dart';
 import '../services/notification_helper.dart';
 import 'map_screen.dart';
@@ -12,6 +13,7 @@ import 'vehicle_inspection_screen.dart';
 import 'driver_inspection_history_screen.dart';
 import 'driver_schedule_screen.dart';
 import 'driver_orders_screen.dart';
+import 'profile_screen.dart';
 
 class MainNavigationScreen extends StatefulWidget {
   const MainNavigationScreen({super.key});
@@ -370,6 +372,98 @@ class _MainNavigationScreenState extends State<MainNavigationScreen> {
     );
   }
 
+  // Xây dựng avatar tài khoản trong sidebar, kèm nút Edit nhỏ chồng góc dưới-phải
+  Widget _buildSidebarAvatar(AppState state) {
+    final url = (state.currentAvatarUrl ?? '').trim();
+    final hasUrl = url.isNotEmpty;
+    final fullUrl = hasUrl
+        ? (url.startsWith('http://') || url.startsWith('https://')
+            ? url
+            : '${ApiConfig.host}${url.startsWith('/') ? '' : '/'}$url')
+        : url;
+    final name = (state.currentFullName ?? state.currentUsername ?? '?').trim();
+    final parts = name.split(RegExp(r'\s+')).where((p) => p.isNotEmpty).toList();
+    final initials = parts.isEmpty
+        ? '?'
+        : parts.length == 1
+            ? parts.first.substring(0, 1).toUpperCase()
+            : (parts.first.substring(0, 1) + parts.last.substring(0, 1)).toUpperCase();
+    return Stack(
+      clipBehavior: Clip.none,
+      children: [
+        Container(
+          width: 44,
+          height: 44,
+          decoration: BoxDecoration(
+            shape: BoxShape.circle,
+            border: Border.all(color: Colors.white24, width: 1.5),
+          ),
+          child: CircleAvatar(
+            radius: 21,
+            backgroundColor: Colors.blue.shade700,
+            child: ClipOval(
+              child: hasUrl
+                  ? Image.network(
+                      fullUrl,
+                      width: 42,
+                      height: 42,
+                      fit: BoxFit.cover,
+                      errorBuilder: (_, _, _) => Container(
+                        width: 42,
+                        height: 42,
+                        color: Colors.blue.shade700,
+                        alignment: Alignment.center,
+                        child: Text(
+                          initials,
+                          style: const TextStyle(
+                            color: Colors.white,
+                            fontSize: 15,
+                            fontWeight: FontWeight.bold,
+                          ),
+                        ),
+                      ),
+                    )
+                  : Container(
+                      width: 42,
+                      height: 42,
+                      alignment: Alignment.center,
+                      child: Text(
+                        initials,
+                        style: const TextStyle(
+                          color: Colors.white,
+                          fontSize: 15,
+                          fontWeight: FontWeight.bold,
+                        ),
+                      ),
+                    ),
+            ),
+          ),
+        ),
+        // Nút Edit nhỏ bên dưới avatar
+        Positioned(
+          right: -4,
+          bottom: -4,
+          child: Container(
+            padding: const EdgeInsets.all(2.5),
+            decoration: const BoxDecoration(
+              color: Color(0xFF0F172A),
+              shape: BoxShape.circle,
+            ),
+            child: Container(
+              padding: const EdgeInsets.all(2.5),
+              decoration: BoxDecoration(
+                color: Colors.blue.shade800,
+                shape: BoxShape.circle,
+                border: Border.all(color: Colors.white, width: 1),
+              ),
+              child: const Icon(Icons.edit, size: 9, color: Colors.white),
+            ),
+          ),
+        ),
+      ],
+    );
+  }
+
   Widget _buildSidebarContent(AppState state, {bool isMobile = false}) {
     return Container(
       color: const Color(
@@ -398,23 +492,14 @@ class _MainNavigationScreenState extends State<MainNavigationScreen> {
                   Row(
                     crossAxisAlignment: CrossAxisAlignment.center,
                     children: [
-                      ClipRRect(
-                        borderRadius: BorderRadius.circular(8),
-                        child: Image.asset(
-                          'assets/images/app_icon.png',
-                          width: 44,
-                          height: 44,
-                          fit: BoxFit.cover,
-                          errorBuilder: (_, __, ___) => Container(
-                            width: 44,
-                            height: 44,
-                            color: Colors.white12,
-                            child: const Icon(
-                              Icons.local_shipping,
-                              color: Colors.white,
-                            ),
-                          ),
-                        ),
+                      // Avatar tài khoản + nút Edit nhỏ bên dưới, bấm mở Hồ sơ cá nhân
+                      GestureDetector(
+                        onTap: () {
+                          Navigator.of(context).push(
+                            MaterialPageRoute(builder: (_) => const ProfileScreen()),
+                          );
+                        },
+                        child: _buildSidebarAvatar(state),
                       ),
                       const SizedBox(width: 10),
                       Expanded(

@@ -22,7 +22,7 @@ from fastapi import FastAPI, HTTPException, Depends, status, UploadFile, File, W
 from fastapi.staticfiles import StaticFiles
 from fastapi.responses import HTMLResponse
 from fastapi.security import OAuth2PasswordBearer, OAuth2PasswordRequestForm
-from pydantic import BaseModel, ConfigDict, model_validator
+from pydantic import BaseModel, ConfigDict, Field, model_validator
 from jose import JWTError, jwt
 import bcrypt
 
@@ -1087,8 +1087,118 @@ def get_my_profile(current_user: dict = Depends(get_current_user)):
         "driver_type": current_user["driver_type"],
         "contractor_name": current_user["contractor_name"],
         "customer_name": current_user["customer_name"],
+        "email": current_user.get("email"),
+        "address": current_user.get("address"),
+        "avatar_url": current_user.get("avatar_url"),
         "roles": current_user["roles"]
     }
+
+# ===== HỒ SƠ CÁ NHÂN (SELF-SERVICE) =====
+# Mọi tài khoản đang đăng nhập được tự xem/sửa hồ sơ CỦA CHÍNH MÌNH.
+# Không tái dùng /users/{id} vì endpoint đó yêu cầu quyền admin/manager
+# và cho phép đổi cả roles (bảo mật: người dùng thường không được tự gán quyền).
+
+class SelfProfileUpdate(BaseModel):
+    full_name: Optional[str] = Field(default=None, max_length=100)
+    phone: Optional[str] = Field(default=None, max_length=20)
+    email: Optional[str] = Field(default=None, max_length=150)
+    address: Optional[str] = Field(default=None, max_length=500)
+    avatar_url: Optional[str] = Field(default=None, max_length=500)
+
+class SelfPasswordChange(BaseModel):
+    current_password: str
+    new_password: str
+
+@app.put("/api/v1/me/profile")
+def update_my_profile(req: SelfProfileUpdate, current_user: dict = Depends(get_current_user)):
+    fields = req.model_dump(exclude_unset=True)
+
+    if "full_name" in fields and (not fields["full_name"] or not str(fields["full_name"]).strip()):
+        raise HTTPException(status_code=400, detail="Họ và tên không được để trống")
+    if "phone" in fields and (not fields["phone"] or not str(fields["phone"]).strip()):
+        raise HTTPException(status_code=400, detail="Số điện thoại không được để trống")
+    if "email" in fields and str(fields["email"]).strip():
+        email_val = str(fields["email"]).strip()
+        if "@" not in email_val or "." not in email_val.split("@")[-1]:
+            raise HTTPException(status_code=400, detail="Địa chỉ email không hợp lệ")
+        fields["email"] = email_val
+
+    if not fields:
+        return {
+            "status": "success",
+            "message": "Không có trường nào thay đổi",
+            "profile": {
+                "id": current_user["id"],
+                "username": current_user["username"],
+                "full_name": current_user["full_name"],
+                "phone": current_user["phone"],
+                "email": current_user.get("email"),
+                "address": current_user.get("address"),
+                "avatar_url": current_user.get("avatar_url"),
+            },
+        }
+
+    conn = get_db()
+    cur = conn.cursor()
+    try:
+        # Tên cột đến từ whitelist Pydantic model (an toàn SQL injection),
+        # chỉ ghép phần SET cho các trường thực sự được gửi lên.
+        set_parts = [f"{k} = %s" for k in fields.keys()]
+        values = list(fields.values()) + [current_user["id"]]
+        cur.execute(
+            f"UPDATE users SET {', '.join(set_parts)}, updated_at = CURRENT_TIMESTAMP WHERE id = %s "
+            "RETURNING id, username, full_name, phone, email, address, avatar_url",
+            tuple(values),
+        )
+        updated = cur.fetchone()
+        conn.commit()
+        cur.close()
+        conn.close()
+        return {
+            "status": "success",
+            "message": "Cập nhật hồ sơ cá nhân thành công",
+            "profile": updated,
+        }
+    except Exception as e:
+        conn.rollback()
+        cur.close()
+        conn.close()
+        raise HTTPException(status_code=400, detail=str(e))
+
+@app.put("/api/v1/me/password")
+def change_my_password(req: SelfPasswordChange, current_user: dict = Depends(get_current_user)):
+    # Người dùng phải xác minh đúng mật khẩu hiện tại trước khi được đổi
+    new_password = (req.new_password or "").strip()
+    if len(new_password) < 6:
+        raise HTTPException(status_code=400, detail="Mật khẩu mới phải có ít nhất 6 ký tự")
+
+    conn = get_db()
+    cur = conn.cursor()
+    try:
+        cur.execute("SELECT password_hash FROM users WHERE id = %s", (current_user["id"],))
+        user = cur.fetchone()
+        if not user or not verify_password(req.current_password or "", user["password_hash"]):
+            raise HTTPException(status_code=400, detail="Mật khẩu hiện tại không chính xác")
+
+        hashed_pwd = get_password_hash(new_password)
+        cur.execute(
+            "UPDATE users SET password_hash = %s, updated_at = CURRENT_TIMESTAMP WHERE id = %s",
+            (hashed_pwd, current_user["id"]),
+        )
+        conn.commit()
+        cur.close()
+        conn.close()
+        return {"status": "success", "message": "Đổi mật khẩu thành công"}
+    except HTTPException:
+        conn.rollback()
+        cur.close()
+        conn.close()
+        raise
+    except Exception as e:
+        conn.rollback()
+        cur.close()
+        conn.close()
+        raise HTTPException(status_code=400, detail=str(e))
 
 # 2. Quản lý Người dùng & Tạo tài khoản mới (Chỉ admin tối cao mới có quyền Quản lý Tài khoản & Phân quyền)
 @app.post("/api/v1/users", status_code=status.HTTP_201_CREATED)

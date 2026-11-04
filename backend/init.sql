@@ -7,7 +7,7 @@ CREATE TABLE IF NOT EXISTS users (
     username VARCHAR(50) UNIQUE NOT NULL,
     password_hash VARCHAR(255) NOT NULL,
     full_name VARCHAR(100) NOT NULL,
-    phone VARCHAR(20) UNIQUE NOT NULL,
+    phone VARCHAR(20) NOT NULL,
     driver_type VARCHAR(30) DEFAULT 'INTERNAL' CHECK (driver_type IN ('INTERNAL', 'RENTAL', 'CUSTOMER_SELF')),
     contractor_name VARCHAR(150),
     customer_name VARCHAR(150),

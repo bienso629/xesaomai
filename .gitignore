@@ -60,3 +60,13 @@ docs/AuthKey_*.p8
 *.p12
 *.mobileprovision
 *.cer.der
+# Keystore Android - khong bao gio dua len git
+docs/**/my-release-key.jks
+
+# Thu muc backup/tem va file phan tich noi bo
+.backup_4_trang_thai/
+.backup_gop_4_trang_thai/
+.tmp_cmp/
+graphify-out/
+error_zoom*.png
+dialog_screen_check.png

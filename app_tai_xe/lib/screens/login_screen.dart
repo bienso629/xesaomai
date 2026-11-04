@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import '../services/app_state.dart';
@@ -40,6 +42,8 @@ class _LoginScreenState extends State<LoginScreen> {
         roles: List<String>.from(session['roles'] ?? []),
       );
       AuthService.syncDeviceToken();
+      // Tai ho so moi nhat (avatar, ten, sdt...) tu server de hien len sidebar.
+      unawaited(state.fetchMyProfile());
 
       Navigator.of(context).pushReplacement(
         MaterialPageRoute(builder: (_) => const MainNavigationScreen()),
@@ -84,6 +88,8 @@ class _LoginScreenState extends State<LoginScreen> {
         fullName: data['full_name'] ?? username,
         roles: (data['roles'] as List<dynamic>?)?.map((e) => e.toString()).toList() ?? [],
       );
+      // Tai ho so moi nhat (avatar, ten, sdt...) tu server de hien len sidebar.
+      unawaited(state.fetchMyProfile());
 
       Navigator.of(context).pushReplacement(
         MaterialPageRoute(builder: (_) => const MainNavigationScreen()),

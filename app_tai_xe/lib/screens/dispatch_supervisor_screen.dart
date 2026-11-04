@@ -11,6 +11,7 @@ import 'package:provider/provider.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import '../services/app_state.dart';
 import '../services/admin_service.dart';
+
 import '../services/quanlyxe_service.dart';
 import '../models/quanlyxe_model.dart';
 import '../widgets/assign_order_approve_dialog.dart';
@@ -20,6 +21,12 @@ import '../models/breakdown_model.dart';
 import '../config/api_config.dart';
 
 class DispatchSupervisorScreen extends StatefulWidget {
+  /// Diem neo kiem thu (test seam): cho phep bo kiem thu nap du lieu gia
+  /// cho dialog "Nhat ky & Lich su ca truc" thay vi goi API that.
+  /// Gia tri null trong production => van goi AdminService.fetchShiftHistory.
+  @visibleForTesting
+  static List<dynamic>? debugShiftHistoryDataSource;
+
   final int activeTab;
   final int usersSubTab;
   final ValueChanged<int>? onTabChanged;
@@ -68,8 +75,7 @@ class _DispatchSupervisorScreenState extends State<DispatchSupervisorScreen> {
   /// Xe đang Tạm ngừng hoạt động (không còn trên Vietmap / Bình Anh)
   bool _isVehicleInactive(dynamic v) =>
       v is Map &&
-      (v['in_fleet'] == false ||
-          (v['status'] ?? '').toString() == 'inactive');
+      (v['in_fleet'] == false || (v['status'] ?? '').toString() == 'inactive');
 
   /// Xe đang hoạt động: dùng cho các ô chọn xe của đơn hàng
   List<dynamic> get _activeVehicles =>
@@ -83,6 +89,18 @@ class _DispatchSupervisorScreenState extends State<DispatchSupervisorScreen> {
   List<dynamic> _roles = [];
   List<dynamic> _permissions = [];
   List<dynamic> _activeShifts = [];
+
+  /// Tải lại riêng danh sách Tài khoản (nhẹ, không đụng các tab khác).
+  Future<void> _reloadUsersQuietly() async {
+    try {
+      final users = await AdminService.fetchUsers();
+      if (!mounted) return;
+      setState(() {
+        _users = users;
+      });
+    } catch (_) {}
+  }
+
   List<dynamic> _inspections = [];
 
   // Bộ lọc & phân trang cho Block Báo cáo Realtime Trạng thái Tài xế
@@ -156,6 +174,30 @@ class _DispatchSupervisorScreenState extends State<DispatchSupervisorScreen> {
   bool _proxyAutoVisionAudit = true;
   bool _proxyVoiceAssistant = false;
   bool _isSavingProxyConfig = false;
+
+  @override
+  void didUpdateWidget(covariant DispatchSupervisorScreen oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    // Khi quay lại tab Quản lý: nếu avatar/họ tên của chính mình vừa đổi ở
+    // Hồ sơ cá nhân thì tải lại danh sách Tài khoản cho khớp.
+    if (widget.activeTab == 3 && !_isLoading) {
+      _syncUsersIfAvatarChanged();
+    }
+  }
+
+  /// Phiên hồ sơ đã quan sát lần gần nhất. -1 nghĩa là chưa quan sát lần nào.
+  int _observedProfileVersion = -1;
+
+  /// Nếu hồ sơ cá nhân vừa được lưu (phiên tăng) thì tải lại danh sách
+  /// Tài khoản đúng 1 lần cho mỗi lần lưu.
+  Future<void> _syncUsersIfAvatarChanged() async {
+    final state = context.read<AppState>();
+    if (state.profileVersion == _observedProfileVersion) return;
+    _observedProfileVersion = state.profileVersion;
+    if (state.profileVersion > 0) {
+      await _reloadUsersQuietly();
+    }
+  }
 
   @override
   void initState() {
@@ -301,12 +343,15 @@ class _DispatchSupervisorScreenState extends State<DispatchSupervisorScreen> {
     final added = plates('added');
     final deactivated = plates('deactivated');
     final reactivated = plates('reactivated');
-    final providers =
-        Map<String, dynamic>.from((data['providers'] as Map?) ?? {});
+    final providers = Map<String, dynamic>.from(
+      (data['providers'] as Map?) ?? {},
+    );
     final failed = <String>[];
     providers.forEach((k, val) {
       if (val is Map && val['ok'] != true) {
-        failed.add(k == 'vietmap' ? 'Vietmap' : (k == 'binhanh' ? 'Bình Anh' : k));
+        failed.add(
+          k == 'vietmap' ? 'Vietmap' : (k == 'binhanh' ? 'Bình Anh' : k),
+        );
       }
     });
     final inactiveCount = data['total_inactive'] ?? 0;
@@ -326,8 +371,9 @@ class _DispatchSupervisorScreenState extends State<DispatchSupervisorScreen> {
     ];
     messenger.showSnackBar(
       SnackBar(
-        backgroundColor:
-            failed.isNotEmpty ? Colors.orange.shade800 : Colors.green.shade700,
+        backgroundColor: failed.isNotEmpty
+            ? Colors.orange.shade800
+            : Colors.green.shade700,
         duration: const Duration(seconds: 6),
         content: Text("Đã đồng bộ đội xe\n${lines.join('\n')}"),
       ),
@@ -397,7 +443,8 @@ class _DispatchSupervisorScreenState extends State<DispatchSupervisorScreen> {
       color = Colors.green.shade700;
       icon = Icons.person_outline;
     } else {
-      text = "Xe này chưa được gán tài xế phụ trách (vào Đội xe & Tài xế để gán)";
+      text =
+          "Xe này chưa được gán tài xế phụ trách (vào Đội xe & Tài xế để gán)";
       color = Colors.orange.shade800;
       icon = Icons.warning_amber_outlined;
     }
@@ -453,6 +500,13 @@ class _DispatchSupervisorScreenState extends State<DispatchSupervisorScreen> {
   Widget build(BuildContext context) {
     final state = context.watch<AppState>();
 
+    // Tự động làm mới danh sách Tài khoản khi hồ sơ cá nhân vừa được lưu
+    // (bắt cả trường hợp quay lại từ màn hình Hồ sơ).
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted) return;
+      _syncUsersIfAvatarChanged();
+    });
+
     if (_isLoading) {
       return const Center(child: CircularProgressIndicator());
     }
@@ -490,7 +544,8 @@ class _DispatchSupervisorScreenState extends State<DispatchSupervisorScreen> {
         final canManageCustomers =
             state.currentUsername == 'admin' ||
             state.userRoles.any(
-              (r) => ['admin', 'manager', 'dispatcher'].contains(r.toLowerCase()),
+              (r) =>
+                  ['admin', 'manager', 'dispatcher'].contains(r.toLowerCase()),
             );
         if (!canManageCustomers) {
           return _buildOverviewTab(state);
@@ -501,7 +556,8 @@ class _DispatchSupervisorScreenState extends State<DispatchSupervisorScreen> {
         final canManageLocations =
             state.currentUsername == 'admin' ||
             state.userRoles.any(
-              (r) => ['admin', 'manager', 'dispatcher'].contains(r.toLowerCase()),
+              (r) =>
+                  ['admin', 'manager', 'dispatcher'].contains(r.toLowerCase()),
             );
         if (!canManageLocations) {
           return _buildOverviewTab(state);
@@ -822,7 +878,9 @@ class _DispatchSupervisorScreenState extends State<DispatchSupervisorScreen> {
           }
 
           // 6b. Lọc theo Trạng thái đơn hàng
-          final normStatus = _normalizeOrderStatus((o['status'] ?? 'assigned').toString());
+          final normStatus = _normalizeOrderStatus(
+            (o['status'] ?? 'assigned').toString(),
+          );
           if (_selectedOrderStatusFilter != 'ALL' &&
               normStatus != _selectedOrderStatusFilter) {
             return false;
@@ -1417,27 +1475,45 @@ class _DispatchSupervisorScreenState extends State<DispatchSupervisorScreen> {
                         items: const [
                           DropdownMenuItem(
                             value: "ALL",
-                            child: Text("Mọi trạng thái", style: TextStyle(fontSize: 12.5)),
+                            child: Text(
+                              "Mọi trạng thái",
+                              style: TextStyle(fontSize: 12.5),
+                            ),
                           ),
                           DropdownMenuItem(
                             value: "waiting",
-                            child: Text("Chờ nhận", style: TextStyle(fontSize: 12.5)),
+                            child: Text(
+                              "Chờ nhận",
+                              style: TextStyle(fontSize: 12.5),
+                            ),
                           ),
                           DropdownMenuItem(
                             value: "assigned",
-                            child: Text("Đã điều phối", style: TextStyle(fontSize: 12.5)),
+                            child: Text(
+                              "Đã điều phối",
+                              style: TextStyle(fontSize: 12.5),
+                            ),
                           ),
                           DropdownMenuItem(
                             value: "in_transit",
-                            child: Text("Đang vận chuyển", style: TextStyle(fontSize: 12.5)),
+                            child: Text(
+                              "Đang vận chuyển",
+                              style: TextStyle(fontSize: 12.5),
+                            ),
                           ),
                           DropdownMenuItem(
                             value: "completed",
-                            child: Text("Hoàn thành", style: TextStyle(fontSize: 12.5)),
+                            child: Text(
+                              "Hoàn thành",
+                              style: TextStyle(fontSize: 12.5),
+                            ),
                           ),
                           DropdownMenuItem(
                             value: "cancelled",
-                            child: Text("Đã hủy", style: TextStyle(fontSize: 12.5)),
+                            child: Text(
+                              "Đã hủy",
+                              style: TextStyle(fontSize: 12.5),
+                            ),
                           ),
                         ],
                         onChanged: (val) {
@@ -1861,13 +1937,18 @@ class _DispatchSupervisorScreenState extends State<DispatchSupervisorScreen> {
                                       // Cột 1: Mã đơn hàng (bấm để xem chi tiết & hình chụp) + Ngày tạo tích hợp cùng cột
                                       makeCell(
                                         InkWell(
-                                          borderRadius: BorderRadius.circular(4),
-                                          onTap: () => _showOrderAttachmentsDialog(o),
+                                          borderRadius: BorderRadius.circular(
+                                            4,
+                                          ),
+                                          onTap: () =>
+                                              _showOrderAttachmentsDialog(o),
                                           child: Row(
                                             mainAxisSize: MainAxisSize.min,
                                             children: [
                                               Container(
-                                                padding: const EdgeInsets.all(6),
+                                                padding: const EdgeInsets.all(
+                                                  6,
+                                                ),
                                                 decoration: BoxDecoration(
                                                   color: Colors.blue.shade50,
                                                   borderRadius:
@@ -1881,33 +1962,43 @@ class _DispatchSupervisorScreenState extends State<DispatchSupervisorScreen> {
                                               ),
                                               const SizedBox(width: 8),
                                               Column(
-                                                mainAxisAlignment: MainAxisAlignment.center,
-                                                crossAxisAlignment: CrossAxisAlignment.start,
+                                                mainAxisAlignment:
+                                                    MainAxisAlignment.center,
+                                                crossAxisAlignment:
+                                                    CrossAxisAlignment.start,
                                                 children: [
                                                   Text(
                                                     orderCode,
                                                     style: TextStyle(
-                                                      fontWeight: FontWeight.bold,
+                                                      fontWeight:
+                                                          FontWeight.bold,
                                                       fontSize: 13,
-                                                      color: Colors.blue.shade900,
+                                                      color:
+                                                          Colors.blue.shade900,
                                                     ),
                                                   ),
                                                   const SizedBox(height: 2),
                                                   Row(
-                                                    mainAxisSize: MainAxisSize.min,
+                                                    mainAxisSize:
+                                                        MainAxisSize.min,
                                                     children: [
                                                       Icon(
                                                         Icons.calendar_today,
                                                         size: 11,
-                                                        color: Colors.grey.shade500,
+                                                        color: Colors
+                                                            .grey
+                                                            .shade500,
                                                       ),
                                                       const SizedBox(width: 4),
                                                       Text(
                                                         dateStr,
                                                         style: TextStyle(
                                                           fontSize: 11,
-                                                          color: Colors.grey.shade600,
-                                                          fontWeight: FontWeight.normal,
+                                                          color: Colors
+                                                              .grey
+                                                              .shade600,
+                                                          fontWeight:
+                                                              FontWeight.normal,
                                                         ),
                                                       ),
                                                     ],
@@ -2095,9 +2186,7 @@ class _DispatchSupervisorScreenState extends State<DispatchSupervisorScreen> {
                                         ),
                                       ),
                                       // Cột 7: Hình chụp liên quan (Phiếu bơm, Phiếu cân, Phiếu giao, Báo hỏng, Sửa chữa KT)
-                                      makeCell(
-                                        _buildOrderPhotosSummaryCell(o),
-                                      ),
+                                      makeCell(_buildOrderPhotosSummaryCell(o)),
                                       // Cột 8: Select box chuyển đổi Trạng thái đơn hàng trực tiếp
                                       makeCell(
                                         _buildOrderStatusSelectBox(
@@ -2236,7 +2325,7 @@ class _DispatchSupervisorScreenState extends State<DispatchSupervisorScreen> {
                           style: TextStyle(fontSize: 12, color: Colors.black87),
                         ),
                         const SizedBox(width: 4),
-PopupMenuButton<int>(
+                        PopupMenuButton<int>(
                           tooltip: "Số dòng mỗi trang",
                           initialValue: _orderPageSize,
                           position: PopupMenuPosition.over,
@@ -2592,7 +2681,9 @@ PopupMenuButton<int>(
                             )
                           : const Icon(Icons.refresh, size: 15),
                       label: Text(
-                        _isSyncingFleet ? "Đang đồng bộ..." : "Tải lại danh sách",
+                        _isSyncingFleet
+                            ? "Đang đồng bộ..."
+                            : "Tải lại danh sách",
                         style: const TextStyle(
                           fontWeight: FontWeight.w600,
                           fontSize: 12.5,
@@ -2800,26 +2891,25 @@ PopupMenuButton<int>(
                                                 child: Container(
                                                   padding:
                                                       const EdgeInsets.symmetric(
-                                                    horizontal: 6,
-                                                    vertical: 2,
-                                                  ),
+                                                        horizontal: 6,
+                                                        vertical: 2,
+                                                      ),
                                                   decoration: BoxDecoration(
-                                                    color:
-                                                        Colors.green.shade50,
+                                                    color: Colors.green.shade50,
                                                     borderRadius:
                                                         BorderRadius.circular(
-                                                      4,
-                                                    ),
+                                                          4,
+                                                        ),
                                                     border: Border.all(
-                                                      color: Colors
-                                                          .green.shade300,
+                                                      color:
+                                                          Colors.green.shade300,
                                                     ),
                                                   ),
                                                   child: Text(
                                                     "Bình Anh",
                                                     style: TextStyle(
-                                                      color: Colors
-                                                          .green.shade800,
+                                                      color:
+                                                          Colors.green.shade800,
                                                       fontSize: 10.5,
                                                       fontWeight:
                                                           FontWeight.bold,
@@ -2877,7 +2967,10 @@ PopupMenuButton<int>(
                                                       v['default_driver_id'];
                                                   dynamic matchedUser;
                                                   if (driverId != null) {
-                                                    for (final u in [..._users, ..._drivers]) {
+                                                    for (final u in [
+                                                      ..._users,
+                                                      ..._drivers,
+                                                    ]) {
                                                       if (u is Map &&
                                                           u['id'] == driverId) {
                                                         matchedUser = u;
@@ -3147,7 +3240,7 @@ PopupMenuButton<int>(
                           style: TextStyle(fontSize: 12, color: Colors.black87),
                         ),
                         const SizedBox(width: 4),
-PopupMenuButton<int>(
+                        PopupMenuButton<int>(
                           tooltip: "Số dòng mỗi trang",
                           initialValue: _vehiclePageSize,
                           position: PopupMenuPosition.over,
@@ -4274,7 +4367,7 @@ PopupMenuButton<int>(
                           style: TextStyle(fontSize: 12, color: Colors.black87),
                         ),
                         const SizedBox(width: 4),
-PopupMenuButton<int>(
+                        PopupMenuButton<int>(
                           tooltip: "Số dòng mỗi trang",
                           initialValue: _userPageSize,
                           position: PopupMenuPosition.over,
@@ -5297,7 +5390,7 @@ PopupMenuButton<int>(
                           style: TextStyle(fontSize: 12, color: Colors.black87),
                         ),
                         const SizedBox(width: 4),
-PopupMenuButton<int>(
+                        PopupMenuButton<int>(
                           tooltip: "Số dòng mỗi trang",
                           initialValue: _gasStationPageSize,
                           position: PopupMenuPosition.over,
@@ -6486,7 +6579,7 @@ PopupMenuButton<int>(
                           style: TextStyle(fontSize: 12, color: Colors.black87),
                         ),
                         const SizedBox(width: 4),
-PopupMenuButton<int>(
+                        PopupMenuButton<int>(
                           tooltip: "Số dòng mỗi trang",
                           initialValue: _productPageSize,
                           position: PopupMenuPosition.over,
@@ -6722,7 +6815,8 @@ PopupMenuButton<int>(
     // Khởi tạo theo key DB, fallback về key đầu tiên nếu dữ liệu cũ không khớp
     // (tránh DropdownButtonFormField crash assertion do value ngoài items).
     String selectedCategory =
-        isEdit && productCategoryKeys.contains((product['category'] ?? '').toString())
+        isEdit &&
+            productCategoryKeys.contains((product['category'] ?? '').toString())
         ? (product['category'] ?? '').toString()
         : productCategoryKeys.first;
     bool requiresPump = isEdit ? (product['requires_air_pump'] == true) : false;
@@ -6803,22 +6897,21 @@ PopupMenuButton<int>(
                             ),
                             const SizedBox(height: 4),
                             DropdownButtonFormField<String>(
+                              isExpanded: true,
                               value: selectedCategory,
                               isDense: true,
                               decoration: const InputDecoration(isDense: true),
-                              items:
-                                  productCategoryKeys.map(
-                                        (key) => DropdownMenuItem(
-                                          value: key,
-                                          child: Text(
-                                            _productCategoryLabel(key),
-                                            style: const TextStyle(
-                                              fontSize: 13,
-                                            ),
-                                          ),
-                                        ),
-                                      )
-                                      .toList(),
+                              items: productCategoryKeys
+                                  .map(
+                                    (key) => DropdownMenuItem(
+                                      value: key,
+                                      child: Text(
+                                        _productCategoryLabel(key),
+                                        style: const TextStyle(fontSize: 13),
+                                      ),
+                                    ),
+                                  )
+                                  .toList(),
                               onChanged: (val) {
                                 if (val != null) {
                                   setDialogState(() => selectedCategory = val);
@@ -7282,7 +7375,9 @@ PopupMenuButton<int>(
         iconData = Icons.photo_camera_rounded;
       }
 
-      final kmText = kmConfirmed != null ? 'ODO: $kmConfirmed km' : 'Đủ 5 góc ảnh';
+      final kmText = kmConfirmed != null
+          ? 'ODO: $kmConfirmed km'
+          : 'Đủ 5 góc ảnh';
       final desc = flagReason.isNotEmpty
           ? 'Kiểm tra xe $plate ($kmText) • Ghi chú: $flagReason'
           : 'Đã gửi báo cáo kiểm tra 5 ảnh xe $plate ($kmText)';
@@ -7415,8 +7510,9 @@ PopupMenuButton<int>(
   Widget _buildRealtimeDriverReportsCard(AppState state) {
     final allReports = _collectRealtimeDriverReports(state);
     final tripCount = allReports.where((r) => r['group'] == 'TRIP').length;
-    final inspectionCount =
-        allReports.where((r) => r['group'] == 'INSPECTION').length;
+    final inspectionCount = allReports
+        .where((r) => r['group'] == 'INSPECTION')
+        .length;
     final alertCount = allReports.where((r) => r['group'] == 'ALERT').length;
 
     final filtered = allReports.where((r) {
@@ -7425,8 +7521,9 @@ PopupMenuButton<int>(
     }).toList();
 
     final totalItems = filtered.length;
-    final totalPages =
-        totalItems == 0 ? 1 : (totalItems / _realtimeReportPageSize).ceil();
+    final totalPages = totalItems == 0
+        ? 1
+        : (totalItems / _realtimeReportPageSize).ceil();
     final validPage = _realtimeReportPage.clamp(1, totalPages);
     final startIndex = (validPage - 1) * _realtimeReportPageSize;
     final endIndex = (startIndex + _realtimeReportPageSize > totalItems)
@@ -7753,8 +7850,9 @@ PopupMenuButton<int>(
                                         ),
                                         decoration: BoxDecoration(
                                           color: Colors.blueGrey.shade50,
-                                          borderRadius:
-                                              BorderRadius.circular(4),
+                                          borderRadius: BorderRadius.circular(
+                                            4,
+                                          ),
                                           border: Border.all(
                                             color: Colors.blueGrey.shade200,
                                           ),
@@ -7777,8 +7875,9 @@ PopupMenuButton<int>(
                                           color: badgeColor.withValues(
                                             alpha: 0.1,
                                           ),
-                                          borderRadius:
-                                              BorderRadius.circular(4),
+                                          borderRadius: BorderRadius.circular(
+                                            4,
+                                          ),
                                         ),
                                         child: Text(
                                           title,
@@ -7885,8 +7984,8 @@ PopupMenuButton<int>(
                           ),
                           onPressed: validPage > 1
                               ? () => setState(
-                                    () => _realtimeReportPage = validPage - 1,
-                                  )
+                                  () => _realtimeReportPage = validPage - 1,
+                                )
                               : null,
                         ),
                         Padding(
@@ -7908,8 +8007,8 @@ PopupMenuButton<int>(
                           ),
                           onPressed: validPage < totalPages
                               ? () => setState(
-                                    () => _realtimeReportPage = validPage + 1,
-                                  )
+                                  () => _realtimeReportPage = validPage + 1,
+                                )
                               : null,
                         ),
                       ],
@@ -8287,6 +8386,7 @@ PopupMenuButton<int>(
                 const SizedBox(height: 16),
                 _buildFormLabel("Chọn ca trực"),
                 DropdownButtonFormField<String>(
+                  isExpanded: true,
                   value: selectedShift,
                   isDense: true,
                   decoration: const InputDecoration(isDense: true),
@@ -8393,7 +8493,9 @@ PopupMenuButton<int>(
                     ? "Đóng ca trực của $targetName"
                     : "Bàn giao ca trực & Kết thúc",
                 style: const TextStyle(
-                    fontWeight: FontWeight.bold, fontSize: 16),
+                  fontWeight: FontWeight.bold,
+                  fontSize: 16,
+                ),
               ),
             ),
           ],
@@ -8416,7 +8518,9 @@ PopupMenuButton<int>(
                     ? "Ghi chú (do Quản trị viên đóng ca):"
                     : "Nội dung bàn giao / Ghi chú ca sau:",
                 style: const TextStyle(
-                    fontSize: 12, fontWeight: FontWeight.bold),
+                  fontSize: 12,
+                  fontWeight: FontWeight.bold,
+                ),
               ),
               const SizedBox(height: 6),
               TextField(
@@ -8470,13 +8574,14 @@ PopupMenuButton<int>(
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
-          backgroundColor:
-              res['success'] == true ? Colors.green : Colors.orange.shade800,
+          backgroundColor: res['success'] == true
+              ? Colors.green
+              : Colors.orange.shade800,
           content: Text(
             res['success'] == true
                 ? (isForOther
-                    ? "Đã đóng ca trực của $targetName."
-                    : "Đã bàn giao và kết thúc ca trực thành công!")
+                      ? "Đã đóng ca trực của $targetName."
+                      : "Đã bàn giao và kết thúc ca trực thành công!")
                 : "Lỗi: ${res['message']}",
           ),
         ),
@@ -8507,71 +8612,89 @@ PopupMenuButton<int>(
       builder: (dialogCtx) {
         return StatefulBuilder(
           builder: (ctx, setDialogState) {
+            final Size dialogScreenSize = MediaQuery.of(dialogCtx).size;
+            final double targetWidth = math.min(980.0, dialogScreenSize.width * 0.98);
+            final double targetHeight = math.min(620.0, dialogScreenSize.height * 0.85);
             return Dialog(
               elevation: 0,
               backgroundColor: Colors.white,
+              // Ghi đè dialogTheme.constraints (vốn bị bóp maxWidth: 480 của mobile)
+              constraints: BoxConstraints(
+                minWidth: 320,
+                maxWidth: targetWidth,
+                maxHeight: targetHeight,
+              ),
+              insetPadding: const EdgeInsets.symmetric(
+                horizontal: 24,
+                vertical: 20,
+              ),
               shape: RoundedRectangleBorder(
                 borderRadius: BorderRadius.circular(4),
               ),
               child: Container(
-                width: 980,
-                height: 620,
+                key: const ValueKey('shiftHistoryDialogBox'),
+                // Gấp đôi bề rộng thực tế (từ 480 lên 980, tối đa 98% màn hình)
+                width: targetWidth,
+                height: targetHeight,
                 padding: const EdgeInsets.all(20),
                 decoration: BoxDecoration(
                   color: Colors.white,
                   borderRadius: BorderRadius.circular(4),
                 ),
                 child: FutureBuilder<List<dynamic>>(
-                  future: AdminService.fetchShiftHistory(
-                    userId: filterUserId,
-                    limit: 100,
-                  ),
+                  future: DispatchSupervisorScreen.debugShiftHistoryDataSource != null
+                      ? Future.value(DispatchSupervisorScreen.debugShiftHistoryDataSource)
+                      : AdminService.fetchShiftHistory(
+                          userId: filterUserId,
+                          limit: 100,
+                        ),
                   builder: (context, snapshot) {
                     return Column(
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
                         Row(
-                          mainAxisAlignment: MainAxisAlignment.spaceBetween,
                           children: [
-                            Row(
-                              children: [
-                                Container(
-                                  padding: const EdgeInsets.all(8),
-                                  decoration: BoxDecoration(
-                                    color: Colors.blue.shade50,
-                                    borderRadius: BorderRadius.circular(4),
-                                  ),
-                                  child: Icon(
-                                    Icons.history,
-                                    color: Colors.blue.shade800,
-                                    size: 22,
-                                  ),
-                                ),
-                                const SizedBox(width: 12),
-                                Column(
-                                  crossAxisAlignment: CrossAxisAlignment.start,
-                                  children: [
-                                    Text(
-                                      filterFullName != null
-                                          ? "Nhật ký & Lịch sử ca trực - $filterFullName"
-                                          : "Nhật ký & Lịch sử ca trực Điều phối viên",
-                                      style: const TextStyle(
-                                        fontSize: 16,
-                                        fontWeight: FontWeight.bold,
-                                      ),
+                            Container(
+                              padding: const EdgeInsets.all(8),
+                              decoration: BoxDecoration(
+                                color: Colors.blue.shade50,
+                                borderRadius: BorderRadius.circular(4),
+                              ),
+                              child: Icon(
+                                Icons.history,
+                                color: Colors.blue.shade800,
+                                size: 22,
+                              ),
+                            ),
+                            const SizedBox(width: 12),
+                            Expanded(
+                              child: Column(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                children: [
+                                  Text(
+                                    filterFullName != null
+                                        ? "Nhật ký & Lịch sử ca trực - $filterFullName"
+                                        : "Nhật ký & Lịch sử ca trực Điều phối viên",
+                                    style: const TextStyle(
+                                      fontSize: 16,
+                                      fontWeight: FontWeight.bold,
                                     ),
-                                    Text(
-                                      filterFullName != null
-                                          ? "Ghi nhận chi tiết thời gian nhận ca, kết thúc, bàn giao công việc của $filterFullName"
-                                          : "Ghi nhận chi tiết thời gian nhận ca, kết thúc, bàn giao công việc của từng điều phối viên",
-                                      style: TextStyle(
-                                        fontSize: 12,
-                                        color: Colors.grey.shade600,
-                                      ),
+                                    maxLines: 2,
+                                    overflow: TextOverflow.ellipsis,
+                                  ),
+                                  Text(
+                                    filterFullName != null
+                                        ? "Ghi nhận chi tiết thời gian nhận ca, kết thúc, bàn giao công việc của $filterFullName"
+                                        : "Ghi nhận chi tiết thời gian nhận ca, kết thúc, bàn giao công việc của từng điều phối viên",
+                                    style: TextStyle(
+                                      fontSize: 12,
+                                      color: Colors.grey.shade600,
                                     ),
-                                  ],
-                                ),
-                              ],
+                                    maxLines: 2,
+                                    overflow: TextOverflow.ellipsis,
+                                  ),
+                                ],
+                              ),
                             ),
                             IconButton(
                               icon: const Icon(Icons.close),
@@ -8592,14 +8715,18 @@ PopupMenuButton<int>(
                             borderRadius: BorderRadius.circular(4),
                             border: Border.all(color: Colors.grey.shade300),
                           ),
-                          child: Row(
+                          // Dung Wrap de thanh bo loc tu dong xuong dong
+                          // thay vi overflow khi be rong hep.
+                          child: Wrap(
+                            crossAxisAlignment: WrapCrossAlignment.center,
+                            spacing: 10,
+                            runSpacing: 6,
                             children: [
                               Icon(
                                 Icons.filter_alt,
                                 size: 18,
                                 color: Colors.blue.shade800,
                               ),
-                              const SizedBox(width: 8),
                               const Text(
                                 "Lọc theo ngày:",
                                 style: TextStyle(
@@ -8607,7 +8734,6 @@ PopupMenuButton<int>(
                                   fontSize: 13,
                                 ),
                               ),
-                              const SizedBox(width: 10),
                               InkWell(
                                 onTap: () async {
                                   final picked = await showDatePicker(
@@ -8702,7 +8828,8 @@ PopupMenuButton<int>(
                                   },
                                 ),
                               ],
-                              const Spacer(),
+                              // Ghi chu dinh dang: phan tu thuan trong
+                              // Wrap, tu xuong dong khi hep => khong overflow.
                               Text(
                                 "Định dạng: Ngày/Tháng/Năm",
                                 style: TextStyle(
@@ -8710,6 +8837,8 @@ PopupMenuButton<int>(
                                   color: Colors.grey.shade600,
                                   fontStyle: FontStyle.italic,
                                 ),
+                                maxLines: 1,
+                                overflow: TextOverflow.ellipsis,
                               ),
                             ],
                           ),
@@ -8995,88 +9124,46 @@ PopupMenuButton<int>(
                                                     ),
                                                     const SizedBox(width: 12),
                                                     // Cột 2: Thời gian bắt đầu
-                                                    SizedBox(
-                                                      width: 175,
-                                                      child: Row(
-                                                        children: [
-                                                          Icon(
-                                                            Icons.login,
-                                                            size: 14,
-                                                            color: Colors
-                                                                .green
-                                                                .shade700,
-                                                          ),
-                                                          const SizedBox(
-                                                            width: 6,
-                                                          ),
-                                                          Expanded(
-                                                            child: Text(
-                                                              "Bắt đầu: $startFmt",
-                                                              style:
-                                                                  const TextStyle(
-                                                                    fontSize:
-                                                                        12,
-                                                                  ),
-                                                              maxLines: 1,
-                                                              overflow:
-                                                                  TextOverflow
-                                                                      .ellipsis,
-                                                            ),
-                                                          ),
-                                                        ],
+                                                    Expanded(
+                                                      flex: 3,
+                                                      child: Text(
+                                                        "Bắt đầu: $startFmt",
+                                                        style: const TextStyle(
+                                                          fontSize: 12,
+                                                        ),
+                                                        maxLines: 1,
+                                                        overflow: TextOverflow
+                                                            .ellipsis,
                                                       ),
                                                     ),
                                                     const SizedBox(width: 12),
                                                     // Cột 3: Thời gian kết thúc
-                                                    SizedBox(
-                                                      width: 175,
-                                                      child: Row(
-                                                        children: [
-                                                          Icon(
-                                                            Icons.logout,
-                                                            size: 14,
-                                                            color: isActive
-                                                                ? Colors
-                                                                      .orange
-                                                                      .shade700
-                                                                : Colors
-                                                                      .blueGrey
-                                                                      .shade700,
-                                                          ),
-                                                          const SizedBox(
-                                                            width: 6,
-                                                          ),
-                                                          Expanded(
-                                                            child: Text(
-                                                              "Kết thúc: $endFmt",
-                                                              style: TextStyle(
-                                                                fontSize: 12,
-                                                                color: isActive
-                                                                    ? Colors
-                                                                          .green
-                                                                          .shade800
-                                                                    : Colors
-                                                                          .black87,
-                                                                fontWeight:
-                                                                    isActive
-                                                                    ? FontWeight
-                                                                          .bold
-                                                                    : FontWeight
-                                                                          .normal,
-                                                              ),
-                                                              maxLines: 1,
-                                                              overflow:
-                                                                  TextOverflow
-                                                                      .ellipsis,
-                                                            ),
-                                                          ),
-                                                        ],
+                                                    Expanded(
+                                                      flex: 3,
+                                                      child: Text(
+                                                        "Kết thúc: $endFmt",
+                                                        style: TextStyle(
+                                                          fontSize: 12,
+                                                          color: isActive
+                                                              ? Colors
+                                                                    .green
+                                                                    .shade800
+                                                              : Colors
+                                                                    .black87,
+                                                          fontWeight: isActive
+                                                              ? FontWeight.bold
+                                                              : FontWeight
+                                                                    .normal,
+                                                        ),
+                                                        maxLines: 1,
+                                                        overflow: TextOverflow
+                                                            .ellipsis,
                                                       ),
                                                     ),
                                                     const SizedBox(width: 12),
                                                     // Cột 4: Thời lượng ca
-                                                    SizedBox(
-                                                      width: 130,
+                                                    Expanded(
+                                                      flex: 2,
                                                       child: Text(
                                                         durationHours.isNotEmpty
                                                             ? "Thời lượng: $durationHours giờ"
@@ -9217,6 +9304,7 @@ PopupMenuButton<int>(
                                     ),
                                     // THANH PHÂN TRANG CHO CA TRỰC
                                     Container(
+                                      key: const ValueKey('shiftHistoryPagerBar'),
                                       height: 40,
                                       padding: const EdgeInsets.symmetric(
                                         horizontal: 16,
@@ -9243,19 +9331,29 @@ PopupMenuButton<int>(
                                             ),
                                       ),
                                       child: Row(
-                                        mainAxisAlignment:
-                                            MainAxisAlignment.spaceBetween,
                                         children: [
-                                          Text(
-                                            "Hiển thị ${startIndex + 1} - ${endIndex} trên tổng số ${totalItems} ca trực",
-                                            style: TextStyle(
-                                              fontSize: 12,
-                                              color: Colors.grey.shade700,
-                                              fontWeight: FontWeight.w500,
+                                          Expanded(
+                                            child: Text(
+                                              "Hiển thị ${startIndex + 1} - ${endIndex} trên tổng số ${totalItems} ca trực",
+                                              style: TextStyle(
+                                                fontSize: 12,
+                                                color: Colors.grey.shade700,
+                                                fontWeight: FontWeight.w500,
+                                              ),
+                                              maxLines: 1,
+                                              overflow: TextOverflow.ellipsis,
                                             ),
                                           ),
-                                          Row(
-                                            children: [
+                                          Flexible(
+                                            // FittedBox scaleDown: tu co nho
+                                            // cum dieu khien khi thanh qua hep,
+                                            // dam bao khong bao gio overflow.
+                                            child: FittedBox(
+                                              fit: BoxFit.scaleDown,
+                                              child: Row(
+                                              key: const ValueKey('shiftHistoryPagerControls'),
+                                              mainAxisSize: MainAxisSize.min,
+                                              children: [
                                               const Text(
                                                 "Số dòng/trang: ",
                                                 style: TextStyle(
@@ -9264,41 +9362,59 @@ PopupMenuButton<int>(
                                                 ),
                                               ),
                                               const SizedBox(width: 4),
-PopupMenuButton<int>(
+                                              PopupMenuButton<int>(
                                                 tooltip: "Số dòng mỗi trang",
                                                 initialValue: shiftPageSize,
-                                                position: PopupMenuPosition.over,
-                                                constraints: const BoxConstraints(minWidth: 64),
-                                                onSelected: (val) => setDialogState(() {
-                                                  shiftPageSize = val;
-                                                  shiftCurrentPage = 1;
-                                                }),
-                                                itemBuilder: (_) => const [5, 10, 20, 50]
-                                                    .map(
-                                                      (n) => PopupMenuItem<int>(
-                                                        value: n,
-                                                        height: 36,
-                                                        child: Text(
-                                                          "$n",
-                                                          style: const TextStyle(fontSize: 12.5),
-                                                        ),
-                                                      ),
-                                                    )
-                                                    .toList(),
+                                                position:
+                                                    PopupMenuPosition.over,
+                                                constraints:
+                                                    const BoxConstraints(
+                                                      minWidth: 64,
+                                                    ),
+                                                onSelected: (val) =>
+                                                    setDialogState(() {
+                                                      shiftPageSize = val;
+                                                      shiftCurrentPage = 1;
+                                                    }),
+                                                itemBuilder: (_) =>
+                                                    const [5, 10, 20, 50]
+                                                        .map(
+                                                          (
+                                                            n,
+                                                          ) => PopupMenuItem<int>(
+                                                            value: n,
+                                                            height: 36,
+                                                            child: Text(
+                                                              "$n",
+                                                              style:
+                                                                  const TextStyle(
+                                                                    fontSize:
+                                                                        12.5,
+                                                                  ),
+                                                            ),
+                                                          ),
+                                                        )
+                                                        .toList(),
                                                 child: Padding(
-                                                  padding: const EdgeInsets.symmetric(
-                                                    horizontal: 4,
-                                                    vertical: 2,
-                                                  ),
+                                                  padding:
+                                                      const EdgeInsets.symmetric(
+                                                        horizontal: 4,
+                                                        vertical: 2,
+                                                      ),
                                                   child: Row(
-                                                    mainAxisSize: MainAxisSize.min,
+                                                    key: const ValueKey('shiftHistoryPageSizeTrigger'),
+                                                    mainAxisSize:
+                                                        MainAxisSize.min,
                                                     children: [
                                                       Text(
-                                                        "",
+                                                        '$shiftPageSize',
+                                                        key: const ValueKey('shiftHistoryPageSizeLabel'),
                                                         style: const TextStyle(
                                                           fontSize: 12,
-                                                          color: Colors.blueGrey,
-                                                          fontWeight: FontWeight.bold,
+                                                          color:
+                                                              Colors.blueGrey,
+                                                          fontWeight:
+                                                              FontWeight.bold,
                                                         ),
                                                       ),
                                                       const Icon(
@@ -9418,7 +9534,9 @@ PopupMenuButton<int>(
                                                       )
                                                     : null,
                                               ),
-                                            ],
+                                              ],
+                                            ),
+                                            ),
                                           ),
                                         ],
                                       ),
@@ -9674,18 +9792,28 @@ PopupMenuButton<int>(
                   const SizedBox(height: 14),
                   _buildFormLabel("Vai trò phân quyền"),
                   DropdownButtonFormField<String>(
+                    isExpanded: true,
                     value: selectedRoleCode,
                     isDense: true,
                     decoration: const InputDecoration(isDense: true),
                     items: const [
-                      DropdownMenuItem(value: "driver", child: Text("Tài xế", style: TextStyle(fontSize: 13))),
+                      DropdownMenuItem(
+                        value: "driver",
+                        child: Text("Tài xế", style: TextStyle(fontSize: 13)),
+                      ),
                       DropdownMenuItem(
                         value: "dispatcher",
-                        child: Text("Điều phối", style: TextStyle(fontSize: 13)),
+                        child: Text(
+                          "Điều phối",
+                          style: TextStyle(fontSize: 13),
+                        ),
                       ),
                       DropdownMenuItem(
                         value: "gas_station",
-                        child: Text("Cây dầu / Trạm cấp nhiên liệu", style: TextStyle(fontSize: 13)),
+                        child: Text(
+                          "Cây dầu / Trạm cấp nhiên liệu",
+                          style: TextStyle(fontSize: 13),
+                        ),
                       ),
                       DropdownMenuItem(
                         value: "mechanic",
@@ -9693,7 +9821,10 @@ PopupMenuButton<int>(
                       ),
                       DropdownMenuItem(
                         value: "manager",
-                        child: Text("Ban Giám Đốc / Trưởng BP", style: TextStyle(fontSize: 13)),
+                        child: Text(
+                          "Ban Giám Đốc / Trưởng BP",
+                          style: TextStyle(fontSize: 13),
+                        ),
                       ),
                     ],
                     onChanged: (val) {
@@ -9705,21 +9836,31 @@ PopupMenuButton<int>(
                     const SizedBox(height: 14),
                     _buildFormLabel("Phân loại tài xế"),
                     DropdownButtonFormField<String>(
+                      isExpanded: true,
                       value: selectedDriverType,
                       isDense: true,
                       decoration: const InputDecoration(isDense: true),
                       items: const [
                         DropdownMenuItem(
                           value: "INTERNAL",
-                          child: Text("Tài xế công ty (Nội bộ)", style: TextStyle(fontSize: 13)),
+                          child: Text(
+                            "Tài xế công ty (Nội bộ)",
+                            style: TextStyle(fontSize: 13),
+                          ),
                         ),
                         DropdownMenuItem(
                           value: "RENTAL",
-                          child: Text("Tài xế thuê ngoài", style: TextStyle(fontSize: 13)),
+                          child: Text(
+                            "Tài xế thuê ngoài",
+                            style: TextStyle(fontSize: 13),
+                          ),
                         ),
                         DropdownMenuItem(
                           value: "CUSTOMER_SELF",
-                          child: Text("Khách hàng tự chở", style: TextStyle(fontSize: 13)),
+                          child: Text(
+                            "Khách hàng tự chở",
+                            style: TextStyle(fontSize: 13),
+                          ),
                         ),
                       ],
                       onChanged: (val) {
@@ -9817,18 +9958,33 @@ PopupMenuButton<int>(
                             children: [
                               _buildFormLabel("Giới tính"),
                               DropdownButtonFormField<String>(
+                                isExpanded: true,
                                 value: gender,
                                 isDense: true,
-                                decoration: const InputDecoration(isDense: true),
+                                decoration: const InputDecoration(
+                                  isDense: true,
+                                ),
                                 items: const [
                                   DropdownMenuItem(
                                     value: "Nam",
-                                    child: Text("Nam", style: TextStyle(fontSize: 13)),
+                                    child: Text(
+                                      "Nam",
+                                      style: TextStyle(fontSize: 13),
+                                    ),
                                   ),
-                                  DropdownMenuItem(value: "Nữ", child: Text("Nữ", style: TextStyle(fontSize: 13))),
+                                  DropdownMenuItem(
+                                    value: "Nữ",
+                                    child: Text(
+                                      "Nữ",
+                                      style: TextStyle(fontSize: 13),
+                                    ),
+                                  ),
                                   DropdownMenuItem(
                                     value: "Khác",
-                                    child: Text("Khác", style: TextStyle(fontSize: 13)),
+                                    child: Text(
+                                      "Khác",
+                                      style: TextStyle(fontSize: 13),
+                                    ),
                                   ),
                                 ],
                                 onChanged: (val) {
@@ -9979,7 +10135,9 @@ PopupMenuButton<int>(
     // để tránh lỗi assertion của DropdownButtonFormField khi value không tồn tại trong items
     if (selectedDriverId != null &&
         !driverUsers.any((u) => u['id'] == selectedDriverId)) {
-      final fallbackName = (v['driver_name'] ?? v['driver_username'] ?? '').toString().trim();
+      final fallbackName = (v['driver_name'] ?? v['driver_username'] ?? '')
+          .toString()
+          .trim();
       if (fallbackName.isNotEmpty) {
         driverUsers.insert(0, {
           'id': selectedDriverId,
@@ -10052,21 +10210,31 @@ PopupMenuButton<int>(
                   // Hình thức sở hữu
                   _buildFormLabel("Hình thức sở hữu *"),
                   DropdownButtonFormField<String>(
+                    isExpanded: true,
                     value: ownershipType,
                     isDense: true,
                     decoration: const InputDecoration(isDense: true),
                     items: const [
                       DropdownMenuItem(
                         value: "INTERNAL",
-                        child: Text("Xe nội bộ", style: TextStyle(fontSize: 13)),
+                        child: Text(
+                          "Xe nội bộ",
+                          style: TextStyle(fontSize: 13),
+                        ),
                       ),
                       DropdownMenuItem(
                         value: "RENTAL",
-                        child: Text("Xe thuê ngoài", style: TextStyle(fontSize: 13)),
+                        child: Text(
+                          "Xe thuê ngoài",
+                          style: TextStyle(fontSize: 13),
+                        ),
                       ),
                       DropdownMenuItem(
                         value: "CUSTOMER_SELF",
-                        child: Text("Khách tự vận chuyển", style: TextStyle(fontSize: 13)),
+                        child: Text(
+                          "Khách tự vận chuyển",
+                          style: TextStyle(fontSize: 13),
+                        ),
                       ),
                     ],
                     onChanged: (val) {
@@ -10081,6 +10249,7 @@ PopupMenuButton<int>(
                   DropdownButtonFormField<int?>(
                     value: selectedDriverId,
                     isDense: true,
+                    isExpanded: true,
                     decoration: const InputDecoration(isDense: true),
                     items: [
                       const DropdownMenuItem<int?>(
@@ -10099,7 +10268,7 @@ PopupMenuButton<int>(
                         final name = (u['full_name'] ?? u['username'] ?? '')
                             .toString();
                         final phone = (u['phone'] ?? '').toString();
-                        // Mỗi xe đi kèm 1 tài xế: tài xế đã gắn xe khác thì không chọn được
+                        // Tài xế đã gắn xe khác vẫn chọn được: hệ thống sẽ tự gỡ khỏi xe cũ khi lưu
                         final otherPlate = driverPlateMap[id];
                         final busy = otherPlate != null && otherPlate != plate;
                         final label = phone.isNotEmpty
@@ -10107,7 +10276,6 @@ PopupMenuButton<int>(
                             : name;
                         return DropdownMenuItem<int?>(
                           value: id,
-                          enabled: !busy,
                           child: Text(
                             busy ? "$label - đang ở xe $otherPlate" : label,
                             style: TextStyle(
@@ -10163,6 +10331,33 @@ PopupMenuButton<int>(
 
                 Navigator.of(dialogCtx).pop();
                 setState(() => _isLoading = true);
+
+                // Neu tai xe moi dang gan voi xe khac thi tu go khoi xe cu truoc
+                if (selectedDriverId != null) {
+                  final otherPlate = driverPlateMap[selectedDriverId];
+                  if (otherPlate != null && otherPlate != plate) {
+                    Map oldVehicle = const {};
+                    for (final ov in _vehicles) {
+                      if (ov is Map &&
+                          (ov['plate_number'] ?? '').toString() ==
+                              otherPlate) {
+                        oldVehicle = ov;
+                        break;
+                      }
+                    }
+                    await AdminService.updateVehicle(otherPlate, {
+                      "vehicle_type":
+                          (oldVehicle['vehicle_type'] ?? '').toString(),
+                      "ownership_type":
+                          (oldVehicle['ownership_type'] ?? 'INTERNAL')
+                              .toString(),
+                      "default_driver_id": -1,
+                      "owner_company":
+                          (oldVehicle['owner_company'] ?? 'Sao Mai Logistics')
+                              .toString(),
+                    });
+                  }
+                }
 
                 final payload = <String, dynamic>{
                   "vehicle_type": vtype,
@@ -10232,8 +10427,15 @@ PopupMenuButton<int>(
             ?.map((e) => e.toString())
             .toList() ??
         [];
-    const allowedEditRoles = ['driver', 'dispatcher', 'gas_station', 'mechanic', 'manager'];
-    String selectedRoleCode = userRoles.isNotEmpty && allowedEditRoles.contains(userRoles.first)
+    const allowedEditRoles = [
+      'driver',
+      'dispatcher',
+      'gas_station',
+      'mechanic',
+      'manager',
+    ];
+    String selectedRoleCode =
+        userRoles.isNotEmpty && allowedEditRoles.contains(userRoles.first)
         ? userRoles.first
         : "driver";
 
@@ -10286,6 +10488,7 @@ PopupMenuButton<int>(
                     const SizedBox(height: 14),
                     _buildFormLabel("Vai trò phân quyền"),
                     DropdownButtonFormField<String>(
+                      isExpanded: true,
                       value: selectedRoleCode,
                       isDense: true,
                       decoration: const InputDecoration(isDense: true),
@@ -10296,19 +10499,31 @@ PopupMenuButton<int>(
                         ),
                         DropdownMenuItem(
                           value: "dispatcher",
-                          child: Text("Điều phối", style: TextStyle(fontSize: 13)),
+                          child: Text(
+                            "Điều phối",
+                            style: TextStyle(fontSize: 13),
+                          ),
                         ),
                         DropdownMenuItem(
                           value: "gas_station",
-                          child: Text("Cây dầu / Trạm cấp nhiên liệu", style: TextStyle(fontSize: 13)),
+                          child: Text(
+                            "Cây dầu / Trạm cấp nhiên liệu",
+                            style: TextStyle(fontSize: 13),
+                          ),
                         ),
                         DropdownMenuItem(
                           value: "mechanic",
-                          child: Text("Kỹ thuật", style: TextStyle(fontSize: 13)),
+                          child: Text(
+                            "Kỹ thuật",
+                            style: TextStyle(fontSize: 13),
+                          ),
                         ),
                         DropdownMenuItem(
                           value: "manager",
-                          child: Text("Ban Giám Đốc / Trưởng BP", style: TextStyle(fontSize: 13)),
+                          child: Text(
+                            "Ban Giám Đốc / Trưởng BP",
+                            style: TextStyle(fontSize: 13),
+                          ),
                         ),
                       ],
                       onChanged: (val) {
@@ -10320,21 +10535,31 @@ PopupMenuButton<int>(
                       const SizedBox(height: 14),
                       _buildFormLabel("Phân loại tài xế"),
                       DropdownButtonFormField<String>(
+                        isExpanded: true,
                         value: selectedDriverType,
                         isDense: true,
                         decoration: const InputDecoration(isDense: true),
                         items: const [
                           DropdownMenuItem(
                             value: "INTERNAL",
-                            child: Text("Tài xế công ty (Nội bộ)", style: TextStyle(fontSize: 13)),
+                            child: Text(
+                              "Tài xế công ty (Nội bộ)",
+                              style: TextStyle(fontSize: 13),
+                            ),
                           ),
                           DropdownMenuItem(
                             value: "RENTAL",
-                            child: Text("Tài xế thuê ngoài", style: TextStyle(fontSize: 13)),
+                            child: Text(
+                              "Tài xế thuê ngoài",
+                              style: TextStyle(fontSize: 13),
+                            ),
                           ),
                           DropdownMenuItem(
                             value: "CUSTOMER_SELF",
-                            child: Text("Khách hàng tự chở", style: TextStyle(fontSize: 13)),
+                            child: Text(
+                              "Khách hàng tự chở",
+                              style: TextStyle(fontSize: 13),
+                            ),
                           ),
                         ],
                         onChanged: (val) {
@@ -10432,21 +10657,33 @@ PopupMenuButton<int>(
                               children: [
                                 _buildFormLabel("Giới tính"),
                                 DropdownButtonFormField<String>(
+                                  isExpanded: true,
                                   value: gender,
                                   isDense: true,
-                                  decoration: const InputDecoration(isDense: true),
+                                  decoration: const InputDecoration(
+                                    isDense: true,
+                                  ),
                                   items: const [
                                     DropdownMenuItem(
                                       value: "Nam",
-                                      child: Text("Nam", style: TextStyle(fontSize: 13)),
+                                      child: Text(
+                                        "Nam",
+                                        style: TextStyle(fontSize: 13),
+                                      ),
                                     ),
                                     DropdownMenuItem(
                                       value: "Nữ",
-                                      child: Text("Nữ", style: TextStyle(fontSize: 13)),
+                                      child: Text(
+                                        "Nữ",
+                                        style: TextStyle(fontSize: 13),
+                                      ),
                                     ),
                                     DropdownMenuItem(
                                       value: "Khác",
-                                      child: Text("Khác", style: TextStyle(fontSize: 13)),
+                                      child: Text(
+                                        "Khác",
+                                        style: TextStyle(fontSize: 13),
+                                      ),
                                     ),
                                   ],
                                   onChanged: (val) {
@@ -10891,20 +11128,28 @@ PopupMenuButton<int>(
         final q = v.text.trim().toLowerCase();
         if (q.isEmpty) return options.take(8);
         return options
-            .where((o) => [o['value'], o['title'], o['sub']]
-                .any((e) => e.toString().toLowerCase().contains(q)))
+            .where(
+              (o) => [
+                o['value'],
+                o['title'],
+                o['sub'],
+              ].any((e) => e.toString().toLowerCase().contains(q)),
+            )
             .take(10);
       },
       onSelected: (o) {
         controller.text = o['value'].toString();
-        if (o['catalog'] == true && o['loc'] is Map && onCatalogSelected != null) {
+        if (o['catalog'] == true &&
+            o['loc'] is Map &&
+            onCatalogSelected != null) {
           onCatalogSelected(Map<String, dynamic>.from(o['loc'] as Map));
         }
       },
       fieldViewBuilder: (context, fieldCtrl, focusNode, onFieldSubmitted) {
         // Đồng bộ dữ liệu khi người dùng nhập tay tự do
         fieldCtrl.addListener(() {
-          if (controller.text != fieldCtrl.text) controller.text = fieldCtrl.text;
+          if (controller.text != fieldCtrl.text)
+            controller.text = fieldCtrl.text;
         });
         // Địa chỉ được điền từ bên ngoài (VD: chọn điểm trên bản đồ) thì hiện lên ô
         if (controller.text != fieldCtrl.text && !focusNode.hasFocus) {
@@ -10912,7 +11157,9 @@ PopupMenuButton<int>(
             if (controller.text != fieldCtrl.text && !focusNode.hasFocus) {
               fieldCtrl.value = TextEditingValue(
                 text: controller.text,
-                selection: TextSelection.collapsed(offset: controller.text.length),
+                selection: TextSelection.collapsed(
+                  offset: controller.text.length,
+                ),
               );
             }
           });
@@ -10952,7 +11199,8 @@ PopupMenuButton<int>(
                 padding: const EdgeInsets.symmetric(vertical: 4),
                 shrinkWrap: true,
                 itemCount: opts.length,
-                separatorBuilder: (_, _) => Divider(height: 1, color: Colors.grey.shade200),
+                separatorBuilder: (_, _) =>
+                    Divider(height: 1, color: Colors.grey.shade200),
                 itemBuilder: (context, index) {
                   final o = opts.elementAt(index);
                   final isCatalog = o['catalog'] == true;
@@ -10961,13 +11209,18 @@ PopupMenuButton<int>(
                     hoverColor: Colors.blue.shade50,
                     onTap: () => onSelected(o),
                     child: Padding(
-                      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 9),
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 14,
+                        vertical: 9,
+                      ),
                       child: Row(
                         children: [
                           Icon(
                             isCatalog ? Icons.place : prefixIcon,
                             size: 16,
-                            color: isCatalog ? Colors.teal.shade700 : Colors.blue.shade700,
+                            color: isCatalog
+                                ? Colors.teal.shade700
+                                : Colors.blue.shade700,
                           ),
                           const SizedBox(width: 10),
                           Expanded(
@@ -10981,14 +11234,19 @@ PopupMenuButton<int>(
                                   style: TextStyle(
                                     fontSize: 13,
                                     color: Colors.black87,
-                                    fontWeight: isCatalog ? FontWeight.w600 : FontWeight.normal,
+                                    fontWeight: isCatalog
+                                        ? FontWeight.w600
+                                        : FontWeight.normal,
                                   ),
                                 ),
                                 if (sub.isNotEmpty)
                                   Text(
                                     sub,
                                     overflow: TextOverflow.ellipsis,
-                                    style: TextStyle(fontSize: 11.5, color: Colors.grey.shade600),
+                                    style: TextStyle(
+                                      fontSize: 11.5,
+                                      color: Colors.grey.shade600,
+                                    ),
                                   ),
                               ],
                             ),
@@ -10996,7 +11254,10 @@ PopupMenuButton<int>(
                           if (isCatalog) ...[
                             const SizedBox(width: 8),
                             Container(
-                              padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                              padding: const EdgeInsets.symmetric(
+                                horizontal: 6,
+                                vertical: 2,
+                              ),
                               decoration: BoxDecoration(
                                 color: Colors.teal.shade50,
                                 borderRadius: BorderRadius.circular(4),
@@ -11036,7 +11297,10 @@ PopupMenuButton<int>(
   // HELPER: TỌA ĐỘ NƠI NHẬN / ĐIỂM GIAO (ĐỐI CHIẾU GPS ẢNH TÀI XẾ)
 
   /// Điểm trong danh mục khớp với chữ trong ô địa chỉ (theo chữ điền sẵn, tên hoặc địa chỉ).
-  Map<String, dynamic>? _matchCatalogLoc(List<Map<String, dynamic>> cat, String addr) {
+  Map<String, dynamic>? _matchCatalogLoc(
+    List<Map<String, dynamic>> cat,
+    String addr,
+  ) {
     final a = addr.trim().toLowerCase();
     if (a.isEmpty) return null;
     for (final loc in cat) {
@@ -11063,7 +11327,12 @@ PopupMenuButton<int>(
         orig.lat != null &&
         orig.lng != null &&
         addr.trim() == orig.address.trim()) {
-      return (lat: orig.lat, lng: orig.lng, radius: orig.radius, source: 'order');
+      return (
+        lat: orig.lat,
+        lng: orig.lng,
+        radius: orig.radius,
+        source: 'order',
+      );
     }
     final loc = _matchCatalogLoc(cat, addr);
     if (loc != null) {
@@ -11097,16 +11366,23 @@ PopupMenuButton<int>(
         final text = !has
             ? "Chưa có trong danh mục Điểm nhận / giao, chưa đối chiếu GPS ảnh được"
             : "${pt.source == 'order' ? 'Tọa độ đang lưu của đơn' : 'Tọa độ theo danh mục'}: "
-                "${pt.lat!.toStringAsFixed(6)}, ${pt.lng!.toStringAsFixed(6)} – bán kính $radius m";
+                  "${pt.lat!.toStringAsFixed(6)}, ${pt.lng!.toStringAsFixed(6)} – bán kính $radius m";
         final color = has ? Colors.teal.shade700 : Colors.orange.shade800;
         return Padding(
           padding: const EdgeInsets.only(top: 6),
           child: Row(
             children: [
-              Icon(has ? Icons.gps_fixed : Icons.gps_off, size: 14, color: color),
+              Icon(
+                has ? Icons.gps_fixed : Icons.gps_off,
+                size: 14,
+                color: color,
+              ),
               const SizedBox(width: 6),
               Expanded(
-                child: Text(text, style: TextStyle(fontSize: 11.5, color: color)),
+                child: Text(
+                  text,
+                  style: TextStyle(fontSize: 11.5, color: color),
+                ),
               ),
             ],
           ),
@@ -11115,18 +11391,32 @@ PopupMenuButton<int>(
     );
   }
 
-
   /// Chuẩn hóa biển số xe để so khớp (bỏ gạch ngang, chấm, khoảng trắng)
   String _normalizeVehiclePlate(dynamic plate) {
-    return (plate ?? '').toString().replaceAll('-', '').replaceAll('.', '').replaceAll(' ', '').trim().toUpperCase();
+    return (plate ?? '')
+        .toString()
+        .replaceAll('-', '')
+        .replaceAll('.', '')
+        .replaceAll(' ', '')
+        .trim()
+        .toUpperCase();
   }
 
   /// Tính khoảng cách địa lý theo công thức Haversine (km)
-  double _calculateDistanceKm(double lat1, double lon1, double lat2, double lon2) {
+  double _calculateDistanceKm(
+    double lat1,
+    double lon1,
+    double lat2,
+    double lon2,
+  ) {
     const p = 0.017453292519943295; // pi / 180
-    final a = 0.5 -
+    final a =
+        0.5 -
         math.cos((lat2 - lat1) * p) / 2 +
-        math.cos(lat1 * p) * math.cos(lat2 * p) * (1 - math.cos((lon2 - lon1) * p)) / 2;
+        math.cos(lat1 * p) *
+            math.cos(lat2 * p) *
+            (1 - math.cos((lon2 - lon1) * p)) /
+            2;
     return 12742 * math.asin(math.sqrt(math.max(0.0, math.min(1.0, a))));
   }
 
@@ -11149,7 +11439,8 @@ PopupMenuButton<int>(
   }) {
     // 1. Xác định ngày hôm nay dạng YYYY-MM-DD
     final now = DateTime.now();
-    final todayStr = "${now.year}-${now.month.toString().padLeft(2, '0')}-${now.day.toString().padLeft(2, '0')}";
+    final todayStr =
+        "${now.year}-${now.month.toString().padLeft(2, '0')}-${now.day.toString().padLeft(2, '0')}";
 
     // Phân loại xe theo tình trạng kiểm tra 5 ảnh: CHỈ tính xe được duyệt trong ngày hiện tại.
     // Lượt duyệt của các ngày trước không còn hiệu lực vì tài xế phải gửi lại 5 ảnh hằng ngày.
@@ -11158,7 +11449,8 @@ PopupMenuButton<int>(
       if (insp is! Map) continue;
       final flagStatus = (insp['flag_status'] ?? '').toString().toLowerCase();
       if (flagStatus != 'approved') continue;
-      final rawDate = (insp['check_date'] ?? insp['created_at'] ?? '').toString();
+      final rawDate = (insp['check_date'] ?? insp['created_at'] ?? '')
+          .toString();
       final dateOnly = rawDate.split('T')[0].split(' ')[0].trim();
       if (dateOnly != todayStr) continue;
       final plate = (insp['plate_number'] ?? '').toString();
@@ -11180,9 +11472,12 @@ PopupMenuButton<int>(
 
       totalTripsCountByPlate[norm] = (totalTripsCountByPlate[norm] ?? 0) + 1;
 
-      final normStatus = _normalizeOrderStatus((ord['status'] ?? 'assigned').toString());
+      final normStatus = _normalizeOrderStatus(
+        (ord['status'] ?? 'assigned').toString(),
+      );
       if (normStatus != 'completed' && normStatus != 'cancelled') {
-        activeOrdersCountByPlate[norm] = (activeOrdersCountByPlate[norm] ?? 0) + 1;
+        activeOrdersCountByPlate[norm] =
+            (activeOrdersCountByPlate[norm] ?? 0) + 1;
       }
     }
 
@@ -11213,8 +11508,17 @@ PopupMenuButton<int>(
 
       double? distKm;
       final gps = gpsByNormPlate[norm];
-      if (pickupLat != null && pickupLng != null && gps != null && gps.latitude != 0.0 && gps.longitude != 0.0) {
-        distKm = _calculateDistanceKm(pickupLat, pickupLng, gps.latitude, gps.longitude);
+      if (pickupLat != null &&
+          pickupLng != null &&
+          gps != null &&
+          gps.latitude != 0.0 &&
+          gps.longitude != 0.0) {
+        distKm = _calculateDistanceKm(
+          pickupLat,
+          pickupLng,
+          gps.latitude,
+          gps.longitude,
+        );
       }
 
       int tier = 3;
@@ -11303,21 +11607,24 @@ PopupMenuButton<int>(
   }
 
   /// Tải danh mục điểm nhận / giao cho form đơn hàng. Trả về (điểm nhận, điểm giao).
-  Future<(List<Map<String, dynamic>>, List<Map<String, dynamic>>)> _loadLocationsForOrder() async {
+  Future<(List<Map<String, dynamic>>, List<Map<String, dynamic>>)>
+  _loadLocationsForOrder() async {
     final raw = await AdminService.fetchLocations();
     final list = raw
         .whereType<Map>()
         .map((e) => Map<String, dynamic>.from(e))
         .where((e) => (e['name'] ?? '').toString().trim().isNotEmpty)
         .toList();
-    list.sort((a, b) => (a['name'] ?? '')
-        .toString()
-        .toLowerCase()
-        .compareTo((b['name'] ?? '').toString().toLowerCase()));
+    list.sort(
+      (a, b) => (a['name'] ?? '').toString().toLowerCase().compareTo(
+        (b['name'] ?? '').toString().toLowerCase(),
+      ),
+    );
     bool isKind(Map<String, dynamic> e, String k) {
       final kind = (e['kind'] ?? 'BOTH').toString().toUpperCase();
       return kind == k || kind == 'BOTH' || kind.isEmpty;
     }
+
     return (
       list.where((e) => isKind(e, 'PICKUP')).toList(),
       list.where((e) => isKind(e, 'DELIVERY')).toList(),
@@ -11346,9 +11653,11 @@ PopupMenuButton<int>(
         final q = norm(value.text);
         if (q.isEmpty) return customers.take(8);
         return customers
-            .where((cu) =>
-                norm((cu['name'] ?? '').toString()).contains(q) ||
-                norm((cu['code'] ?? '').toString()).contains(q))
+            .where(
+              (cu) =>
+                  norm((cu['name'] ?? '').toString()).contains(q) ||
+                  norm((cu['code'] ?? '').toString()).contains(q),
+            )
             .take(10);
       },
       onSelected: (cu) {
@@ -11487,23 +11796,28 @@ PopupMenuButton<int>(
         .map((e) => Map<String, dynamic>.from(e))
         .where((e) => (e['code'] ?? '').toString().trim().isNotEmpty)
         .toList();
-    list.sort((a, b) => (a['name'] ?? '')
-        .toString()
-        .toLowerCase()
-        .compareTo((b['name'] ?? '').toString().toLowerCase()));
+    list.sort(
+      (a, b) => (a['name'] ?? '').toString().toLowerCase().compareTo(
+        (b['name'] ?? '').toString().toLowerCase(),
+      ),
+    );
     return list;
   }
 
   // DIALOG: TẠO ĐƠN HÀNG MỚI
   Future<void> _showCreateOrderDialog() async {
     // Tải đồng thời khách hàng, địa điểm, GPS hợp nhất và kết quả kiểm tra xe mới nhất
-    final (customers, (pickupCatalog, deliveryCatalog), freshGps, freshInspections) =
-        await (
-          _loadCustomersForOrder(),
-          _loadLocationsForOrder(),
-          QuanLyXeService.fetchFleetGpsStatusFromServer(),
-          AdminService.fetchInspections(),
-        ).wait;
+    final (
+      customers,
+      (pickupCatalog, deliveryCatalog),
+      freshGps,
+      freshInspections,
+    ) = await (
+      _loadCustomersForOrder(),
+      _loadLocationsForOrder(),
+      QuanLyXeService.fetchFleetGpsStatusFromServer(),
+      AdminService.fetchInspections(),
+    ).wait;
     if (!mounted) return;
 
     if (freshInspections.isNotEmpty) {
@@ -11540,7 +11854,9 @@ PopupMenuButton<int>(
         ? freshGps
         : () {
             try {
-              return Map<String, QuanLyXeStatus>.from(context.read<AppState>().allFleetVehiclesStatus);
+              return Map<String, QuanLyXeStatus>.from(
+                context.read<AppState>().allFleetVehiclesStatus,
+              );
             } catch (_) {
               return <String, QuanLyXeStatus>{};
             }
@@ -11685,8 +12001,8 @@ PopupMenuButton<int>(
                               ),
                               items: _products.map((p) {
                                 final id = p['id'] as int;
-                                final name =
-                                    (p['name'] ?? 'Hàng hóa').toString();
+                                final name = (p['name'] ?? 'Hàng hóa')
+                                    .toString();
                                 return DropdownMenuItem<int?>(
                                   value: id,
                                   child: Text(
@@ -11714,10 +12030,7 @@ PopupMenuButton<int>(
                               decoration: const InputDecoration(
                                 isDense: true,
                                 hintText: "Nhập tên sản phẩm",
-                                prefixIcon: Icon(
-                                  Icons.label_outline,
-                                  size: 17,
-                                ),
+                                prefixIcon: Icon(Icons.label_outline, size: 17),
                                 prefixIconConstraints: BoxConstraints(
                                   minWidth: 34,
                                   minHeight: 0,
@@ -11740,10 +12053,7 @@ PopupMenuButton<int>(
                     decoration: const InputDecoration(
                       hintText: "Ví dụ: 30.5",
                       isDense: true,
-                      prefixIcon: Icon(
-                        Icons.monitor_weight_outlined,
-                        size: 17,
-                      ),
+                      prefixIcon: Icon(Icons.monitor_weight_outlined, size: 17),
                       prefixIconConstraints: BoxConstraints(
                         minWidth: 34,
                         minHeight: 0,
@@ -11767,10 +12077,7 @@ PopupMenuButton<int>(
                               isExpanded: true,
                               decoration: const InputDecoration(
                                 isDense: true,
-                                prefixIcon: Icon(
-                                  Icons.alt_route,
-                                  size: 17,
-                                ),
+                                prefixIcon: Icon(Icons.alt_route, size: 17),
                                 prefixIconConstraints: BoxConstraints(
                                   minWidth: 34,
                                   minHeight: 0,
@@ -11779,15 +12086,24 @@ PopupMenuButton<int>(
                               items: const [
                                 DropdownMenuItem(
                                   value: "INTERNAL",
-                                  child: Text("Xe nội bộ", style: TextStyle(fontSize: 13)),
+                                  child: Text(
+                                    "Xe nội bộ",
+                                    style: TextStyle(fontSize: 13),
+                                  ),
                                 ),
                                 DropdownMenuItem(
                                   value: "RENTAL",
-                                  child: Text("Xe thuê ngoài", style: TextStyle(fontSize: 13)),
+                                  child: Text(
+                                    "Xe thuê ngoài",
+                                    style: TextStyle(fontSize: 13),
+                                  ),
                                 ),
                                 DropdownMenuItem(
                                   value: "CUSTOMER_SELF",
-                                  child: Text("Khách tự vận chuyển", style: TextStyle(fontSize: 13)),
+                                  child: Text(
+                                    "Khách tự vận chuyển",
+                                    style: TextStyle(fontSize: 13),
+                                  ),
                                 ),
                               ],
                               onChanged: (val) {
@@ -11839,19 +12155,26 @@ PopupMenuButton<int>(
                     isRequired: true,
                     onCatalogSelected: (loc) {
                       // Khi chọn điểm từ danh mục, cập nhật ngay tọa độ và tính lại thứ tự ưu tiên xe
-                      final double? lat = double.tryParse((loc['latitude'] ?? '').toString());
-                      final double? lng = double.tryParse((loc['longitude'] ?? '').toString());
+                      final double? lat = double.tryParse(
+                        (loc['latitude'] ?? '').toString(),
+                      );
+                      final double? lng = double.tryParse(
+                        (loc['longitude'] ?? '').toString(),
+                      );
                       if (lat != null && lng != null) {
-                        prioritizedCandidateVehicles = _prioritizeVehiclesForPickup(
-                          vehicles: activeVehicles,
-                          orders: _orders,
-                          inspections: _inspections,
-                          fleetGps: fleetGps,
-                          pickupLat: lat,
-                          pickupLng: lng,
-                        );
+                        prioritizedCandidateVehicles =
+                            _prioritizeVehiclesForPickup(
+                              vehicles: activeVehicles,
+                              orders: _orders,
+                              inspections: _inspections,
+                              fleetGps: fleetGps,
+                              pickupLat: lat,
+                              pickupLng: lng,
+                            );
                         if (prioritizedCandidateVehicles.isNotEmpty) {
-                          selectedVehiclePlate = prioritizedCandidateVehicles[0]['plate']?.toString();
+                          selectedVehiclePlate =
+                              prioritizedCandidateVehicles[0]['plate']
+                                  ?.toString();
                         } else {
                           selectedVehiclePlate = null;
                         }
@@ -11859,11 +12182,19 @@ PopupMenuButton<int>(
                       }
                     },
                   ),
-                  _buildPointCoordsInfo(pickupAddrCtrl, pickupCatalog, pickupOrig),
+                  _buildPointCoordsInfo(
+                    pickupAddrCtrl,
+                    pickupCatalog,
+                    pickupOrig,
+                  ),
                   ValueListenableBuilder<TextEditingValue>(
                     valueListenable: pickupAddrCtrl,
                     builder: (context, val, _) {
-                      final pt = _resolvePointCoords(val.text, pickupCatalog, pickupOrig);
+                      final pt = _resolvePointCoords(
+                        val.text,
+                        pickupCatalog,
+                        pickupOrig,
+                      );
                       if (pt.lat != null && pt.lng != null) {
                         // Tự động kiểm tra và cập nhật danh sách ưu tiên nếu vị trí nơi nhận thay đổi
                         final newList = _prioritizeVehiclesForPickup(
@@ -11874,8 +12205,14 @@ PopupMenuButton<int>(
                           pickupLat: pt.lat,
                           pickupLng: pt.lng,
                         );
-                        final firstPlate = newList.isNotEmpty ? newList[0]['plate']?.toString() : null;
-                        if (firstPlate != null && selectedVehiclePlate != firstPlate && (prioritizedCandidateVehicles.isEmpty || prioritizedCandidateVehicles[0]['distance_km'] == null)) {
+                        final firstPlate = newList.isNotEmpty
+                            ? newList[0]['plate']?.toString()
+                            : null;
+                        if (firstPlate != null &&
+                            selectedVehiclePlate != firstPlate &&
+                            (prioritizedCandidateVehicles.isEmpty ||
+                                prioritizedCandidateVehicles[0]['distance_km'] ==
+                                    null)) {
                           WidgetsBinding.instance.addPostFrameCallback((_) {
                             setDialogState(() {
                               prioritizedCandidateVehicles = newList;
@@ -11897,17 +12234,26 @@ PopupMenuButton<int>(
                     hintText: "Nhập địa chỉ hoặc chọn công trình...",
                     isRequired: true,
                   ),
-                  _buildPointCoordsInfo(deliveryAddrCtrl, deliveryCatalog, deliveryOrig),
+                  _buildPointCoordsInfo(
+                    deliveryAddrCtrl,
+                    deliveryCatalog,
+                    deliveryOrig,
+                  ),
                   const SizedBox(height: 16),
                   // Phương tiện chỉ định
                   Builder(
                     builder: (context) {
-                      final currentPickupPt = _resolvePointCoords(pickupAddrCtrl.text, pickupCatalog, pickupOrig);
+                      final currentPickupPt = _resolvePointCoords(
+                        pickupAddrCtrl.text,
+                        pickupCatalog,
+                        pickupOrig,
+                      );
                       return Row(
                         children: [
                           _buildFormLabel("Phương tiện vận chuyển *"),
                           const Spacer(),
-                          if (currentPickupPt.lat != null && currentPickupPt.lng != null)
+                          if (currentPickupPt.lat != null &&
+                              currentPickupPt.lng != null)
                             Text(
                               "Ưu tiên: Rảnh • Gần kho • Ít chuyến",
                               style: TextStyle(
@@ -11930,10 +12276,7 @@ PopupMenuButton<int>(
                           ? "Không có phương tiện khả dụng"
                           : "Chọn phương tiện",
                       hintStyle: const TextStyle(fontSize: 12.5),
-                      prefixIcon: const Icon(
-                        Icons.fire_truck,
-                        size: 17,
-                      ),
+                      prefixIcon: const Icon(Icons.fire_truck, size: 17),
                       prefixIconConstraints: const BoxConstraints(
                         minWidth: 34,
                         minHeight: 0,
@@ -11947,7 +12290,8 @@ PopupMenuButton<int>(
                         final double? distKm = cand['distance_km'] as double?;
                         final int trips = (cand['total_trips'] as int?) ?? 0;
                         final int tier = (cand['tier'] as int?) ?? 2;
-                        final int activeOrders = (cand['active_orders'] as int?) ?? 0;
+                        final int activeOrders =
+                            (cand['active_orders'] as int?) ?? 0;
 
                         // Nhãn phụ thông tin ưu tiên theo tầng (tier)
                         final tags = <String>[];
@@ -11958,7 +12302,11 @@ PopupMenuButton<int>(
                         if (tier == 1) {
                           tags.add("Duyệt hôm nay");
                           if (distKm != null) {
-                            tags.add(distKm < 1 ? "${(distKm * 1000).toStringAsFixed(0)}m" : "${distKm.toStringAsFixed(1)}km");
+                            tags.add(
+                              distKm < 1
+                                  ? "${(distKm * 1000).toStringAsFixed(0)}m"
+                                  : "${distKm.toStringAsFixed(1)}km",
+                            );
                           } else {
                             tags.add("Mất GPS");
                           }
@@ -11970,7 +12318,11 @@ PopupMenuButton<int>(
                           tags.add("Xe rảnh");
                           tags.add("$trips chuyến");
                           if (distKm != null) {
-                            tags.add(distKm < 1 ? "${(distKm * 1000).toStringAsFixed(0)}m" : "${distKm.toStringAsFixed(1)}km");
+                            tags.add(
+                              distKm < 1
+                                  ? "${(distKm * 1000).toStringAsFixed(0)}m"
+                                  : "${distKm.toStringAsFixed(1)}km",
+                            );
                           }
                         } else {
                           // Tier 3: Xe bận
@@ -11995,7 +12347,10 @@ PopupMenuButton<int>(
                               ),
                               const SizedBox(width: 8),
                               Container(
-                                padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 1.5),
+                                padding: const EdgeInsets.symmetric(
+                                  horizontal: 5,
+                                  vertical: 1.5,
+                                ),
                                 decoration: BoxDecoration(
                                   color: tagBgColor,
                                   border: Border.all(
@@ -12027,12 +12382,19 @@ PopupMenuButton<int>(
                       padding: const EdgeInsets.only(top: 6),
                       child: Row(
                         children: [
-                          Icon(Icons.info_outline, size: 14, color: Colors.orange.shade800),
+                          Icon(
+                            Icons.info_outline,
+                            size: 14,
+                            color: Colors.orange.shade800,
+                          ),
                           const SizedBox(width: 6),
                           Expanded(
                             child: Text(
                               "Không tìm thấy phương tiện nào khả dụng trong hệ thống.",
-                              style: TextStyle(fontSize: 11.5, color: Colors.orange.shade800),
+                              style: TextStyle(
+                                fontSize: 11.5,
+                                color: Colors.orange.shade800,
+                              ),
                             ),
                           ),
                         ],
@@ -12092,21 +12454,30 @@ PopupMenuButton<int>(
                   );
                   return;
                 }
-                if (_vehicleByPlate(selectedVehiclePlate)?['default_driver_id'] ==
+                if (_vehicleByPlate(
+                      selectedVehiclePlate,
+                    )?['default_driver_id'] ==
                     null) {
                   ScaffoldMessenger.of(context).showSnackBar(
                     SnackBar(
                       content: Text(
-                          "Xe $selectedVehiclePlate chưa được gán tài xế phụ trách. Vào Đội xe & Tài xế để gán trước."),
+                        "Xe $selectedVehiclePlate chưa được gán tài xế phụ trách. Vào Đội xe & Tài xế để gán trước.",
+                      ),
                     ),
                   );
                   return;
                 }
 
                 final pickupPt = _resolvePointCoords(
-                    pickupAddrCtrl.text, pickupCatalog, pickupOrig);
+                  pickupAddrCtrl.text,
+                  pickupCatalog,
+                  pickupOrig,
+                );
                 final deliveryPt = _resolvePointCoords(
-                    deliveryAddrCtrl.text, deliveryCatalog, deliveryOrig);
+                  deliveryAddrCtrl.text,
+                  deliveryCatalog,
+                  deliveryOrig,
+                );
 
                 Navigator.of(dialogCtx).pop();
                 setState(() => _isLoading = true);
@@ -12160,8 +12531,10 @@ PopupMenuButton<int>(
 
   // DIALOG: CHỈNH SỬA ĐƠN HÀNG
   Future<void> _showEditOrderDialog(dynamic orderData) async {
-    final (customers, (pickupCatalog, deliveryCatalog)) =
-        await (_loadCustomersForOrder(), _loadLocationsForOrder()).wait;
+    final (customers, (pickupCatalog, deliveryCatalog)) = await (
+      _loadCustomersForOrder(),
+      _loadLocationsForOrder(),
+    ).wait;
     if (!mounted) return;
     final o = orderData is Map ? orderData : <String, dynamic>{};
     final customerCodeCtrl = TextEditingController(
@@ -12191,10 +12564,13 @@ PopupMenuButton<int>(
     final cargoWeightCtrl = TextEditingController(
       text: _numText(o['cargo_weight_tons']),
     );
-    final originalTransportType =
-        (o['transport_type'] ?? '').toString().trim().toUpperCase();
-    String transportType =
-        originalTransportType.isEmpty ? 'INTERNAL' : originalTransportType;
+    final originalTransportType = (o['transport_type'] ?? '')
+        .toString()
+        .trim()
+        .toUpperCase();
+    String transportType = originalTransportType.isEmpty
+        ? 'INTERNAL'
+        : originalTransportType;
     int? selectedProductId = o['product_id'] as int?;
     String? selectedVehiclePlate = o['assigned_vehicle_plate']?.toString();
 
@@ -12221,18 +12597,27 @@ PopupMenuButton<int>(
     // Xe chọn được: xe đang hoạt động + xe hiện tại của đơn (kể cả khi xe đó đã Tạm ngừng)
     final currentPlate = selectedVehiclePlate;
     final editVehicles = _vehicles
-        .where((v) =>
-            !_isVehicleInactive(v) ||
-            (v is Map && (v['plate_number'] ?? '').toString() == currentPlate))
+        .where(
+          (v) =>
+              !_isVehicleInactive(v) ||
+              (v is Map &&
+                  (v['plate_number'] ?? '').toString() == currentPlate),
+        )
         .toList();
     if (selectedVehiclePlate != null && selectedVehiclePlate.trim().isEmpty) {
       selectedVehiclePlate = null;
     }
     if (selectedVehiclePlate != null &&
-        !editVehicles.any((v) => v is Map && (v['plate_number'] ?? '').toString() == selectedVehiclePlate)) {
-      editVehicles.insert(0, {'plate_number': selectedVehiclePlate, 'vehicle_type': 'không có trong danh sách xe'});
+        !editVehicles.any(
+          (v) =>
+              v is Map &&
+              (v['plate_number'] ?? '').toString() == selectedVehiclePlate,
+        )) {
+      editVehicles.insert(0, {
+        'plate_number': selectedVehiclePlate,
+        'vehicle_type': 'không có trong danh sách xe',
+      });
     }
-
 
     const transportLabels = {
       'INTERNAL': 'Xe nội bộ',
@@ -12334,8 +12719,8 @@ PopupMenuButton<int>(
                               ),
                               items: editProducts.map((p) {
                                 final id = p['id'] as int;
-                                final name =
-                                    (p['name'] ?? 'Hàng hóa').toString();
+                                final name = (p['name'] ?? 'Hàng hóa')
+                                    .toString();
                                 return DropdownMenuItem<int?>(
                                   value: id,
                                   child: Text(
@@ -12363,10 +12748,7 @@ PopupMenuButton<int>(
                               decoration: const InputDecoration(
                                 isDense: true,
                                 hintText: "Nhập tên sản phẩm",
-                                prefixIcon: Icon(
-                                  Icons.label_outline,
-                                  size: 17,
-                                ),
+                                prefixIcon: Icon(Icons.label_outline, size: 17),
                                 prefixIconConstraints: BoxConstraints(
                                   minWidth: 34,
                                   minHeight: 0,
@@ -12389,10 +12771,7 @@ PopupMenuButton<int>(
                     decoration: const InputDecoration(
                       hintText: "Ví dụ: 30.5",
                       isDense: true,
-                      prefixIcon: Icon(
-                        Icons.monitor_weight_outlined,
-                        size: 17,
-                      ),
+                      prefixIcon: Icon(Icons.monitor_weight_outlined, size: 17),
                       prefixIconConstraints: BoxConstraints(
                         minWidth: 34,
                         minHeight: 0,
@@ -12416,20 +12795,22 @@ PopupMenuButton<int>(
                               isExpanded: true,
                               decoration: const InputDecoration(
                                 isDense: true,
-                                prefixIcon: Icon(
-                                  Icons.alt_route,
-                                  size: 17,
-                                ),
+                                prefixIcon: Icon(Icons.alt_route, size: 17),
                                 prefixIconConstraints: BoxConstraints(
                                   minWidth: 34,
                                   minHeight: 0,
                                 ),
                               ),
                               items: transportItems.entries
-                                  .map((e) => DropdownMenuItem(
-                                        value: e.key,
-                                        child: Text(e.value, style: const TextStyle(fontSize: 13)),
-                                      ))
+                                  .map(
+                                    (e) => DropdownMenuItem(
+                                      value: e.key,
+                                      child: Text(
+                                        e.value,
+                                        style: const TextStyle(fontSize: 13),
+                                      ),
+                                    ),
+                                  )
                                   .toList(),
                               onChanged: (val) {
                                 if (val != null) {
@@ -12479,7 +12860,11 @@ PopupMenuButton<int>(
                     hintText: "Nhập hoặc chọn kho hàng...",
                     isRequired: true,
                   ),
-                  _buildPointCoordsInfo(pickupAddrCtrl, pickupCatalog, pickupOrig),
+                  _buildPointCoordsInfo(
+                    pickupAddrCtrl,
+                    pickupCatalog,
+                    pickupOrig,
+                  ),
                   const SizedBox(height: 16),
                   // Điểm giao hàng (Gợi ý tự động Autocomplete)
                   _buildLocationAutocomplete(
@@ -12490,19 +12875,21 @@ PopupMenuButton<int>(
                     hintText: "Nhập địa chỉ hoặc chọn công trình...",
                     isRequired: true,
                   ),
-                  _buildPointCoordsInfo(deliveryAddrCtrl, deliveryCatalog, deliveryOrig),
+                  _buildPointCoordsInfo(
+                    deliveryAddrCtrl,
+                    deliveryCatalog,
+                    deliveryOrig,
+                  ),
                   const SizedBox(height: 16),
                   // Phương tiện chỉ định
                   _buildFormLabel("Phương tiện vận chuyển *"),
                   DropdownButtonFormField<String?>(
+                    isExpanded: true,
                     value: selectedVehiclePlate,
                     isDense: true,
                     decoration: const InputDecoration(
                       isDense: true,
-                      prefixIcon: Icon(
-                        Icons.fire_truck,
-                        size: 17,
-                      ),
+                      prefixIcon: Icon(Icons.fire_truck, size: 17),
                       prefixIconConstraints: BoxConstraints(
                         minWidth: 34,
                         minHeight: 0,
@@ -12514,7 +12901,10 @@ PopupMenuButton<int>(
                         final vtype = (v['vehicle_type'] ?? '').toString();
                         return DropdownMenuItem<String?>(
                           value: plate,
-                          child: Text("$plate ($vtype)", style: const TextStyle(fontSize: 13)),
+                          child: Text(
+                            "$plate ($vtype)",
+                            style: const TextStyle(fontSize: 13),
+                          ),
                         );
                       }),
                     ],
@@ -12525,7 +12915,8 @@ PopupMenuButton<int>(
                   // Tài xế đi theo xe: giữ xe cũ thì giữ tài xế hiện tại của đơn
                   _buildVehicleDriverInfo(
                     selectedVehiclePlate,
-                    keepDriverName: selectedVehiclePlate ==
+                    keepDriverName:
+                        selectedVehiclePlate ==
                             o['assigned_vehicle_plate']?.toString()
                         ? (o['driver_name'] ?? '').toString()
                         : null,
@@ -12554,7 +12945,8 @@ PopupMenuButton<int>(
                 final pickup = pickupAddrCtrl.text.trim();
                 final delivery = deliveryAddrCtrl.text.trim();
                 final weight = double.tryParse(
-                    cargoWeightCtrl.text.trim().replaceAll(',', '.'));
+                  cargoWeightCtrl.text.trim().replaceAll(',', '.'),
+                );
 
                 if (weight == null || weight <= 0) {
                   ScaffoldMessenger.of(context).showSnackBar(
@@ -12577,9 +12969,15 @@ PopupMenuButton<int>(
                 }
 
                 final pickupPt = _resolvePointCoords(
-                    pickupAddrCtrl.text, pickupCatalog, pickupOrig);
+                  pickupAddrCtrl.text,
+                  pickupCatalog,
+                  pickupOrig,
+                );
                 final deliveryPt = _resolvePointCoords(
-                    deliveryAddrCtrl.text, deliveryCatalog, deliveryOrig);
+                  deliveryAddrCtrl.text,
+                  deliveryCatalog,
+                  deliveryOrig,
+                );
 
                 Navigator.of(dialogCtx).pop();
                 setState(() => _isLoading = true);
@@ -12722,7 +13120,9 @@ PopupMenuButton<int>(
     final o = orderData is Map
         ? Map<String, dynamic>.from(orderData)
         : <String, dynamic>{};
-    final current = _normalizeOrderStatus((o['status'] ?? 'assigned').toString());
+    final current = _normalizeOrderStatus(
+      (o['status'] ?? 'assigned').toString(),
+    );
 
     Color bg;
     Color border;
@@ -12865,6 +13265,7 @@ PopupMenuButton<int>(
       if (d == null) return '';
       return d < 1000 ? '${d.round()}m' : '${(d / 1000).toStringAsFixed(1)}km';
     }
+
     if (c['pickup_distance_m'] != null) {
       parts.add('Nơi nhận ${fmtDist(c['pickup_distance_m'])}');
     }
@@ -12899,8 +13300,9 @@ PopupMenuButton<int>(
     final o = orderData is Map
         ? Map<String, dynamic>.from(orderData)
         : <String, dynamic>{};
-    final pumpBeforeUrl =
-        (o['pump_slip_before_photo_url'] ?? '').toString().trim();
+    final pumpBeforeUrl = (o['pump_slip_before_photo_url'] ?? '')
+        .toString()
+        .trim();
     final weighUrl = (o['weigh_slip_photo_url'] ?? '').toString().trim();
     final arrivalUrl = (o['arrival_photo_url'] ?? '').toString().trim();
     final delivUrl = (o['delivery_slip_photo_url'] ?? '').toString().trim();
@@ -12994,10 +13396,20 @@ PopupMenuButton<int>(
           url: pumpBeforeUrl,
           icon: Icons.local_gas_station_outlined,
           activeColor: const Color(0xFF0284C7),
-          gpsLat: _asDouble(o['pump_slip_before_gps_lat'] ?? o['pump_before_gps_lat']),
-          gpsLng: _asDouble(o['pump_slip_before_gps_lng'] ?? o['pump_before_gps_lng']),
-          gpsAccuracy: _asDouble(o['pump_slip_before_gps_accuracy'] ?? o['pump_before_gps_accuracy']),
-          gpsCapturedAt: (o['pump_slip_before_gps_captured_at'] ?? o['pump_before_gps_captured_at'] ?? '').toString(),
+          gpsLat: _asDouble(
+            o['pump_slip_before_gps_lat'] ?? o['pump_before_gps_lat'],
+          ),
+          gpsLng: _asDouble(
+            o['pump_slip_before_gps_lng'] ?? o['pump_before_gps_lng'],
+          ),
+          gpsAccuracy: _asDouble(
+            o['pump_slip_before_gps_accuracy'] ?? o['pump_before_gps_accuracy'],
+          ),
+          gpsCapturedAt:
+              (o['pump_slip_before_gps_captured_at'] ??
+                      o['pump_before_gps_captured_at'] ??
+                      '')
+                  .toString(),
           photoGeoLabel: _geoSummary(o, 'pump_slip_before'),
         ),
         badge(
@@ -13071,12 +13483,12 @@ PopupMenuButton<int>(
     final orderCode = (o['order_code'] ?? '---').toString();
     final productName = (o['product_name'] ?? '---').toString();
     final weightTons = o['cargo_weight_tons']?.toString() ?? '0';
-    final pickupAddr =
-        (o['pickup_address'] ?? o['pickup_location'] ?? '---').toString();
+    final pickupAddr = (o['pickup_address'] ?? o['pickup_location'] ?? '---')
+        .toString();
     final deliveryAddr =
         (o['delivery_address'] ?? o['delivery_location'] ?? '---').toString();
-    final vehiclePlate =
-        (o['assigned_vehicle_plate'] ?? 'Chưa gán xe').toString();
+    final vehiclePlate = (o['assigned_vehicle_plate'] ?? 'Chưa gán xe')
+        .toString();
     final driverName = (o['driver_name'] ?? 'Chưa gán tài xế').toString();
 
     showDialog(
@@ -16612,9 +17024,9 @@ class _PointOrig {
   const _PointOrig(this.address, this.lat, this.lng, this.radius);
 
   factory _PointOrig.fromOrder(Map o, String kind) => _PointOrig(
-        (o['${kind}_address'] ?? '').toString(),
-        double.tryParse((o['${kind}_lat'] ?? '').toString()),
-        double.tryParse((o['${kind}_lng'] ?? '').toString()),
-        int.tryParse((o['${kind}_radius_m'] ?? '').toString()),
-      );
+    (o['${kind}_address'] ?? '').toString(),
+    double.tryParse((o['${kind}_lat'] ?? '').toString()),
+    double.tryParse((o['${kind}_lng'] ?? '').toString()),
+    int.tryParse((o['${kind}_radius_m'] ?? '').toString()),
+  );
 }
