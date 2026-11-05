@@ -3,7 +3,9 @@
 <plist version="1.0">
 <dict>
 		<key>NSLocationWhenInUseUsageDescription</key>
-	<string>Vận tải VinTrans cần vị trí GPS để ghi nhận tọa độ thực tế khi tài xế chụp ảnh kiểm tra xe và phiếu giao nhận hàng.</string>
+	<string>Ứng dụng cần quyền vị trí để hiển thị bản đồ và dẫn đường cho tài xế khi đi giao hàng.</string>
+	<key>NSLocationAlwaysAndWhenInUseUsageDescription</key>
+	<string>Ứng dụng cần quyền cập nhật vị trí ngầm để tự động báo cáo toạ độ xe và tiến độ giao hàng cho điều phối viên ngay cả khi tài xế tắt màn hình.</string>
 	<key>NSCameraUsageDescription</key>
 	<string>Ứng dụng cần quyền Camera để tài xế chụp 5 ảnh kiểm tra xe đầu ngày, phiếu cân và phiếu giao hàng.</string>
 	<key>NSMicrophoneUsageDescription</key>
@@ -71,5 +73,9 @@
 	</array>
 	<key>UIRequiresFullScreen</key>
 	<true/>
+	<key>UIBackgroundModes</key>
+	<array>
+		<string>location</string>
+	</array>
 </dict>
 </plist>
