@@ -364,6 +364,13 @@ class AppState extends ChangeNotifier {
         }
         final status = (latest?['flag_status'] ?? '').toString().trim().toLowerCase();
         approved = status == 'approved';
+        // Xe đang "Tạm ngừng hoạt động" (Báo nghỉ): tài xế KHÔNG được nhận chuyến/đơn hàng
+        // dù đã được Duyệt Nhận Chuyến. Chỉ mở lại khi Điều phối kích hoạt lại xe
+        // hoặc Duyệt Nhận Chuyến mới (server tự kích hoạt lại xe khi duyệt).
+        final String vehicleStatus = (latest?['vehicle_status'] ?? '').toString().trim().toLowerCase();
+        if (vehicleStatus == 'inactive') {
+          approved = false;
+        }
       }
       final bool completedToday = data.isNotEmpty;
       bool changed = false;

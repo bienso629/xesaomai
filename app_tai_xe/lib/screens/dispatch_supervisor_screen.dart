@@ -15,6 +15,7 @@ import '../services/admin_service.dart';
 import '../services/quanlyxe_service.dart';
 import '../models/quanlyxe_model.dart';
 import '../widgets/assign_order_approve_dialog.dart';
+import '../widgets/driver_activity_history_dialog.dart';
 import '../widgets/order_attachments_section.dart';
 import '../models/reminder_model.dart';
 import '../models/breakdown_model.dart';
@@ -4179,7 +4180,51 @@ class _DispatchSupervisorScreenState extends State<DispatchSupervisorScreen> {
                                             final isDispatcherUser = roleCodes
                                                 .contains('dispatcher');
 
-                                            if (isDispatcherUser) {
+                                            if (roleCodes.contains('driver')) {
+                                              return OutlinedButton.icon(
+                                                style: OutlinedButton.styleFrom(
+                                                  foregroundColor:
+                                                      Colors.teal.shade900,
+                                                  side: BorderSide(
+                                                    color: Colors.teal.shade300,
+                                                  ),
+                                                  padding:
+                                                      const EdgeInsets.symmetric(
+                                                        horizontal: 8,
+                                                      ),
+                                                  minimumSize: const Size(
+                                                    0,
+                                                    32,
+                                                  ),
+                                                  tapTargetSize:
+                                                      MaterialTapTargetSize
+                                                          .shrinkWrap,
+                                                  shape: RoundedRectangleBorder(
+                                                    borderRadius:
+                                                        BorderRadius.circular(
+                                                          4,
+                                                        ),
+                                                  ),
+                                                ),
+                                                icon: const Icon(
+                                                  Icons.fact_check,
+                                                  size: 14,
+                                                ),
+                                                label: const Text(
+                                                  "Lịch sử hoạt động",
+                                                  style: TextStyle(
+                                                    fontSize: 11,
+                                                    fontWeight: FontWeight.bold,
+                                                  ),
+                                                ),
+                                                onPressed: () =>
+                                                    DriverActivityHistoryDialog
+                                                        .show(
+                                                  context,
+                                                  targetUser: u,
+                                                ),
+                                              );
+                                            } else if (isDispatcherUser) {
                                               return OutlinedButton.icon(
                                                 style: OutlinedButton.styleFrom(
                                                   foregroundColor:
@@ -11631,7 +11676,7 @@ class _DispatchSupervisorScreenState extends State<DispatchSupervisorScreen> {
     );
   }
 
-  // HELPER: Ô MÃ KHÁCH HÀNG (AUTOCOMPLETE TỪ DANH SÁCH KHÁCH HÀNG)
+  // HELPER: Ô MÃ KHÁCH HÀNG (AUTOCOMPLETE - CHỈ CHO PHÉP CHỌN TỪ DANH SÁCH)
   Widget _buildCustomerCodeAutocomplete({
     required TextEditingController controller,
     required List<Map<String, dynamic>> customers,
@@ -11674,42 +11719,70 @@ class _DispatchSupervisorScreenState extends State<DispatchSupervisorScreen> {
           mainAxisSize: MainAxisSize.min,
           children: [
             _buildFormLabel("Mã khách hàng"),
-            TextField(
-              controller: fieldCtrl,
-              focusNode: focusNode,
-              decoration: const InputDecoration(
-                isDense: true,
-                hintText: "Gõ tên khách hàng để tìm",
-                prefixIcon: Icon(Icons.person_outline, size: 17),
-                prefixIconConstraints: BoxConstraints(
-                  minWidth: 34,
-                  minHeight: 0,
-                ),
-              ),
-              onSubmitted: (_) => onFieldSubmitted(),
-            ),
             ValueListenableBuilder<TextEditingValue>(
               valueListenable: fieldCtrl,
               builder: (context, value, _) {
-                if (value.text.trim().isEmpty || customers.isEmpty) {
-                  return const SizedBox.shrink();
-                }
                 final match = findByCode(value.text);
-                return Padding(
-                  padding: const EdgeInsets.only(top: 4),
-                  child: Text(
-                    match != null
-                        ? (match['name'] ?? '').toString()
-                        : "Không có trong danh sách Khách hàng",
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
-                    style: TextStyle(
-                      fontSize: 11,
-                      color: match != null
-                          ? Colors.teal.shade700
-                          : Colors.grey.shade600,
+                return Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    TextField(
+                      controller: fieldCtrl,
+                      focusNode: focusNode,
+                      decoration: InputDecoration(
+                        isDense: true,
+                        hintText: "Gõ tên khách hàng để tìm",
+                        prefixIcon: const Icon(Icons.person_outline, size: 17),
+                        prefixIconConstraints: const BoxConstraints(
+                          minWidth: 34,
+                          minHeight: 0,
+                        ),
+                        suffixIcon: value.text.trim().isEmpty
+                            ? null
+                            : IconButton(
+                                visualDensity: VisualDensity.compact,
+                                padding: EdgeInsets.zero,
+                                constraints: const BoxConstraints(
+                                  minWidth: 30,
+                                  minHeight: 30,
+                                ),
+                                splashRadius: 16,
+                                tooltip: "Xoá lựa chọn",
+                                icon: Icon(
+                                  Icons.close,
+                                  size: 16,
+                                  color: Colors.grey.shade600,
+                                ),
+                                onPressed: () {
+                                  fieldCtrl.clear();
+                                  controller.clear();
+                                  focusNode.requestFocus();
+                                },
+                              ),
+                      ),
+                      onSubmitted: (_) => onFieldSubmitted(),
                     ),
-                  ),
+                    Padding(
+                      padding: const EdgeInsets.only(top: 4),
+                      child: Text(
+                        match != null
+                            ? (match['name'] ?? '').toString()
+                            : "Không có trong danh sách Khách hàng. Vui lòng chọn từ danh sách gợi ý.",
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: TextStyle(
+                          fontSize: 11,
+                          fontWeight: match != null
+                              ? FontWeight.w600
+                              : FontWeight.normal,
+                          color: match != null
+                              ? Colors.teal.shade700
+                              : Colors.red.shade700,
+                        ),
+                      ),
+                    ),
+                  ],
                 );
               },
             ),
@@ -11725,62 +11798,77 @@ class _DispatchSupervisorScreenState extends State<DispatchSupervisorScreen> {
             color: Colors.white,
             child: ConstrainedBox(
               constraints: const BoxConstraints(maxHeight: 260, maxWidth: 520),
-              child: ListView.separated(
-                padding: const EdgeInsets.symmetric(vertical: 4),
-                shrinkWrap: true,
-                itemCount: options.length,
-                separatorBuilder: (_, _) =>
-                    Divider(height: 1, color: Colors.grey.shade200),
-                itemBuilder: (context, index) {
-                  final cu = options.elementAt(index);
-                  final name = (cu['name'] ?? '').toString();
-                  final code = (cu['code'] ?? '').toString();
-                  return InkWell(
-                    hoverColor: Colors.blue.shade50,
-                    onTap: () => onSelected(cu),
-                    child: Padding(
+              child: options.isEmpty
+                  ? Padding(
                       padding: const EdgeInsets.symmetric(
                         horizontal: 14,
-                        vertical: 8,
+                        vertical: 10,
                       ),
-                      child: Row(
-                        children: [
-                          Icon(
-                            Icons.storefront_outlined,
-                            size: 16,
-                            color: Colors.blue.shade700,
-                          ),
-                          const SizedBox(width: 10),
-                          Expanded(
-                            child: Column(
-                              crossAxisAlignment: CrossAxisAlignment.start,
+                      child: Text(
+                        "Không có khách hàng khớp trong danh sách",
+                        style: TextStyle(
+                          fontSize: 12,
+                          color: Colors.grey.shade600,
+                        ),
+                      ),
+                    )
+                  : ListView.separated(
+                      padding: const EdgeInsets.symmetric(vertical: 4),
+                      shrinkWrap: true,
+                      itemCount: options.length,
+                      separatorBuilder: (_, _) =>
+                          Divider(height: 1, color: Colors.grey.shade200),
+                      itemBuilder: (context, index) {
+                        final cu = options.elementAt(index);
+                        final name = (cu['name'] ?? '').toString();
+                        final code = (cu['code'] ?? '').toString();
+                        return InkWell(
+                          hoverColor: Colors.blue.shade50,
+                          onTap: () => onSelected(cu),
+                          child: Padding(
+                            padding: const EdgeInsets.symmetric(
+                              horizontal: 14,
+                              vertical: 8,
+                            ),
+                            child: Row(
                               children: [
-                                Text(
-                                  name,
-                                  style: const TextStyle(
-                                    fontSize: 13,
-                                    color: Colors.black87,
-                                    fontWeight: FontWeight.w600,
-                                  ),
-                                  overflow: TextOverflow.ellipsis,
+                                Icon(
+                                  Icons.storefront_outlined,
+                                  size: 16,
+                                  color: Colors.blue.shade700,
                                 ),
-                                Text(
-                                  code,
-                                  style: TextStyle(
-                                    fontSize: 11,
-                                    color: Colors.grey.shade600,
+                                const SizedBox(width: 10),
+                                Expanded(
+                                  child: Column(
+                                    crossAxisAlignment:
+                                        CrossAxisAlignment.start,
+                                    children: [
+                                      Text(
+                                        name,
+                                        style: const TextStyle(
+                                          fontSize: 13,
+                                          color: Colors.black87,
+                                          fontWeight: FontWeight.w600,
+                                        ),
+                                        overflow: TextOverflow.ellipsis,
+                                      ),
+                                      Text(
+                                        code,
+                                        style: TextStyle(
+                                          fontSize: 11,
+                                          color: Colors.grey.shade600,
+                                        ),
+                                        overflow: TextOverflow.ellipsis,
+                                      ),
+                                    ],
                                   ),
-                                  overflow: TextOverflow.ellipsis,
                                 ),
                               ],
                             ),
                           ),
-                        ],
-                      ),
+                        );
+                      },
                     ),
-                  );
-                },
-              ),
             ),
           ),
         );
@@ -12468,6 +12556,23 @@ class _DispatchSupervisorScreenState extends State<DispatchSupervisorScreen> {
                   return;
                 }
 
+                final customerCodeVal = customerCodeCtrl.text.trim();
+                if (customerCodeVal.isNotEmpty &&
+                    !customers.any(
+                      (cu) =>
+                          (cu['code'] ?? '').toString().trim().toLowerCase() ==
+                          customerCodeVal.toLowerCase(),
+                    )) {
+                  ScaffoldMessenger.of(dialogCtx).showSnackBar(
+                    const SnackBar(
+                      content: Text(
+                        "Vui lòng chọn Mã khách hàng trong danh sách gợi ý",
+                      ),
+                    ),
+                  );
+                  return;
+                }
+
                 final pickupPt = _resolvePointCoords(
                   pickupAddrCtrl.text,
                   pickupCatalog,
@@ -12963,6 +13068,23 @@ class _DispatchSupervisorScreenState extends State<DispatchSupervisorScreen> {
                   ScaffoldMessenger.of(context).showSnackBar(
                     const SnackBar(
                       content: Text("Vui lòng điền đầy đủ thông tin bắt buộc"),
+                    ),
+                  );
+                  return;
+                }
+
+                final customerCodeVal = customerCodeCtrl.text.trim();
+                if (customerCodeVal.isNotEmpty &&
+                    !customers.any(
+                      (cu) =>
+                          (cu['code'] ?? '').toString().trim().toLowerCase() ==
+                          customerCodeVal.toLowerCase(),
+                    )) {
+                  ScaffoldMessenger.of(dialogCtx).showSnackBar(
+                    const SnackBar(
+                      content: Text(
+                        "Vui lòng chọn Mã khách hàng trong danh sách gợi ý",
+                      ),
                     ),
                   );
                   return;
@@ -15716,13 +15838,19 @@ class _VehicleInspectionsModalState extends State<_VehicleInspectionsModal> {
       );
       if (result != null && result['approved'] == true && mounted) {
         final orderCode = result['order_code'];
+        // Xe đang "Tạm ngừng hoạt động" (Báo nghỉ): khi Điều phối Duyệt Nhận Chuyến,
+        // server tự động kích hoạt lại xe để tài xế nhận được chuyến/đơn hàng.
+        final String vehicleStatus = (_selectedRecord!['vehicle_status'] ?? '').toString().trim().toLowerCase();
+        final bool wasResting = vehicleStatus == 'inactive';
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
             backgroundColor: Colors.green.shade700,
             content: Text(
-              (orderCode != null && orderCode.toString().isNotEmpty)
-                  ? "Đã duyệt nhận chuyến và gắn đơn hàng $orderCode cho tài xế!"
-                  : "Đã phê duyệt kiểm tra xe! Xe được phép nhận chuyến.",
+              wasResting
+                  ? "Đã duyệt nhận chuyến${(orderCode != null && orderCode.toString().isNotEmpty) ? " và gắn đơn hàng $orderCode" : ""}! Xe đang Báo nghỉ đã được TỰ ĐỘNG KÍCH HOẠT LẠI - tài xế nhận được chuyến/đơn hàng bình thường."
+                  : ((orderCode != null && orderCode.toString().isNotEmpty)
+                      ? "Đã duyệt nhận chuyến và gắn đơn hàng $orderCode cho tài xế!"
+                      : "Đã phê duyệt kiểm tra xe! Xe được phép nhận chuyến."),
             ),
           ),
         );

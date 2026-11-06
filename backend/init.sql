@@ -333,6 +333,20 @@ CREATE TABLE IF NOT EXISTS dispatcher_shifts (
     created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
 );
 
+-- Lịch sử hoạt động Tài xế (Báo nghỉ, nhận ca, hệ thống tạm ngừng GPS...)
+CREATE TABLE IF NOT EXISTS driver_activity_logs (
+    id SERIAL PRIMARY KEY,
+    user_id INT REFERENCES users(id),
+    username VARCHAR(100),
+    full_name VARCHAR(150),
+    role_code VARCHAR(50),
+    action VARCHAR(100) NOT NULL,
+    action_detail TEXT,
+    plate VARCHAR(20),
+    created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
+);
+CREATE INDEX IF NOT EXISTS idx_driver_activity_logs_user_time ON driver_activity_logs(user_id, created_at DESC);
+
 -- DỮ LIỆU MẪU BAN ĐẦU (SEED DATA)
 INSERT INTO roles (code, name, description, is_system) VALUES
 ('admin', 'Quản trị viên', 'Quản trị viên toàn quyền hệ thống', TRUE),

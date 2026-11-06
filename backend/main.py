@@ -804,6 +804,7 @@ def _startup_ensure_customers():
     ensure_order_attachment_columns()
     ensure_vehicle_gps_columns()
     ensure_locations_tables()
+    ensure_driver_activity_logs_table()
 
 # ----------------- REALTIME WEBSOCKET & DEVICE TOKEN (PUSH NOTIFICATION) -----------------
 
@@ -2204,6 +2205,108 @@ def create_vehicle(v: VehicleCreate, current_user: dict = Depends(get_current_us
         conn.close()
         raise HTTPException(status_code=400, detail=str(e))
 
+# ----------------- LỊCH SỬ HOẠT ĐỘNG TÀI XẾ (Ghi nhận tự động) -----------------
+# Bảng driver_activity_logs ghi nhận toàn bộ hoạt động của Tài xế (Báo nghỉ, hủy báo nghỉ,
+# nhận ca, hoàn thành chuyến...) để Điều phối / Quản lý tra cứu lại sau này.
+
+def log_driver_activity(
+    cur,
+    user_id: Optional[int],
+    username: Optional[str],
+    full_name: Optional[str],
+    role_code: str,
+    action: str,
+    action_detail: str,
+    plate: Optional[str] = None,
+):
+    """Ghi 1 dòng lịch sử hoạt động vào bảng driver_activity_logs (dùng cursor hiện có)."""
+    cur.execute(
+        """INSERT INTO driver_activity_logs
+               (user_id, username, full_name, role_code, action, action_detail, plate)
+           VALUES (%s, %s, %s, %s, %s, %s, %s)""",
+        (user_id, username, full_name, role_code, action, action_detail, plate),
+    )
+
+
+def ensure_driver_activity_logs_table():
+    """Tạo bảng driver_activity_logs nếu chưa tồn tại (chạy khi khởi động server)."""
+    conn = get_db()
+    cur = conn.cursor()
+    try:
+        cur.execute(
+            """CREATE TABLE IF NOT EXISTS driver_activity_logs (
+                id SERIAL PRIMARY KEY,
+                user_id INT REFERENCES users(id),
+                username VARCHAR(100),
+                full_name VARCHAR(150),
+                role_code VARCHAR(50),
+                action VARCHAR(100) NOT NULL,
+                action_detail TEXT,
+                plate VARCHAR(20),
+                created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
+            )"""
+        )
+        cur.execute(
+            "CREATE INDEX IF NOT EXISTS idx_driver_activity_logs_user_time "
+            "ON driver_activity_logs(user_id, created_at DESC)"
+        )
+        conn.commit()
+    except Exception as e:
+        conn.rollback()
+        print(f"[driver_activity_logs] Không tạo được bảng lịch sử hoạt động: {e}")
+    finally:
+        cur.close()
+        conn.close()
+
+
+@app.get("/api/v1/driver-activity-logs")
+def get_driver_activity_logs(
+    user_id: Optional[int] = None,
+    username: Optional[str] = None,
+    plate: Optional[str] = None,
+    action: Optional[str] = None,
+    date_from: Optional[str] = None,
+    date_to: Optional[str] = None,
+    limit: int = 100,
+    current_user: dict = Depends(get_current_user),
+):
+    """Lấy lịch sử hoạt động của Tài xế (lọc theo tài khoản, xe, loại hoạt động, khoảng thời gian)."""
+    conn = get_db()
+    cur = conn.cursor()
+    try:
+        query = "SELECT * FROM driver_activity_logs WHERE 1=1"
+        params = []
+        if user_id:
+            query += " AND user_id = %s"
+            params.append(user_id)
+        if username:
+            query += " AND username = %s"
+            params.append(username)
+        if plate:
+            query += " AND plate = %s"
+            params.append(plate)
+        if action:
+            query += " AND action = %s"
+            params.append(action)
+        if date_from:
+            query += " AND created_at >= %s"
+            params.append(date_from)
+        if date_to:
+            query += " AND created_at <= %s"
+            params.append(date_to)
+        query += " ORDER BY created_at DESC LIMIT %s"
+        params.append(min(limit, 500))
+        cur.execute(query, tuple(params))
+        rows = cur.fetchall()
+        cur.close()
+        conn.close()
+        return rows
+    except Exception as e:
+        cur.close()
+        conn.close()
+        raise HTTPException(status_code=400, detail=str(e))
+
+
 @app.put("/api/v1/vehicles/{plate_number}")
 def update_vehicle(plate_number: str, v: VehicleUpdate, current_user: dict = Depends(get_current_user)):
     conn = get_db()
@@ -2243,8 +2346,38 @@ def update_vehicle(plate_number: str, v: VehicleUpdate, current_user: dict = Dep
             sql = f"UPDATE vehicles SET {', '.join(updates)} WHERE plate_number = %s RETURNING *"
             params.append(plate_number)
             cur.execute(sql, tuple(params))
-            conn.commit()
             updated = cur.fetchone()
+            # Ghi lịch sử hoạt động của Tài xế khi trạng thái phương tiện thay đổi
+            # (Báo nghỉ / Hủy báo nghỉ từ app Tài xế, hoặc Điều phối đổi trạng thái thủ công)
+            if v.status != exist.get("status"):
+                status_labels = {
+                    "ready": "Đang hoạt động",
+                    "inactive": "Tạm ngừng hoạt động",
+                    "maintenance": "Bảo trì",
+                }
+                old_lb = status_labels.get(exist.get("status"), exist.get("status") or "Không rõ")
+                new_lb = status_labels.get(v.status, v.status or "Không rõ")
+                driver_id = updated.get("default_driver_id")
+                driver_user = None
+                if driver_id:
+                    cur.execute("SELECT username, full_name FROM users WHERE id = %s", (driver_id,))
+                    driver_user = cur.fetchone()
+                if updated.get("default_driver_id") is None:
+                    driver_id = None
+                log_driver_activity(
+                    cur,
+                    user_id=driver_id,
+                    username=driver_user["username"] if driver_user else None,
+                    full_name=driver_user["full_name"] if driver_user else None,
+                    role_code="driver",
+                    action="BAO_NGHI" if v.status == VEHICLE_STATUS_INACTIVE else "VEHOATDONG",
+                    action_detail=(
+                        f"{current_user.get('full_name') or current_user.get('username')} ({', '.join(current_user.get('roles', [])) or 'không rõ vai trò'}) "
+                        f"đã cập nhật trạng thái phương tiện {plate_number} từ '{old_lb}' sang '{new_lb}'"
+                    ),
+                    plate=plate_number,
+                )
+            conn.commit()
         else:
             updated = exist
 
@@ -2493,6 +2626,26 @@ def sync_fleet_vehicles(force: bool = False):
                     cur.execute(
                         "UPDATE vehicles SET in_fleet = FALSE, status = %s WHERE plate_number = %s",
                         (VEHICLE_STATUS_INACTIVE, row["plate_number"]),
+                    )
+                    # Ghi lịch sử hoạt động: hệ thống tự Tạm ngừng xe khi mất tín hiệu GPS
+                    cur.execute("SELECT default_driver_id FROM vehicles WHERE plate_number = %s", (row["plate_number"],))
+                    _drv = cur.fetchone()
+                    _drv_user = None
+                    if _drv and _drv.get("default_driver_id"):
+                        cur.execute("SELECT username, full_name FROM users WHERE id = %s", (_drv["default_driver_id"],))
+                        _drv_user = cur.fetchone()
+                    log_driver_activity(
+                        cur,
+                        user_id=_drv.get("default_driver_id") if _drv else None,
+                        username=_drv_user["username"] if _drv_user else None,
+                        full_name=_drv_user["full_name"] if _drv_user else None,
+                        role_code="driver",
+                        action="MAT_GPS",
+                        action_detail=(
+                            f"Hệ thống tự động Tạm ngừng hoạt động xe {row['plate_number']} "
+                            f"do không còn tín hiệu GPS trên nhà cung cấp"
+                        ),
+                        plate=row["plate_number"],
                     )
             conn.commit()
             cur.execute(
@@ -3541,6 +3694,34 @@ def get_reports_summary(current_user: dict = Depends(get_current_user)):
         "avg_pump_time_minutes": 78
     }
 
+def _vehicle_is_resting(cur, plate: Optional[str]) -> bool:
+    """Xe đang 'Tạm ngừng hoạt động' (Báo nghỉ): tài xế không được nhận chuyến/đơn hàng.
+    Chỉ thoát trạng thái khi Điều phối kích hoạt lại xe (status != inactive)
+    HOẶC tài xế được Duyệt Nhận Chuyến (5 ảnh hôm nay có flag_status = 'approved')."""
+    plate = (plate or "").strip()
+    if not plate:
+        return False
+    try:
+        cur.execute("SELECT status FROM vehicles WHERE plate_number = %s", (plate,))
+        row = cur.fetchone()
+        if not row or row.get("status") != VEHICLE_STATUS_INACTIVE:
+            return False
+    except Exception:
+        return False
+    # Trạng thái nghỉ chỉ phụ thuộc status của xe. Duyệt Nhận Chuyến cũ (trước khi
+    # Báo nghỉ) KHÔNG mở khóa; chỉ khi Điều phối kích hoạt lại xe HOẶC Duyệt Nhận
+    # Chuyến mới (review_inspection sẽ tự kích hoạt lại xe khi duyệt cho xe đang nghỉ).
+    return True
+
+
+def _vehicle_resting_reason(plate: str) -> str:
+    return (
+        f"Xe {plate} đang ở trạng thái Tạm ngừng hoạt động (Báo nghỉ). "
+        f"Không thể nhận chuyến/đơn hàng. Chỉ khi Điều phối kích hoạt lại xe "
+        f"hoặc tài xế được Duyệt Nhận Chuyến (đủ 5 ảnh trong ngày) thì xe mới nhận được chuyến."
+    )
+
+
 # 6. Quản lý Đơn hàng (Orders)
 def _vehicle_driver_id(cur, plate: Optional[str]) -> int:
     """Mỗi xe có một tài khoản tài xế phụ trách: lấy tài xế của đơn theo xe."""
@@ -3563,6 +3744,9 @@ def create_order(o: OrderCreate, current_user: dict = Depends(get_current_user))
     cur = conn.cursor()
     try:
         o.assigned_driver_id = _vehicle_driver_id(cur, o.assigned_vehicle_plate)
+        # Xe đang "Tạm ngừng hoạt động" (Báo nghỉ) thì không được nhận đơn hàng mới
+        if _vehicle_is_resting(cur, o.assigned_vehicle_plate):
+            raise HTTPException(status_code=409, detail=_vehicle_resting_reason(o.assigned_vehicle_plate))
         cur.execute(
             """INSERT INTO orders (order_code, customer_code, factory_code, product_id, product_detail, transport_type, carrier_name, customer_group_id,
                                   pickup_address, pickup_lat, pickup_lng, delivery_address, delivery_lat, delivery_lng,
@@ -3666,6 +3850,9 @@ def update_order(order_id: int, o: OrderUpdate, current_user: dict = Depends(get
         if o.assigned_vehicle_plate is not None:
             new_plate = o.assigned_vehicle_plate.strip()
             if new_plate != (existing.get("assigned_vehicle_plate") or "").strip():
+                # Xe đang "Tạm ngừng hoạt động" (Báo nghỉ) thì không thể gán đơn hàng cho xe đó
+                if _vehicle_is_resting(cur, new_plate):
+                    raise HTTPException(status_code=409, detail=_vehicle_resting_reason(new_plate))
                 fields.append("assigned_vehicle_plate = %s")
                 values.append(new_plate)
                 fields.append("assigned_driver_id = %s")
@@ -3744,6 +3931,22 @@ def check_inspection_status(plate_number: str, current_user: dict = Depends(get_
 
     conn = get_db()
     cur = conn.cursor()
+    # Xe dang "Tam ngung hoat dong" (Bao nghi): khong the nhan chuyen/phan hoi du dieu kien chay.
+    # Chi mo lai khi Dieu phoi kich hoat lai xe HOAC Dieu phoi bam "Duyet Nhan Chuyen"
+    # (review_inspection se tu kich hoat lai xe khi duyet cho xe dang bao nghi).
+    cur.execute("SELECT status FROM vehicles WHERE plate_number = %s", (plate_number,))
+    veh = cur.fetchone()
+    if veh and (veh.get("status") or "") == VEHICLE_STATUS_INACTIVE:
+        cur.close()
+        conn.close()
+        return {
+            "plate_number": plate_number,
+            "is_inspected": False,
+            "can_take_trip": False,
+            "bypass_inspection": False,
+            "vehicle_status": VEHICLE_STATUS_INACTIVE,
+            "reason": "Xe dang Tam ngung hoat dong (Bao nghi). Khong the nhan chuyen cho den khi Dieu phoi kich hoat lai xe hoac Duyet Nhan Chuyen",
+        }
     cur.execute(
         "SELECT * FROM kiem_tra_dau_ngay WHERE plate_number = %s AND check_date = CURRENT_DATE ORDER BY id DESC LIMIT 1",
         (plate_number,)
@@ -3812,7 +4015,8 @@ def get_inspections(date: Optional[str] = None, plate_number: Optional[str] = No
     cur = conn.cursor()
     query = """
         SELECT k.*, u.full_name as driver_name, u.username as driver_username, u.phone as driver_phone,
-               v.vehicle_type, v.ownership_type, v.owner_company,
+               v.vehicle_type, v.ownership_type, v.owner_company, v.status as vehicle_status,
+               CASE WHEN v.status = 'inactive' THEN 'Tạm ngừng hoạt động' ELSE 'Đang hoạt động' END as vehicle_status_label,
                rv.full_name as resolver_name
         FROM kiem_tra_dau_ngay k
         LEFT JOIN users u ON k.driver_id = u.id
@@ -3845,12 +4049,53 @@ def review_inspection(inspection_id: int, review: InspectionReview, current_user
                WHERE id = %s RETURNING *""",
             (review.flag_status, review.flag_reason, current_user["id"], inspection_id)
         )
-        conn.commit()
         updated = cur.fetchone()
+        if not updated:
+            conn.rollback()
+            cur.close()
+            conn.close()
+            raise HTTPException(status_code=404, detail="Khong tim thay ban ghi kiem tra xe")
+        # Dieu phoi bam "Duyet Nhan Chuyen" (approved) cho xe dang "Tam ngung hoat dong" (Bao nghi):
+        # tu dong kich hoat lai xe (status 'ready') de tai xe nhan duoc chuyen/don hang,
+        # va ghi vao lich su hoat dong cua Tai xe.
+        reactivated = False
+        if (review.flag_status or "").strip().lower() == "approved":
+            plate = (updated.get("plate_number") or "").strip()
+            if plate:
+                cur.execute("SELECT status FROM vehicles WHERE plate_number = %s", (plate,))
+                veh = cur.fetchone()
+                if veh and (veh.get("status") or "") == VEHICLE_STATUS_INACTIVE:
+                    cur.execute(
+                        "UPDATE vehicles SET status = %s, updated_at = CURRENT_TIMESTAMP WHERE plate_number = %s RETURNING *",
+                        (VEHICLE_STATUS_READY, plate),
+                    )
+                    reactivated = cur.fetchone() is not None
+                    if reactivated:
+                        driver_id = updated.get("driver_id")
+                        driver_user = None
+                        if driver_id:
+                            cur.execute("SELECT username, full_name FROM users WHERE id = %s", (driver_id,))
+                            driver_user = cur.fetchone()
+                        roles_str = ", ".join(current_user.get("roles", []) or []) or "khong ro vai tro"
+                        log_driver_activity(
+                            cur,
+                            user_id=driver_id,
+                            username=driver_user["username"] if driver_user else None,
+                            full_name=driver_user["full_name"] if driver_user else None,
+                            role_code="driver",
+                            action="VEHOATDONG",
+                            action_detail=(
+                                f"{current_user.get('full_name') or current_user.get('username')} ({roles_str}) "
+                                f"da Duyet Nhan Chuyen (du 5 anh dau ngay) cho xe {plate} dang Bao nghi - "
+                                f"tu dong kich hoat lai xe (Tạm ngừng hoạt động → Đang hoạt động), tai xe nhan duoc chuyen/don hang binh thuong"
+                            ),
+                            plate=plate,
+                        )
+        conn.commit()
         cur.close()
         conn.close()
-        if not updated:
-            raise HTTPException(status_code=404, detail="Khong tim thay ban ghi kiem tra xe")
+        updated = dict(updated)
+        updated["vehicle_reactivated"] = reactivated
         _emit_event("inspection_reviewed", {
             "inspection_id": updated["id"],
             "plate_number": updated["plate_number"],

@@ -23,6 +23,9 @@ class _DriverScheduleScreenState extends State<DriverScheduleScreen> {
 
   bool _isLoadingData = true;
   List<dynamic> _myAssignedVehicles = [];
+  // Trang thai Bao nghi cua xe dang chon (true = da bao nghi, Tam ngung hoat dong)
+  bool _isResting = false;
+  bool _isSendingRest = false;
   List<dynamic> _myOrders = [];
   Timer? _gpsRefreshTimer;
   LatLng? _lastCenteredPos;
@@ -126,9 +129,22 @@ class _DriverScheduleScreenState extends State<DriverScheduleScreen> {
           : null;
       state.syncAssignedTripFromOrder(activeOrder);
 
+      // Cap nhat trang thai Bao nghi theo xe dang chon (status 'inactive' = Tam ngung hoat dong)
+      final selected = state.selectedPlate;
+      Map? selectedVehicle;
+      for (final v in assignedVehicles) {
+        if (v is Map && (v['plate_number'] ?? '').toString() == selected) {
+          selectedVehicle = v;
+          break;
+        }
+      }
+      final bool isResting = selectedVehicle != null &&
+          (selectedVehicle['status'] ?? '').toString().trim().toLowerCase() == 'inactive';
+
       setState(() {
         _myAssignedVehicles = assignedVehicles;
         _myOrders = driverOrders;
+        _isResting = isResting;
         _isLoadingData = false;
       });
 
@@ -198,6 +214,75 @@ class _DriverScheduleScreenState extends State<DriverScheduleScreen> {
         ),
       ),
     );
+  }
+
+  // Bao nghi: chuyen trang thai Phuong tien thanh "Tam ngung hoat dong" (status = 'inactive')
+  // Tro lai hoat dong: chuyen ve san sang (status = 'ready')
+  Future<void> _toggleVehicleRest() async {
+    final String plate = context.read<AppState>().selectedPlate;
+    if (plate.isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Chưa chọn phương tiện'), backgroundColor: Colors.orange),
+      );
+      return;
+    }
+    final bool goingRest = !_isResting;
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(4)),
+        title: Text(goingRest ? 'Xác nhận Báo nghỉ' : 'Trở lại hoạt động',
+            style: const TextStyle(fontSize: 16, fontWeight: FontWeight.bold)),
+        content: Text(
+          goingRest
+              ? 'Chuyển phương tiện $plate sang trạng thái "Tạm ngừng hoạt động"?'
+              : 'Kích hoạt lại phương tiện $plate trở lại hoạt động bình thường?',
+          style: const TextStyle(fontSize: 13.5),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, false),
+            child: const Text('Hủy'),
+          ),
+          ElevatedButton(
+            style: ElevatedButton.styleFrom(
+              backgroundColor: goingRest ? Colors.red.shade700 : Colors.green.shade600,
+              foregroundColor: Colors.white,
+            ),
+            onPressed: () => Navigator.pop(ctx, true),
+            child: Text(goingRest ? 'Báo nghỉ' : 'Kích hoạt'),
+          ),
+        ],
+      ),
+    );
+    if (confirmed != true || !mounted) return;
+
+    setState(() => _isSendingRest = true);
+    final res = await AdminService.updateVehicle(plate, {
+      'status': goingRest ? 'inactive' : 'ready',
+    });
+    if (!mounted) return;
+    setState(() => _isSendingRest = false);
+
+    if (res['success'] == true) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(goingRest
+              ? 'Đã chuyển $plate sang "Tạm ngừng hoạt động"'
+              : 'Đã kích hoạt lại $plate trở lại hoạt động'),
+          backgroundColor: goingRest ? Colors.red.shade700 : Colors.green.shade600,
+        ),
+      );
+      setState(() => _isResting = goingRest);
+      if (mounted) await _loadDriverData(silent: true);
+    } else {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(res['message']?.toString() ?? 'Cập nhật trạng thái thất bại'),
+          backgroundColor: Colors.red.shade700,
+        ),
+      );
+    }
   }
 
   Widget _buildManagedVehicleHeaderCard(BuildContext context, AppState state) {
@@ -318,6 +403,35 @@ class _DriverScheduleScreenState extends State<DriverScheduleScreen> {
                     ),
                 ),
               ],
+            ),
+            const SizedBox(height: 8),
+            // Nut "Bao nghi": chuyen trang thai Phuong tien thanh "Tam ngung hoat dong"
+            SizedBox(
+              height: 32,
+              width: double.infinity,
+              child: OutlinedButton.icon(
+                onPressed: _isSendingRest ? null : _toggleVehicleRest,
+                style: OutlinedButton.styleFrom(
+                  foregroundColor: _isResting ? Colors.green.shade700 : Colors.red.shade700,
+                  side: BorderSide(
+                    color: _isResting ? Colors.green.shade400 : Colors.red.shade300,
+                  ),
+                  backgroundColor: _isResting ? Colors.green.shade50 : Colors.red.shade50,
+                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(4)),
+                  padding: const EdgeInsets.symmetric(horizontal: 8),
+                  tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                ),
+                icon: _isSendingRest
+                    ? const SizedBox(
+                        width: 14, height: 14,
+                        child: CircularProgressIndicator(strokeWidth: 2),
+                      )
+                    : Icon(_isResting ? Icons.play_circle_outline : Icons.nightlight_outlined, size: 16),
+                label: Text(
+                  _isResting ? "Trở lại hoạt động" : "Báo nghỉ",
+                  style: const TextStyle(fontSize: 12, fontWeight: FontWeight.bold),
+                ),
+              ),
             ),
           ],
         ),

@@ -1066,6 +1066,48 @@ class AdminService {
     return [];
   }
 
+  /// Lấy lịch sử hoạt động của Tài xế (Báo nghỉ, hủy báo nghỉ, ...) để Điều phối / Quản lý tra cứu
+  static Future<List<dynamic>> fetchDriverActivityLogs({
+    int? userId,
+    String? username,
+    String? plate,
+    String? action,
+    String? dateFrom,
+    String? dateTo,
+    int limit = 100,
+  }) async {
+    try {
+      String url = '$baseUrl/driver-activity-logs?limit=$limit';
+      if (userId != null) {
+        url += '&user_id=$userId';
+      }
+      if (username != null && username.isNotEmpty) {
+        url += '&username=${Uri.encodeComponent(username)}';
+      }
+      if (plate != null && plate.isNotEmpty) {
+        url += '&plate=${Uri.encodeComponent(plate)}';
+      }
+      if (action != null && action.isNotEmpty) {
+        url += '&action=${Uri.encodeComponent(action)}';
+      }
+      if (dateFrom != null && dateFrom.isNotEmpty) {
+        url += '&date_from=${Uri.encodeComponent(dateFrom)}';
+      }
+      if (dateTo != null && dateTo.isNotEmpty) {
+        url += '&date_to=${Uri.encodeComponent(dateTo)}';
+      }
+      final res = await http
+          .get(Uri.parse(url), headers: await _headers())
+          .timeout(const Duration(seconds: 8));
+
+      await _checkUnauthorized(res);
+      if (res.statusCode == 200) {
+        return jsonDecode(res.body) as List<dynamic>;
+      }
+    } catch (_) {}
+    return [];
+  }
+
   /// Lấy danh sách kiểm tra xe 5 ảnh của tài xế
   static Future<List<dynamic>> fetchInspections({
     String? date,
