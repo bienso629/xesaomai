@@ -3,6 +3,7 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 
 import '../services/admin_service.dart';
+import '../widgets/center_loading_overlay.dart';
 
 /// Màn hình Điểm nhận / giao hàng.
 /// Một danh sách duy nhất gồm:
@@ -410,16 +411,7 @@ class _LocationsScreenState extends State<LocationsScreen> {
     final shape = RoundedRectangleBorder(
       borderRadius: BorderRadius.circular(4),
     );
-    final iconW = busy
-        ? SizedBox(
-            width: 14,
-            height: 14,
-            child: CircularProgressIndicator(
-              strokeWidth: 2,
-              color: filled ? Colors.white : color,
-            ),
-          )
-        : Icon(icon, size: 15);
+    final iconW = Icon(icon, size: 15);
     final text = Text(
       label,
       style: const TextStyle(fontWeight: FontWeight.w600, fontSize: 12.5),
@@ -599,30 +591,26 @@ class _LocationsScreenState extends State<LocationsScreen> {
           ),
         ),
         if (_pickedCount > 0) _buildBulkBar(rows),
-        if (_scanProgress.isNotEmpty)
-          Container(
-            width: double.infinity,
-            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 6),
-            color: Colors.teal.shade50,
-            child: Text(
-              _scanProgress,
-              style: TextStyle(
-                fontSize: 12,
-                color: Colors.teal.shade800,
-                fontWeight: FontWeight.w600,
-              ),
-            ),
-          ),
         const Divider(height: 1),
         Expanded(
-          child: _loading
-              ? const Center(child: CircularProgressIndicator())
-              : RefreshIndicator(
-                  onRefresh: _load,
-                  child: pageItems.isEmpty
-                      ? _buildEmpty()
-                      : _buildTable(pageItems),
-                ),
+          child: CenterLoadingOverlay(
+            isLoading: _loading || _scanBusy || _bulkBusy || _scanProgress.isNotEmpty,
+            message: _scanProgress.isNotEmpty
+                ? _scanProgress
+                : (_scanBusy
+                    ? 'Đang quét lịch sử GPS...'
+                    : (_bulkBusy
+                        ? 'Đang xử lý hàng loạt...'
+                        : 'Đang tải danh sách điểm nhận / giao...')),
+            child: _loading
+                ? const SizedBox.expand()
+                : RefreshIndicator(
+                    onRefresh: _load,
+                    child: pageItems.isEmpty
+                        ? _buildEmpty()
+                        : _buildTable(pageItems),
+                  ),
+          ),
         ),
         if (!_loading && totalItems > 0)
           _buildPagination(

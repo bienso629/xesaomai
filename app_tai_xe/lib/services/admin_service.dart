@@ -468,12 +468,14 @@ class AdminService {
       _locationCall('POST', 'location-suggestions/$id/restore');
 
   /// Gọi API Zalo OA, trả về {'ok': bool, 'status': int, 'data': dynamic, 'message': String}
-  static Future<Map<String, dynamic>> _zaloCall(String method, String path) async {
+  static Future<Map<String, dynamic>> _zaloCall(String method, String path,
+      {Map<String, dynamic>? body}) async {
     try {
       final uri = Uri.parse('$baseUrl/zalo-oa/$path');
       final headers = await _headers();
+      if (body != null) headers['Content-Type'] = 'application/json';
       final res = await (method == 'POST'
-              ? http.post(uri, headers: headers)
+              ? http.post(uri, headers: headers, body: body != null ? jsonEncode(body) : null)
               : http.get(uri, headers: headers))
           .timeout(const Duration(seconds: 10));
       await _checkUnauthorized(res);
@@ -508,6 +510,23 @@ class AdminService {
   /// Bắt đầu đồng bộ toàn bộ người dùng Zalo OA vào danh sách Khách hàng
   static Future<Map<String, dynamic>> startZaloOaSync() =>
       _zaloCall('POST', 'sync');
+
+  /// Danh sách nhóm (tag) phân loại người quan tâm của Zalo OA
+  static Future<Map<String, dynamic>> fetchZaloOaGroups() =>
+      _zaloCall('GET', 'groups');
+
+  /// Danh sách nhóm hội thoại mà OA đang tham gia (group_id học qua webhook)
+  static Future<Map<String, dynamic>> fetchZaloOaChatGroups() =>
+      _zaloCall('GET', 'chat-groups');
+
+  /// Tự động làm mới dữ liệu nhóm hội thoại Zalo OA (dùng cho cột khách hàng)
+  static Future<Map<String, dynamic>> refreshZaloOaChatGroups() =>
+      _zaloCall('POST', 'chat-groups/refresh');
+
+  /// Đặt tên hiển thị cho nhóm hội thoại (Zalo không cung cấp tên nhóm qua API)
+  static Future<Map<String, dynamic>> renameZaloOaChatGroup(
+          String groupId, String name) =>
+      _zaloCall('POST', 'chat-groups/$groupId/rename', body: {'name': name});
 
   /// Gọi API dịch vụ GPS Bình Anh qua backend (backend giữ tài khoản Bình Anh).
   /// path: 'tracking' | 'route' | 'activity' | 'status'

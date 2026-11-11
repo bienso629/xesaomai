@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import '../widgets/center_loading_overlay.dart';
 import 'package:provider/provider.dart';
 import '../services/admin_service.dart';
 import '../services/app_state.dart';
@@ -264,19 +265,23 @@ class _DriverOrdersScreenState extends State<DriverOrdersScreen> {
             totalTons: totalTons,
           ),
           Expanded(
-            child: _isLoading
-                ? const Center(child: CircularProgressIndicator())
-                : list.isEmpty
-                ? _buildEmptyState()
-                : RefreshIndicator(
-                    onRefresh: _loadData,
-                    child: ListView.separated(
-                      padding: const EdgeInsets.all(12),
-                      itemCount: list.length,
-                      separatorBuilder: (_, __) => const SizedBox(height: 10),
-                      itemBuilder: (ctx, i) => _buildOrderCard(list[i]),
+            child: CenterLoadingOverlay(
+              isLoading: _isLoading,
+              message: 'Đang tải danh sách đơn hàng...',
+              child: _isLoading
+                  ? const SizedBox.expand()
+                  : list.isEmpty
+                  ? _buildEmptyState()
+                  : RefreshIndicator(
+                      onRefresh: _loadData,
+                      child: ListView.separated(
+                        padding: const EdgeInsets.all(12),
+                        itemCount: list.length,
+                        separatorBuilder: (_, __) => const SizedBox(height: 10),
+                        itemBuilder: (ctx, i) => _buildOrderCard(list[i]),
+                      ),
                     ),
-                  ),
+            ),
           ),
         ],
       ),

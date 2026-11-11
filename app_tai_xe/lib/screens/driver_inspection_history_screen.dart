@@ -1,5 +1,6 @@
 import 'dart:io';
 import 'package:flutter/material.dart';
+import '../widgets/center_loading_overlay.dart';
 import 'package:provider/provider.dart';
 import '../services/admin_service.dart';
 import '../services/app_state.dart';
@@ -383,7 +384,7 @@ class _DriverInspectionHistoryScreenState extends State<DriverInspectionHistoryS
           // Nội dung hiển thị
           Expanded(
             child: _isLoading
-                ? const Center(child: CircularProgressIndicator())
+                ? const CenterLoadingBox(message: 'Đang tải lịch sử kiểm tra xe...')
                 : _inspections.isEmpty
                 ? RefreshIndicator(
                     onRefresh: () => _loadHistory(silent: true),

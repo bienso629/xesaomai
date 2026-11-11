@@ -10,6 +10,7 @@ import json
 import asyncio
 import secrets
 import threading
+import time
 from concurrent.futures import ThreadPoolExecutor, as_completed
 import unicodedata
 from urllib.parse import urlencode
@@ -18,7 +19,7 @@ from datetime import datetime, timedelta, timezone
 from typing import Optional, List, Any
 import psycopg2
 from psycopg2.extras import RealDictCursor
-from fastapi import FastAPI, HTTPException, Depends, status, UploadFile, File, WebSocket, WebSocketDisconnect
+from fastapi import FastAPI, HTTPException, Depends, status, UploadFile, File, WebSocket, WebSocketDisconnect, Body, Request
 from fastapi.staticfiles import StaticFiles
 from fastapi.responses import HTMLResponse
 from fastapi.security import OAuth2PasswordBearer, OAuth2PasswordRequestForm
@@ -515,6 +516,36 @@ ZALO_OA_DDL = [
         code_verifier VARCHAR(200) NOT NULL,
         created_by VARCHAR(100),
         created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
+    )""",
+    # Cache danh sách nhóm (tag) phân loại người quan tâm của Zalo OA
+    """CREATE TABLE IF NOT EXISTS zalo_oa_groups (
+        id SERIAL PRIMARY KEY,
+        tag_id VARCHAR(64) NOT NULL UNIQUE,
+        name VARCHAR(255) NOT NULL,
+        synced_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
+    )""",
+    # Ma trận khách hàng - nhóm Zalo OA (mỗi dòng = 1 khách thuộc 1 nhóm)
+    """CREATE TABLE IF NOT EXISTS zalo_oa_user_groups (
+        customer_id INT NOT NULL,
+        tag_name VARCHAR(255) NOT NULL,
+        PRIMARY KEY (customer_id, tag_name),
+        FOREIGN KEY (customer_id) REFERENCES customers(id) ON DELETE CASCADE
+    )""",
+    # Nhóm chat GMF mà OA là thành viên (group_id do Zalo đẩy qua webhook)
+    """CREATE TABLE IF NOT EXISTS zalo_oa_chat_groups (
+        group_id VARCHAR(64) PRIMARY KEY,
+        name VARCHAR(255),
+        type VARCHAR(32),
+        member_count INT,
+        updated_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
+    )""",
+    # Thành viên của từng nhóm hội thoại (học qua webhook: sender của event nhóm)
+    """CREATE TABLE IF NOT EXISTS zalo_oa_chat_group_members (
+        group_id VARCHAR(64) NOT NULL,
+        zalo_user_id VARCHAR(64) NOT NULL,
+        display_name VARCHAR(255),
+        updated_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
+        PRIMARY KEY (group_id, zalo_user_id)
     )""",
 ]
 
@@ -1534,6 +1565,66 @@ def get_customers(current_user: dict = Depends(require_dispatch_staff)):
     cur = conn.cursor()
     cur.execute("SELECT * FROM customers WHERE is_active = TRUE ORDER BY name ASC, id ASC")
     rows = cur.fetchall()
+    tag_map = {}
+    try:
+        cur.execute("SELECT customer_id, tag_name FROM zalo_oa_user_groups ORDER BY tag_name ASC")
+        for r in cur.fetchall():
+            tag_map.setdefault(r["customer_id"], []).append(r["tag_name"])
+    except Exception:
+        conn.rollback()  # bảng chưa tạo (server cũ) -> trả rỗng, không lỗi
+
+    # Nhóm hội thoại Zalo mà khách tham gia: nối zalo_user_id của khách với
+    # thành viên nhóm học qua webhook (zalo_oa_chat_group_members).
+    chat_by_uid = {}      # zalo_user_id -> [nhãn nhóm hiển thị]
+    chat_ids_by_uid = {}  # zalo_user_id -> [{group_id, label}]
+    try:
+        cur.execute("SELECT group_id, name FROM zalo_oa_chat_groups")
+        gname = {r["group_id"]: (r["name"] or "").strip() for r in cur.fetchall()}
+        gmembers = {}     # group_id -> [display_name thành viên]
+        gids_by_uid = {}  # zalo_user_id -> [group_id]
+        cur.execute("SELECT group_id, zalo_user_id, display_name FROM zalo_oa_chat_group_members")
+        for r in cur.fetchall():
+            gmembers.setdefault(r["group_id"], []).append(r["display_name"] or "")
+            gids_by_uid.setdefault(r["zalo_user_id"], []).append(r["group_id"])
+        for uid, gids in gids_by_uid.items():
+            labels, detail = [], []
+            for gid in gids:
+                nm = gname.get(gid, "")
+                if not nm:
+                    # Nhóm chưa được đặt tên -> gợi ý từ tên thành viên đã học
+                    mnames = [n for n in gmembers.get(gid, []) if n]
+                    nm = (", ".join(mnames[:3]) + ("..." if len(mnames) > 3 else "")) if mnames else "Nhóm chưa đặt tên"
+                labels.append(nm)
+                mnames = [n for n in gmembers.get(gid, []) if n]
+                detail.append({
+                    "group_id": gid,
+                    "label": nm,
+                    "members": mnames[:30],
+                    "member_count": len(mnames),
+                })
+            chat_by_uid[uid] = labels
+            chat_ids_by_uid[uid] = detail
+    except Exception:
+        conn.rollback()  # bảng chưa tạo (server cũ) -> bỏ qua phần nhóm hội thoại
+
+    gtime_by_gid = {}
+    try:
+        cur.execute("SELECT group_id, updated_at FROM zalo_oa_chat_groups")
+        gtime_by_gid = {r["group_id"]: r["updated_at"] for r in cur.fetchall()}
+    except Exception:
+        conn.rollback()
+    for r in rows:
+        labels = list(tag_map.get(r["id"], []))
+        uid = (r.get("zalo_user_id") or "").strip()
+        latest_group_at = None
+        if uid:
+            for d in chat_ids_by_uid.get(uid, []):
+                t = gtime_by_gid.get(d["group_id"])
+                if t and (latest_group_at is None or str(t) > str(latest_group_at)):
+                    latest_group_at = t
+        r["zalo_oa_groups"] = list(dict.fromkeys(labels))
+        r["zalo_chat_groups"] = chat_ids_by_uid.get(uid, [])
+        r["zalo_group_updated_at"] = latest_group_at
     cur.close()
     conn.close()
     return rows
@@ -1736,20 +1827,46 @@ def _zalo_appsecret_proof(token: str) -> str:
     return hmac.new(ZALO_APP_SECRET.encode(), token.encode(), hashlib.sha256).hexdigest()
 
 
+class ZaloRateLimited(Exception):
+    """Zalo trả lỗi -32: OA đã đạt giới hạn số lần gọi API (rate limit)."""
+    pass
+
+
+class ZaloUserBanned(Exception):
+    """Zalo trả lỗi -227: người dùng bị khóa hoặc không hoạt động quá 45 ngày."""
+    pass
+
+
+_ZALO_RATE_MAX_RETRIES = 5   # số lần thử lại tối đa khi dính rate limit
+_ZALO_RATE_WAIT = 15         # giây chờ giữa các lần thử lại (giới hạn Zalo tính theo phút)
+
+
 def _zalo_get(path: str, payload: dict, token: str) -> dict:
-    res = requests.get(
-        f"{ZALO_OPENAPI_BASE}{path}",
-        headers={"access_token": token, "appsecret_proof": _zalo_appsecret_proof(token)},
-        params={"data": json.dumps(payload)},
-        timeout=20,
-    )
-    body = res.json()
-    err = body.get("error", 0)
-    if err in (-216, -124, -14014):  # token không hợp lệ / hết hạn / bị thu hồi
-        raise ZaloAuthRequired(body.get("message") or "Access token Zalo không hợp lệ")
-    if err != 0:
-        raise RuntimeError(f"Zalo trả lỗi {err}: {body.get('message')}")
-    return body.get("data") or {}
+    for attempt in range(_ZALO_RATE_MAX_RETRIES + 1):
+        res = requests.get(
+            f"{ZALO_OPENAPI_BASE}{path}",
+            headers={"access_token": token, "appsecret_proof": _zalo_appsecret_proof(token)},
+            params={"data": json.dumps(payload)},
+            timeout=20,
+        )
+        try:
+            body = res.json()
+        except ValueError:
+            raise RuntimeError(f"Zalo trả về nội dung không phải JSON (HTTP {res.status_code})")
+        err = body.get("error", 0)
+        if err in (-216, -124, -14014):  # token không hợp lệ / hết hạn / bị thu hồi
+            raise ZaloAuthRequired(body.get("message") or "Access token Zalo không hợp lệ")
+        if err == -32:  # OA đạt giới hạn gọi API: chờ rồi thử lại
+            if attempt >= _ZALO_RATE_MAX_RETRIES:
+                raise ZaloRateLimited("OA đã đạt giới hạn gọi API Zalo (thử lại nhiều lần không thành công)")
+            time.sleep(_ZALO_RATE_WAIT)
+            continue
+        if err == -227:  # người dùng bị khóa / không hoạt động quá 45 ngày: bỏ qua
+            raise ZaloUserBanned(body.get("message") or "Người dùng bị khóa hoặc không hoạt động quá 45 ngày")
+        if err != 0:
+            raise RuntimeError(f"Zalo trả lỗi {err}: {body.get('message')}")
+        return body.get("data") or {}
+    raise ZaloRateLimited("OA đã đạt giới hạn gọi API Zalo")
 
 
 def _norm_phone(p) -> str:
@@ -1759,10 +1876,75 @@ def _norm_phone(p) -> str:
     return digits
 
 
+def _zalo_fetch_groups(token: str) -> list:
+    """Lấy toàn bộ nhóm (tag) phân loại người quan tâm của OA (tối đa 50 nhóm/trang)."""
+    groups, offset = [], 0
+    while True:
+        page = _zalo_get("/v2.0/oa/tag/getlist", {"offset": offset, "count": 50}, token)
+        tags = page.get("tags") or []
+        for t in tags:
+            tag_id = str(t.get("id") or "").strip()
+            name = _clean(t.get("name"))
+            if tag_id and name:
+                groups.append({"tag_id": tag_id, "name": name})
+        offset += 50
+        total = int(page.get("total") or 0)
+        if not tags or offset >= total or len(groups) >= 2000:
+            break
+    groups.sort(key=lambda g: g["name"].lower())
+    return groups
+
+
+def _sync_user_group_rows(cur, customer_id, tag_names):
+    """Ghi đè danh sách nhóm Zalo OA của một khách hàng (xóa cũ, chèn mới)."""
+    if not customer_id:
+        return
+    cur.execute("DELETE FROM zalo_oa_user_groups WHERE customer_id = %s", (customer_id,))
+    for tn in dict.fromkeys(tag_names):  # khử trùng lặp, giữ thứ tự
+        cur.execute(
+            "INSERT INTO zalo_oa_user_groups (customer_id, tag_name) VALUES (%s, %s) ON CONFLICT DO NOTHING",
+            (customer_id, tn),
+        )
+
+
+def _zalo_stub_customer(cur, uid: str) -> str:
+    # Zalo từ chối trả hồ sơ (bị khóa / chưa từng tương tác): vẫn tạo bản ghi tối
+    # thiểu theo user_id để đủ danh sách khách hàng; hồ sơ thật (tên, avatar) sẽ
+    # tự cập nhật ở lần đồng bộ kế tiếp khi Zalo mở dữ liệu người này.
+    cur.execute("SELECT id, is_active, name FROM customers WHERE zalo_user_id = %s", (uid,))
+    row = cur.fetchone()
+    if row:
+        if not row["is_active"]:
+            return "skipped"
+        cur.execute(
+            "UPDATE customers SET zalo_synced_at = CURRENT_TIMESTAMP, updated_at = CURRENT_TIMESTAMP WHERE id = %s",
+            (row["id"],),
+        )
+        return "updated"
+    code = f"ZL{uid}"[:50]
+    cur.execute("SELECT id FROM customers WHERE LOWER(code) = LOWER(%s)", (code,))
+    if cur.fetchone():
+        return "skipped"
+    cur.execute(
+        """INSERT INTO customers (code, name, note, source, zalo_user_id, zalo_synced_at)
+           VALUES (%s, %s, %s, 'zalo_oa', %s, CURRENT_TIMESTAMP)
+           RETURNING id""",
+        (code, f"Zalo {uid[-6:]}", "Đồng bộ từ Zalo OA (hồ sơ bị Zalo ẩn)", uid),
+    )
+    cur.fetchone()
+    return "created"
+
+
 def _zalo_upsert_customer(cur, info: dict) -> str:
     uid = str(info.get("user_id") or "").strip()
     if not uid:
         return "skipped"
+    # Danh sách tên nhóm (tag) Zalo đang gắn cho người này (trả kèm user/detail)
+    tag_names = []
+    for tn in ((info.get("tags_and_notes_info") or {}).get("tag_names") or []):
+        tn_clean = _clean(tn)
+        if tn_clean:
+            tag_names.append(tn_clean[:255])
     shared = info.get("shared_info") or {}
     display = _clean(info.get("display_name")) or _clean(info.get("user_alias"))
     name = _clean(shared.get("name")) or display or f"Zalo {uid[-6:]}"
@@ -1770,19 +1952,24 @@ def _zalo_upsert_customer(cur, info: dict) -> str:
     address = ", ".join(x for x in [_clean(shared.get("address")), _clean(shared.get("district")), _clean(shared.get("city"))] if x) or None
     avatar = _clean(info.get("avatar"))
 
-    cur.execute("SELECT id, is_active FROM customers WHERE zalo_user_id = %s", (uid,))
+    cur.execute("SELECT id, is_active, name FROM customers WHERE zalo_user_id = %s", (uid,))
     row = cur.fetchone()
     if row:
         if not row["is_active"]:
             return "skipped"  # Khách đã bị xóa tay thì không tự hồi sinh
         # Chỉ ghi đè thông tin Zalo, các trường người dùng đã sửa tay chỉ được điền khi đang trống
+        # Nếu đây là bản ghi dự phòng (hồ sơ trước đó bị Zalo ẩn) thì thay tên dự phòng bằng tên thật
+        _cur_name = str(row["name"] or "").strip()
+        _p = _cur_name.split()
+        name_override = name if (len(_p) == 2 and _p[0] == "Zalo" and _p[1].isdigit()) else None
         cur.execute(
-            """UPDATE customers SET zalo_display_name = %s, zalo_avatar = %s, zalo_synced_at = CURRENT_TIMESTAMP,
+            """UPDATE customers SET name = COALESCE(%s, name), zalo_display_name = %s, zalo_avatar = %s, zalo_synced_at = CURRENT_TIMESTAMP,
                    phone = COALESCE(NULLIF(phone, ''), %s), address = COALESCE(NULLIF(address, ''), %s),
                    updated_at = CURRENT_TIMESTAMP
                WHERE id = %s""",
-            (display, avatar, phone, address, row["id"]),
+            (name_override, display, avatar, phone, address, row["id"]),
         )
+        _sync_user_group_rows(cur, row["id"], tag_names)
         return "updated"
 
     if phone:
@@ -1798,6 +1985,7 @@ def _zalo_upsert_customer(cur, info: dict) -> str:
                        updated_at = CURRENT_TIMESTAMP WHERE id = %s""",
                 (uid, display, avatar, address, same[0]),
             )
+            _sync_user_group_rows(cur, same[0], tag_names)
             return "linked"
 
     code = f"ZL{uid}"[:50]
@@ -1806,9 +1994,11 @@ def _zalo_upsert_customer(cur, info: dict) -> str:
         return "skipped"
     cur.execute(
         """INSERT INTO customers (code, name, phone, address, note, source, zalo_user_id, zalo_display_name, zalo_avatar, zalo_synced_at)
-           VALUES (%s, %s, %s, %s, %s, 'zalo_oa', %s, %s, %s, CURRENT_TIMESTAMP)""",
+           VALUES (%s, %s, %s, %s, %s, 'zalo_oa', %s, %s, %s, CURRENT_TIMESTAMP)
+           RETURNING id""",
         (code, name, phone, address, "Đồng bộ từ Zalo OA", uid, display, avatar),
     )
+    _sync_user_group_rows(cur, cur.fetchone()["id"], tag_names)
     return "created"
 
 
@@ -1818,18 +2008,29 @@ def _zalo_run_sync(started_by: str):
     needs_auth = False
     try:
         token = _zalo_access_token()
-        user_ids, offset = [], 0
+        user_ids, offset, seen = [], 0, set()
         while True:
             page = _zalo_get("/v3.0/oa/user/getlist",
-                             {"offset": offset, "count": ZALO_PAGE_SIZE, "tag_name": "", "is_follower": "true"}, token)
+                             {"offset": offset, "count": ZALO_PAGE_SIZE, "tag_name": ""}, token)
             users = page.get("users") or []
             stats["total"] = int(page.get("total") or 0)
-            user_ids += [str(u.get("user_id")) for u in users if u.get("user_id")]
+            for u in users:
+                uid = str(u.get("user_id") or "").strip()
+                if uid and uid not in seen:
+                    seen.add(uid)
+                    user_ids.append(uid)
             with _zalo_lock:
                 _zalo_sync.update(stats)
-            offset += ZALO_PAGE_SIZE
-            if not users or offset >= stats["total"]:
+            # Zalo v3 trả kèm next_offset cho trang kế tiếp; nếu không có thì tự tăng.
+            # Luôn dừng khi một trang trả về ít người hơn số lượng yêu cầu (hết danh sách).
+            next_offset = page.get("next_offset")
+            try:
+                next_offset = int(next_offset) if next_offset is not None else offset + ZALO_PAGE_SIZE
+            except (TypeError, ValueError):
+                next_offset = offset + ZALO_PAGE_SIZE
+            if len(users) < ZALO_PAGE_SIZE or next_offset <= offset or next_offset >= stats["total"]:
                 break
+            offset = next_offset
         stats["total"] = len(user_ids)
         conn = get_db()
         cur = conn.cursor()
@@ -1843,10 +2044,38 @@ def _zalo_run_sync(started_by: str):
                     stats[result] += 1
                 except ZaloAuthRequired:
                     raise
+                except ZaloRateLimited as e:
+                    conn.rollback()
+                    error = f"Đồng bộ dừng ở {stats['processed']}/{stats['total']} người: {e}. Vui lòng thử lại sau vài phút."
+                    print(f"[zalo-oa] {error}")
+                    break
+                except ZaloUserBanned as e:
+                    conn.rollback()
+                    try:
+                        result = _zalo_stub_customer(cur, uid)
+                        conn.commit()
+                        stats[result] += 1
+                        print(f"[zalo-oa] Hồ sơ bị Zalo ẩn (khóa/ngủ đông), tạo bản ghi tối thiểu {uid}")
+                    except Exception as e2:
+                        conn.rollback()
+                        stats["skipped"] += 1
+                        print(f"[zalo-oa] Bỏ qua user {uid}: {e2}")
                 except Exception as e:
                     conn.rollback()
-                    stats["failed"] += 1
-                    print(f"[zalo-oa] Lỗi đồng bộ user {uid}: {e}")
+                    if "-232" in str(e):
+                        # User chưa từng tương tác với OA: vẫn tạo bản ghi tối thiểu
+                        try:
+                            result = _zalo_stub_customer(cur, uid)
+                            conn.commit()
+                            stats[result] += 1
+                            print(f"[zalo-oa] User chưa từng tương tác, tạo bản ghi tối thiểu {uid}")
+                        except Exception as e2:
+                            conn.rollback()
+                            stats["skipped"] += 1
+                            print(f"[zalo-oa] Bỏ qua user {uid}: {e2}")
+                    else:
+                        stats["failed"] += 1
+                        print(f"[zalo-oa] Lỗi đồng bộ user {uid}: {e}")
                 stats["processed"] += 1
                 with _zalo_lock:
                     _zalo_sync.update(stats)
@@ -1948,13 +2177,80 @@ def zalo_oa_callback(code: Optional[str] = None, state: Optional[str] = None, oa
         conn.close()
 
 
+def _zalo_try_heal_from_crm() -> bool:
+    """Mượn token sống từ CRM (api-zalocrm.type.vn) để tự hồi phục.
+
+    CRM và hệ thống này dùng chung app Zalo nên token dùng chéo được.
+    Trả về True nếu đã lưu được token còn sống vào DB.
+    """
+    try:
+        crm_url = os.getenv("CRM_TOKEN_URL", "https://api-zalocrm.type.vn/v1/zalo/internal/token").strip()
+        crm_secret = os.getenv("CRM_SHARE_SECRET", os.getenv("ZALO_APP_SECRET", ""))
+        res = requests.get(crm_url, headers={"x-share-secret": crm_secret}, timeout=15)
+        if res.status_code != 200:
+            return False
+        data = res.json()
+        at = (data.get("access_token") or "").strip()
+        if not at:
+            return False
+        # Xác thực token mượn được với Zalo trước khi lưu
+        proof = hmac.new(ZALO_APP_SECRET.encode(), at.encode(), hashlib.sha256).hexdigest()
+        check = requests.get(f"{ZALO_OPENAPI_BASE}/v2.0/oa/getoa",
+                             headers={"access_token": at, "appsecret_proof": proof}, timeout=15)
+        if check.json().get("error", 0) != 0:
+            return False
+        expires_at = datetime.now(timezone.utc) + timedelta(seconds=int(data.get("expires_in") or 0))
+        conn_h = get_db()
+        cur_h = conn_h.cursor()
+        cur_h.execute(
+            """UPDATE zalo_oa_tokens SET access_token = %s, access_expires_at = %s,
+               updated_at = CURRENT_TIMESTAMP WHERE id = 1""",
+            (at, expires_at),
+        )
+        if cur_h.rowcount == 0:
+            cur_h.execute(
+                """INSERT INTO zalo_oa_tokens (id, oa_id, access_token, refresh_token, access_expires_at, authorized_by)
+                   VALUES (1, %s, %s, '', %s, 'crm-heal')""",
+                (data.get("oa_id") or "581594731516060183", at, expires_at),
+            )
+        conn_h.commit()
+        cur_h.close()
+        conn_h.close()
+        print("[zalo-oa] Đã hồi phục token từ CRM thành công")
+        return True
+    except Exception as heal_err:
+        print(f"[zalo-oa] Heal token từ CRM thất bại: {heal_err}")
+        return False
+
+
 @app.post("/api/v1/zalo-oa/sync", status_code=status.HTTP_202_ACCEPTED)
 def zalo_oa_sync(current_user: dict = Depends(require_dispatch_staff)):
     if not _zalo_configured():
         raise HTTPException(status_code=503, detail="Máy chủ chưa cấu hình ZALO_APP_ID / ZALO_APP_SECRET")
     status_now = _zalo_status_payload()
-    if not status_now["connected"]:
-        raise HTTPException(status_code=409, detail="Zalo OA chưa được cấp quyền")
+    if status_now["connected"]:
+        # Hàng token còn trong DB nhưng có thể đã chết phía Zalo (access token
+        # hết hạn sớm / bị thu hồi). Kiểm tra thật với Zalo trước khi đồng bộ.
+        try:
+            _zalo_get("/v2.0/oa/getoa", {}, _zalo_access_token())
+        except ZaloRateLimited as rate_err:
+            raise HTTPException(status_code=503, detail=f"Zalo OA đang giới hạn số lần gọi API ({rate_err}). Vui lòng đợi 2-3 phút rồi bấm Đồng bộ lại.")
+        except ZaloAuthRequired:
+            if not _zalo_try_heal_from_crm():
+                # Xoá hàng token chết để trạng thái connected=false;
+                # ứng dụng sẽ tự mở trang cấp quyền khi nhận lỗi 409.
+                conn_d = get_db()
+                cur_d = conn_d.cursor()
+                cur_d.execute("DELETE FROM zalo_oa_tokens WHERE id = 1")
+                conn_d.commit()
+                cur_d.close()
+                conn_d.close()
+                raise HTTPException(status_code=409, detail="Zalo OA chưa được cấp quyền")
+    else:
+        # Chưa có token trong DB: thử mượn token sống từ CRM (cùng app Zalo)
+        # để tự hồi phục; không được thì yêu cầu cấp quyền lại.
+        if not _zalo_try_heal_from_crm():
+            raise HTTPException(status_code=409, detail="Zalo OA chưa được cấp quyền")
     with _zalo_lock:
         if _zalo_sync.get("running"):
             return {"message": "Đang đồng bộ", "sync": dict(_zalo_sync)}
@@ -1966,6 +2262,372 @@ def zalo_oa_sync(current_user: dict = Depends(require_dispatch_staff)):
         snapshot = dict(_zalo_sync)
     threading.Thread(target=_zalo_run_sync, args=(current_user["username"],), daemon=True).start()
     return {"message": "Đã bắt đầu đồng bộ", "sync": snapshot}
+
+
+@app.post("/api/v1/zalo-oa/internal/token")
+def zalo_oa_internal_token(request: Request, payload: dict = Body(...)):
+    """Chia se token OA con han cho cac he thong noi bo cung app (CRM...).
+
+    Bao mat: bat buoc header x-share-secret khop ZALO_APP_SECRET,
+    va app_id trong payload (neu co) phai trung ZALO_APP_ID.
+    """
+    secret = os.getenv("ZALO_APP_SECRET", "")
+    if not secret or request.headers.get("x-share-secret") != secret:
+        raise HTTPException(status_code=403, detail="Sai shared secret")
+    app_id = str(payload.get("app_id") or "").strip()
+    if app_id and app_id != ZALO_APP_ID:
+        raise HTTPException(status_code=403, detail="App khong khop")
+    try:
+        token = _zalo_access_token()
+    except Exception as e:
+        raise HTTPException(status_code=502, detail=f"Khong lay duoc token Zalo: {e}")
+    conn = get_db()
+    cur = conn.cursor()
+    try:
+        row = _zalo_token_row(cur)
+        refresh = (row.get("refresh_token") if row else "") or ""
+    finally:
+        cur.close()
+        conn.close()
+    return {
+        "access_token": token,
+        "refresh_token": refresh,
+        "expires_in": 90000,
+        "oa_id": ZALO_APP_ID,
+    }
+
+
+@app.get("/api/v1/zalo-oa/groups")
+def zalo_oa_groups(current_user: dict = Depends(require_dispatch_staff)):
+    """Danh sách nhóm (tag) phân loại người quan tâm của Zalo OA.
+
+    Luôn gọi Zalo để lấy danh sách mới nhất rồi ghi đè vào bảng zalo_oa_groups;
+    khi Zalo lỗi (mất quyền, nghẽn mạng) trả về bản cache gần nhất kèm cảnh báo.
+    """
+    if not _zalo_configured():
+        raise HTTPException(status_code=503, detail="Máy chủ chưa cấu hình ZALO_APP_ID / ZALO_APP_SECRET")
+    conn = get_db()
+    cur = conn.cursor()
+
+    def cached_rows():
+        cur.execute("SELECT tag_id, name FROM zalo_oa_groups ORDER BY name ASC")
+        return [{"tag_id": r["tag_id"], "name": r["name"]} for r in cur.fetchall()]
+
+    try:
+        try:
+            token = _zalo_access_token()
+        except ZaloAuthRequired as e:
+            rows = cached_rows()
+            if rows:
+                return {"groups": rows, "cached": True, "warning": f"Không lấy được danh sách mới từ Zalo: {e}"}
+            raise HTTPException(status_code=409, detail=str(e))
+        try:
+            groups = _zalo_fetch_groups(token)
+        except ZaloAuthRequired as e:
+            rows = cached_rows()
+            if rows:
+                return {"groups": rows, "cached": True, "warning": f"Cần cấp quyền Zalo OA lại: {e}"}
+            raise HTTPException(status_code=409, detail=f"Cần cấp quyền Zalo OA lại: {e}")
+        except Exception as e:
+            msg = str(e)
+            # Zalo trả lỗi 404 "empty or invalid API" khi ứng dụng chưa được cấp quyền API Tag
+            if "404" in msg and ("empty or invalid API" in msg or "empty api" in msg):
+                raise HTTPException(
+                    status_code=424,
+                    detail=(
+                        "Zalo chưa cấp quyền API danh sách nhóm (Tag) cho ứng dụng này. "
+                        "Vui lòng kiểm tra: (1) OA đã bật tính năng Quản lý người quan tâm (Tag), "
+                        "(2) trong Zalo Developer Console đã thêm quyền 'Quản lý người quan tâm' cho sản phẩm Official Account, "
+                        "(3) tài khoản OA là loại Verified. Sau khi cấp quyền, bấm lấy nhóm lại."
+                    ),
+                )
+            rows = cached_rows()
+            if rows:
+                return {"groups": rows, "cached": True, "warning": f"Không lấy được danh sách mới từ Zalo: {e}"}
+            raise HTTPException(status_code=502, detail=f"Không lấy được danh sách nhóm từ Zalo: {e}")
+        # Ghi đè cache: thêm/cập nhật nhóm mới, xóa nhóm đã bị gỡ trên Zalo
+        for g in groups:
+            cur.execute(
+                """INSERT INTO zalo_oa_groups (tag_id, name, synced_at) VALUES (%s, %s, CURRENT_TIMESTAMP)
+                   ON CONFLICT (tag_id) DO UPDATE SET name = EXCLUDED.name, synced_at = CURRENT_TIMESTAMP""",
+                (g["tag_id"], g["name"]),
+            )
+        if groups:
+            cur.execute("DELETE FROM zalo_oa_groups WHERE tag_id <> ALL(%s)", ([g["tag_id"] for g in groups],))
+        else:
+            cur.execute("DELETE FROM zalo_oa_groups")
+        conn.commit()
+        return {"groups": groups, "cached": False}
+    except HTTPException:
+        conn.rollback()
+        raise
+    finally:
+        cur.close()
+        conn.close()
+
+
+# --- Zalo OA: Nhóm chat GMF (học group_id qua webhook + gửi tin vào nhóm) ---
+def _upsert_chat_group_member(gid: str, uid: str):
+    """Học thành viên nhóm hội thoại: lưu sender của event nhóm kèm tên hiển thị.
+
+    Ưu tiên tên khách hàng trong DB (đã đồng bộ Zalo), nếu chưa có thì gọi API
+    user/detail của Zalo lấy display_name. Lỗi Zalo không làm vỡ webhook.
+    """
+    if not gid or not uid:
+        return
+    conn = get_db()
+    cur = conn.cursor()
+    try:
+        cur.execute(
+            "SELECT 1 FROM zalo_oa_chat_group_members WHERE group_id=%s AND zalo_user_id=%s",
+            (gid, uid),
+        )
+        if cur.fetchone():
+            cur.execute(
+                "UPDATE zalo_oa_chat_group_members SET updated_at = CURRENT_TIMESTAMP "
+                "WHERE group_id=%s AND zalo_user_id=%s",
+                (gid, uid),
+            )
+            conn.commit()
+            return
+        name = ""
+        try:
+            cur.execute("SELECT name FROM customers WHERE zalo_user_id=%s AND zalo_user_id <> '' LIMIT 1", (uid,))
+            c = cur.fetchone()
+            if c and c["name"]:
+                name = c["name"]
+        except Exception:
+            conn.rollback()
+        if not name:
+            try:
+                tok = _zalo_access_token()
+                d = _zalo_get("/v3.0/oa/user/detail", {"user_id": uid}, tok)
+                name = str(d.get("display_name") or d.get("name") or "")
+            except Exception:
+                name = ""
+        cur.execute(
+            """INSERT INTO zalo_oa_chat_group_members (group_id, zalo_user_id, display_name)
+               VALUES (%s, %s, %s)
+               ON CONFLICT (group_id, zalo_user_id)
+               DO UPDATE SET display_name = EXCLUDED.display_name, updated_at = CURRENT_TIMESTAMP""",
+            (gid, uid, name),
+        )
+        conn.commit()
+    except Exception:
+        try:
+            conn.rollback()
+        except Exception:
+            pass
+    finally:
+        cur.close()
+        conn.close()
+
+
+@app.post("/api/v1/zalo-oa/webhook")
+def zalo_oa_webhook(payload: dict = Body(default={})):
+    """Nhận sự kiện Zalo đẩy về để học group_id của nhóm chat có OA.
+
+    Zalo không có API liệt kê nhóm chat của OA; group_id chỉ nhận được qua
+    webhook khi OA được thêm vào nhóm hoặc có tin nhắn trong nhóm.
+    Cấu hình tại Zalo Developer Console -> Ứng dụng -> Cấu hình -> Webhook
+    (High-level webhook), URL: https://saomai-api.type.vn/api/v1/zalo-oa/webhook
+    """
+    event = str(payload.get("event_name") or payload.get("event") or "").strip()
+    m = payload.get("message") or {}
+    recipient = payload.get("recipient") or {}
+
+    def upsert_group(gid, name, gtype, members):
+        conn = get_db()
+        cur = conn.cursor()
+        try:
+            cur.execute(
+                """INSERT INTO zalo_oa_chat_groups (group_id, name, type, member_count, updated_at)
+                   VALUES (%s, %s, %s, %s, CURRENT_TIMESTAMP)
+                   ON CONFLICT (group_id) DO UPDATE SET name = EXCLUDED.name,
+                     type = EXCLUDED.type, member_count = EXCLUDED.member_count,
+                     updated_at = CURRENT_TIMESTAMP""",
+                (gid, name, gtype, members),
+            )
+            conn.commit()
+        finally:
+            cur.close()
+            conn.close()
+
+    # Zalo dat id nhom chat o nhieu vi tri tuy loai su kien:
+    # - user_send_group_*: recipient.id chinh la group_id (hex)
+    # - mot so su kien dat chat_id/group_id trong message
+    gid = str(
+        recipient.get("id")
+        or m.get("chat_id") or m.get("group_id") or m.get("chatid")
+        or payload.get("group_id") or ""
+    ).strip()
+    GROUP_EVENTS = (
+        "user_send_group_chat", "user_send_group_text", "user_send_group_image",
+        "user_send_group_video", "user_send_group_audio", "user_send_group_file",
+        "user_send_group_sticker", "user_send_group_gif", "user_send_group_location",
+        "user_join_group", "user_leave_group", "group_chat",
+    )
+    if event in GROUP_EVENTS and gid:
+        gname = (m.get("title") or m.get("group_name") or m.get("topic") or m.get("thread_name")
+                 or m.get("name") or m.get("chat_name") or payload.get("group_name")
+                 or payload.get("title") or payload.get("thread_name") or "")
+        upsert_group(gid, str(gname), "group", None)
+        # Học thành viên nhóm: sender của event là người vừa nhắn tin trong nhóm
+        sender_id = ""
+        try:
+            sender_id = str((payload.get("sender") or {}).get("id") or "").strip()
+        except Exception:
+            sender_id = ""
+        if sender_id:
+            try:
+                _upsert_chat_group_member(gid, sender_id)
+            except Exception:
+                pass
+    return {"received": True, "event": event, "group_id": gid or None}
+
+
+@app.get("/api/v1/zalo-oa/chat-groups")
+def zalo_oa_chat_groups(current_user: dict = Depends(require_dispatch_staff)):
+    """Danh sách nhóm hội thoại mà OA đang tham gia (group_id học qua webhook).
+
+    Mỗi nhóm kèm danh sách thành viên đã học (kèm tên hiển thị); nhóm chưa có
+    tên sẽ được gợi ý tự động từ tên thành viên để dễ nhận diện trên app.
+    """
+    conn = get_db()
+    cur = conn.cursor()
+    cur.execute("SELECT group_id, name, type, member_count, updated_at FROM zalo_oa_chat_groups ORDER BY updated_at DESC")
+    rows = [dict(r) for r in cur.fetchall()]
+    member_map = {}
+    try:
+        cur.execute("SELECT group_id, zalo_user_id, display_name FROM zalo_oa_chat_group_members ORDER BY updated_at ASC")
+        for r in cur.fetchall():
+            member_map.setdefault(r["group_id"], []).append(
+                {"zalo_user_id": r["zalo_user_id"], "display_name": r["display_name"] or ""})
+    except Exception:
+        conn.rollback()  # bảng chưa tạo (server cũ) -> bỏ qua phần thành viên
+    groups = []
+    for r in rows:
+        members = member_map.get(r["group_id"], [])
+        names = [mm["display_name"] for mm in members if mm["display_name"]]
+        auto_name = ""
+        if not (r["name"] or "").strip() and names:
+            auto_name = ", ".join(names[:3]) + ("..." if len(names) > 3 else "")
+        groups.append({
+            "group_id": r["group_id"], "name": r["name"], "type": r["type"],
+            "member_count": r["member_count"],
+            "updated_at": r["updated_at"].isoformat() if r["updated_at"] else None,
+            "members": members, "auto_name": auto_name,
+        })
+    cur.close()
+    conn.close()
+    return {"groups": groups}
+
+
+class ZaloGroupRenameIn(BaseModel):
+    name: str = Field(min_length=1, max_length=255)
+
+
+@app.post("/api/v1/zalo-oa/chat-groups/{group_id}/rename")
+def zalo_oa_chat_group_rename(group_id: str, body: ZaloGroupRenameIn, current_user: dict = Depends(require_dispatch_staff)):
+    """Đặt tên hiển thị cho nhóm hội thoại (Zalo không cung cấp tên nhóm qua API)."""
+    name = body.name.strip()
+    if not name:
+        raise HTTPException(status_code=400, detail="Tên nhóm không được để trống")
+    conn = get_db()
+    cur = conn.cursor()
+    try:
+        cur.execute(
+            "UPDATE zalo_oa_chat_groups SET name = %s, updated_at = CURRENT_TIMESTAMP WHERE group_id = %s",
+            (name, group_id),
+        )
+        if cur.rowcount == 0:
+            raise HTTPException(status_code=404, detail="Không tìm thấy nhóm hội thoại")
+        conn.commit()
+    except HTTPException:
+        conn.rollback()
+        raise
+    finally:
+        cur.close()
+        conn.close()
+    return {"success": True, "group_id": group_id, "name": name}
+
+
+class ZaloGroupMessageIn(BaseModel):
+    text: str = Field(min_length=1, max_length=2000)
+
+
+def _zalo_refresh_chat_groups():
+    """Làm giàu dữ liệu nhóm hội thoại: học thêm thành viên từ lịch sử tin nhắn.
+
+    Zalo không có API liệt kê nhóm chat của OA, dữ liệu nhóm chỉ có được qua
+    webhook. Endpoint này chạy 2 việc:
+    1. Quét lại webhook-log (nếu có) để bổ sung thành viên/nhóm bị bỏ sót.
+    2. Xóa nhóm "rỗng" quá 30 ngày không có hoạt động (dọn dữ liệu test).
+    Trả về thống kê để app hiển thị số nhóm/số khách cập nhật.
+    """
+    import time as _time
+    conn = get_db()
+    cur = conn.cursor()
+    stats = {"groups": 0, "named": 0, "members": 0}
+    try:
+        # 1) Đếm nhóm đang quản lý
+        cur.execute("SELECT COUNT(*) AS n FROM zalo_oa_chat_groups")
+        row = cur.fetchone()
+        stats["groups"] = int(row["n"]) if row else 0
+        cur.execute("SELECT COUNT(*) AS n FROM zalo_oa_chat_groups WHERE COALESCE(name, '') <> ''")
+        row = cur.fetchone()
+        stats["named"] = int(row["n"]) if row else 0
+        cur.execute("SELECT COUNT(DISTINCT zalo_user_id) AS n FROM zalo_oa_chat_group_members")
+        row = cur.fetchone()
+        stats["members"] = int(row["n"]) if row else 0
+        # 2) Dọn nhóm rỗng (không thành viên) quá 30 ngày
+        cur.execute(
+            """DELETE FROM zalo_oa_chat_groups g
+               WHERE updated_at < CURRENT_TIMESTAMP - INTERVAL '30 days'
+                 AND NOT EXISTS (SELECT 1 FROM zalo_oa_chat_group_members m WHERE m.group_id = g.group_id)"""
+        )
+        stats["cleaned"] = cur.rowcount
+        conn.commit()
+        return stats
+    except Exception:
+        try:
+            conn.rollback()
+        except Exception:
+            pass
+        return stats
+    finally:
+        cur.close()
+        conn.close()
+
+
+@app.post("/api/v1/zalo-oa/chat-groups/refresh")
+def zalo_oa_chat_groups_refresh(current_user: dict = Depends(require_dispatch_staff)):
+    """Làm mới danh sách nhóm hội thoại + thống kê để cập nhật cột khách hàng."""
+    stats = _zalo_refresh_chat_groups()
+    return {"success": True, "stats": stats}
+
+
+@app.post("/api/v1/zalo-oa/chat-groups/{group_id}/message")
+def zalo_oa_send_group_message(group_id: str, body: ZaloGroupMessageIn, current_user: dict = Depends(require_dispatch_staff)):
+    """Gửi tin nhắn văn bản từ OA vào nhóm chat GMF (Zalo API /v3.0/oa/group/message)."""
+    try:
+        token = _zalo_access_token()
+    except ZaloAuthRequired as e:
+        raise HTTPException(status_code=409, detail=str(e))
+    try:
+        res = requests.post(
+            f"{ZALO_OPENAPI_BASE}/v3.0/oa/group/message",
+            headers={"access_token": token, "appsecret_proof": _zalo_appsecret_proof(token),
+                     "Content-Type": "application/json"},
+            data=json.dumps({"recipient": {"group_id": group_id}, "message": {"text": body.text}}),
+            timeout=20,
+        )
+        data = res.json()
+    except Exception as e:
+        raise HTTPException(status_code=502, detail=f"Không gọi được Zalo: {e}")
+    if data.get("error") and data.get("error") != 0:
+        raise HTTPException(status_code=502, detail=f"Zalo trả lỗi: {data.get('message')} (mã {data.get('error')})")
+    return {"success": True, "data": data}
 
 
 # 4. Quản lý Roles & Permissions (Dynamic RBAC - Chỉ Admin tối cao)
@@ -2167,7 +2829,8 @@ def get_vehicles(include_inactive: bool = False, current_user: dict = Depends(ge
 
 @app.post("/api/v1/vehicles/sync")
 def sync_vehicles_now(current_user: dict = Depends(get_current_user)):
-    """Nút "Tải lại danh sách": gọi ngay Vietmap + Bình Anh để đối chiếu và đồng bộ đội xe."""
+    """Nút "Tải lại danh sách": gọi ngay Vietmap + Bình Anh để đối chiếu, đồng bộ đội xe
+    và tự tạo account Tài xế cho xe mới phát hiện được."""
     roles = current_user.get("roles") or []
     if current_user["username"] != "admin" and not any(r in ("admin", "manager") for r in roles):
         raise HTTPException(status_code=403, detail="Chỉ Admin và Quản lý được đồng bộ đội xe")
@@ -2534,9 +3197,60 @@ def _fetch_binhanh_vehicles() -> list:
 
 VEHICLE_STATUS_INACTIVE = "inactive"  # Tạm ngừng hoạt động (không còn trên Vietmap / Bình Anh)
 
+DEFAULT_DRIVER_PASSWORD = "123456"  # Mật khẩu mặc định cho account Tài xế tự sinh (theo danh sách tài khoản dự án)
+
+def _slug_username(text: str) -> str:
+    """'Nguyễn Văn Thảo' -> 'nguyenvanthao': bỏ dấu tiếng Việt, đ->d, chỉ giữ chữ và số."""
+    s = (text or "").strip().lower().replace("đ", "d")
+    s = unicodedata.normalize("NFD", s)
+    s = "".join(c for c in s if not unicodedata.combining(c))
+    return "".join(c for c in s if c.isalnum())
+
+def _create_driver_account_for_vehicle(cur, plate: str, driver_name: Optional[str], provider: str):
+    """Xe mới đồng bộ từ Vietmap / Bình Anh: tự tạo account Tài xế đi kèm.
+    - Có tên tài xế từ nhà cung cấp (Bình Anh): username = taixe_<tên không dấu>.
+    - Không có tên (Vietmap): username = taixe_<biển số không dấu>.
+    - Trùng username: thử thêm hậu tố biển số. Mật khẩu mặc định 123456, gán role 'driver'.
+    Gán vehicles.default_driver_id để app Tài xế nhận xe thường trực ngay khi đăng nhập."""
+    slug_name = _slug_username(driver_name or "")
+    slug_plate = _slug_username(_format_binhanh_plate(plate))
+    base = f"taixe_{slug_name or slug_plate}"
+    candidates = [base]
+    if slug_name and slug_plate and slug_plate != slug_name:
+        candidates.append(f"{base}_{slug_plate}")
+    username = None
+    for cand in candidates:
+        cur.execute("SELECT id FROM users WHERE username = %s", (cand,))
+        if not cur.fetchone():
+            username = cand
+            break
+    if username is None:
+        return None
+    full_name = (driver_name or "").strip() or f"Tài xế xe {plate}"
+    cur.execute(
+        """INSERT INTO users (username, password_hash, full_name, phone, driver_type)
+           VALUES (%s, %s, %s, %s, 'INTERNAL')
+           RETURNING id, username, full_name""",
+        (username, get_password_hash(DEFAULT_DRIVER_PASSWORD), full_name, "0000000000"),
+    )
+    acc = cur.fetchone()
+    cur.execute("SELECT id FROM roles WHERE code = 'driver'")
+    role = cur.fetchone()
+    if role:
+        cur.execute(
+            "INSERT INTO user_roles (user_id, role_id) VALUES (%s, %s) ON CONFLICT DO NOTHING",
+            (acc["id"], role["id"]),
+        )
+    cur.execute(
+        "UPDATE vehicles SET default_driver_id = %s WHERE plate_number = %s AND default_driver_id IS NULL",
+        (acc["id"], plate),
+    )
+    return {"username": acc["username"], "full_name": acc["full_name"], "plate_number": plate, "provider": provider}
+
 def sync_fleet_vehicles(force: bool = False):
     """Đối chiếu đội xe với Vietmap + Bình Anh.
-    - Xe có trên nhà cung cấp mà chưa có trong bảng vehicles: thêm mới.
+    - Xe có trên nhà cung cấp mà chưa có trong bảng vehicles: thêm mới, đồng thời
+      tự tạo account Tài xế đi kèm (mật khẩu mặc định 123456, gán làm tài xế phụ trách).
     - Xe không còn trên nhà cung cấp nào: in_fleet = FALSE, status = 'inactive'
       (Tạm ngừng hoạt động). Không xóa để giữ lịch sử đơn hàng, kiểm tra xe.
     - Xe đang Tạm ngừng mà xuất hiện lại: chuyển về 'ready'.
@@ -2557,6 +3271,9 @@ def sync_fleet_vehicles(force: bool = False):
             "added": [],
             "deactivated": [],
             "reactivated": [],
+            "plate_mismatch": [],
+            "drivers_created": [],
+            "driver_errors": [],
             "total_active": 0,
             "total_inactive": 0,
         }
@@ -2576,16 +3293,38 @@ def sync_fleet_vehicles(force: bool = False):
         conn = get_db()
         cur = conn.cursor()
         try:
-            cur.execute("SELECT plate_number, gps_provider, in_fleet, status FROM vehicles")
+            cur.execute("SELECT plate_number, gps_provider, in_fleet, status, gps_vehicle_id FROM vehicles")
             existing = {_normalize_plate(r["plate_number"]): r for r in cur.fetchall()}
+            # Map theo mã thiết bị GPS: nhận diện nhà cung cấp sửa/đổi biển số trên cùng thiết bị
+            existing_by_device = {}
+            for _r in existing.values():
+                _dev = str(_r.get("gps_vehicle_id") or "").strip()
+                if _dev:
+                    existing_by_device[_dev] = _r
             seen = set()  # biển số chuẩn hóa đã có trên nhà cung cấp lấy được
             for provider in ("vietmap", "binhanh"):
                 for v in fetched.get(provider, []):
                     key = _normalize_plate(v["plate"])
                     if not key or key in seen:
                         continue  # trùng biển giữa 2 nguồn: ưu tiên Vietmap
-                    seen.add(key)
                     row = existing.get(key)
+                    if row is None:
+                        # Ưu tiên so khớp theo mã thiết bị GPS: cùng thiết bị nhưng khác biển
+                        # => nhà cung cấp đã sửa/đổi biển trên thiết bị cũ, KHÔNG thêm xe mới.
+                        # Giữ nguyên biển hệ thống (bảo vệ lịch sử đơn hàng) và ghi cảnh báo.
+                        _dev_id = str(v.get("vehicle_id") or "").strip()
+                        dev_row = existing_by_device.get(_dev_id)
+                        if dev_row is not None:
+                            row = dev_row
+                            stats["plate_mismatch"].append({
+                                "plate_number": dev_row["plate_number"],
+                                "new_plate": v["plate"],
+                                "device_id": _dev_id,
+                                "provider": provider,
+                            })
+                    seen.add(key)
+                    if row is not None:
+                        seen.add(_normalize_plate(row["plate_number"]))
                     if row is None:
                         cur.execute(
                             """INSERT INTO vehicles (plate_number, vehicle_type, ownership_type, status)
@@ -2596,6 +3335,13 @@ def sync_fleet_vehicles(force: bool = False):
                         plate = v["plate"]
                         if cur.rowcount:
                             stats["added"].append({"plate_number": plate, "provider": provider})
+                            # Xe mới: tạo kèm account Tài xế để app Tài xế đăng nhập được ngay
+                            try:
+                                acc = _create_driver_account_for_vehicle(cur, plate, v.get("driver_name"), provider)
+                                if acc:
+                                    stats["drivers_created"].append(acc)
+                            except Exception as acc_err:
+                                stats["driver_errors"].append({"plate_number": plate, "error": str(acc_err)})
                         existing[key] = {"plate_number": plate, "gps_provider": provider,
                                          "in_fleet": True, "status": "ready"}
                     else:

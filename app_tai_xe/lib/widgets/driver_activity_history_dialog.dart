@@ -1,5 +1,6 @@
 import 'dart:math' as math;
 import 'package:flutter/material.dart';
+import 'center_loading_overlay.dart';
 import '../../services/admin_service.dart';
 
 /// Dialog tra cứu "Lịch sử hoạt động" của Tài xế (Báo nghỉ, Hủy báo nghỉ, ...)
@@ -330,7 +331,7 @@ class _DriverActivityHistoryDialogState
                 ),
                 if (snapshot.connectionState == ConnectionState.waiting)
                   const Expanded(
-                    child: Center(child: CircularProgressIndicator()),
+                    child: CenterLoadingBox(message: 'Đang tải lịch sử hoạt động...'),
                   )
                 else if (snapshot.hasError)
                   Expanded(

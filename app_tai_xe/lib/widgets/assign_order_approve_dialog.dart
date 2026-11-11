@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'center_loading_overlay.dart';
 import '../services/admin_service.dart';
 
 /// Dialog hiển thị khi Điều phối / Quản lý bấm nút "Duyệt Nhận Chuyến":
@@ -267,7 +268,12 @@ class _AssignOrderOnApproveDialogState
       insetPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 24),
       child: ConstrainedBox(
         constraints: const BoxConstraints(maxWidth: 620, maxHeight: 640),
-        child: Column(
+        child: CenterLoadingOverlay(
+          isLoading: _isLoadingOrders || _isSubmitting,
+          message: _isSubmitting
+              ? 'Đang duyệt nhận chuyến và gắn đơn hàng...'
+              : 'Đang tải danh sách đơn hàng...',
+          child: Column(
           mainAxisSize: MainAxisSize.min,
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
@@ -461,10 +467,7 @@ class _AssignOrderOnApproveDialogState
             // Danh sách đơn hàng
             Flexible(
               child: _isLoadingOrders
-                  ? const Padding(
-                      padding: EdgeInsets.all(32),
-                      child: Center(child: CircularProgressIndicator()),
-                    )
+                  ? const SizedBox(height: 180)
                   : filtered.isEmpty
                   ? Padding(
                       padding: const EdgeInsets.all(24),
@@ -710,16 +713,7 @@ class _AssignOrderOnApproveDialogState
                       onPressed: (_isSubmitting || _selectedOrderId == null)
                           ? null
                           : () => _submit(assignOrder: true),
-                      icon: _isSubmitting
-                          ? const SizedBox(
-                              width: 14,
-                              height: 14,
-                              child: CircularProgressIndicator(
-                                strokeWidth: 2,
-                                color: Colors.white,
-                              ),
-                            )
-                          : const Icon(Icons.check_circle_outline, size: 16),
+                      icon: const Icon(Icons.check_circle_outline, size: 16),
                       label: const Text(
                         'Duyệt & Gắn Đơn Hàng',
                         style: TextStyle(
@@ -733,6 +727,7 @@ class _AssignOrderOnApproveDialogState
               ),
             ),
           ],
+        ),
         ),
       ),
     );

@@ -1,6 +1,7 @@
 import 'dart:async';
 
 import 'package:flutter/material.dart';
+import '../widgets/center_loading_overlay.dart';
 import 'package:provider/provider.dart';
 import '../services/app_state.dart';
 import '../services/auth_service.dart';
@@ -108,7 +109,10 @@ class _LoginScreenState extends State<LoginScreen> {
 
     return Scaffold(
       backgroundColor: Colors.grey.shade100,
-      body: SafeArea(
+      body: CenterLoadingOverlay(
+        isLoading: _isLoading,
+        message: 'Đang đăng nhập...',
+        child: SafeArea(
         child: Center(
           child: SingleChildScrollView(
             padding: const EdgeInsets.symmetric(horizontal: 24.0, vertical: 16.0),
@@ -244,19 +248,10 @@ class _LoginScreenState extends State<LoginScreen> {
                           ),
                         ),
                         onPressed: _isLoading ? null : _onLoginPressed,
-                        child: _isLoading
-                            ? const SizedBox(
-                                width: 22,
-                                height: 22,
-                                child: CircularProgressIndicator(
-                                  strokeWidth: 2.5,
-                                  color: Colors.white,
-                                ),
-                              )
-                            : const Text(
-                                "Đăng nhập",
-                                style: TextStyle(fontSize: 15, fontWeight: FontWeight.bold),
-                              ),
+                        child: const Text(
+                          "Đăng nhập",
+                          style: TextStyle(fontSize: 15, fontWeight: FontWeight.bold),
+                        ),
                       ),
                     ),
                   ],
@@ -265,6 +260,7 @@ class _LoginScreenState extends State<LoginScreen> {
             ),
           ),
         ),
+      ),
       ),
     ),
   );

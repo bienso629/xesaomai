@@ -357,6 +357,27 @@ class _DispatchSupervisorScreenState extends State<DispatchSupervisorScreen> {
     });
     final inactiveCount = data['total_inactive'] ?? 0;
 
+    final createdAccounts = ((data['drivers_created'] as List?) ?? [])
+        .map((e) => e is Map ? Map<String, dynamic>.from(e) : <String, dynamic>{})
+        .toList();
+    final driverErrors = ((data['driver_errors'] as List?) ?? [])
+        .map((e) => e is Map ? Map<String, dynamic>.from(e) : <String, dynamic>{})
+        .toList();
+    final accountLines = createdAccounts
+        .map((a) =>
+            "${a['full_name'] ?? ''} (${a['username'] ?? ''} - xe ${a['plate_number'] ?? ''})")
+        .toList();
+    final errorLines = driverErrors
+        .map((e) => "${e['plate_number'] ?? ''}: ${e['error'] ?? ''}")
+        .toList();
+    final plateMismatch = ((data['plate_mismatch'] as List?) ?? [])
+        .map((e) => e is Map ? Map<String, dynamic>.from(e) : <String, dynamic>{})
+        .toList();
+    final mismatchLines = plateMismatch
+        .map((m) =>
+            "${m['plate_number'] ?? ''}: nhà cung cấp trả về biển '${m['new_plate'] ?? ''}' trên cùng thiết bị GPS, kiểm tra lại biển số")
+        .toList();
+
     final lines = <String>[
       "Đang hoạt động: ${data['total_active'] ?? 0} xe"
           "${inactiveCount != 0 ? ' • Tạm ngừng: $inactiveCount xe' : ''}",
@@ -367,6 +388,12 @@ class _DispatchSupervisorScreenState extends State<DispatchSupervisorScreen> {
         "Hoạt động trở lại ${reactivated.length} xe: ${reactivated.join(', ')}",
       if (added.isEmpty && deactivated.isEmpty && reactivated.isEmpty)
         "Không có thay đổi so với Vietmap và Bình Anh",
+      if (accountLines.isNotEmpty)
+        "Tạo account Tài xế mới (${accountLines.length}): ${accountLines.join(', ')}",
+      if (errorLines.isNotEmpty)
+        "Lỗi tạo account Tài xế: ${errorLines.join(', ')}",
+      if (mismatchLines.isNotEmpty)
+        "Cảnh báo biển số (${mismatchLines.length}): ${mismatchLines.join(' | ')}",
       if (failed.isNotEmpty)
         "Không kết nối được ${failed.join(', ')}: giữ nguyên các xe của nguồn này",
     ];

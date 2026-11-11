@@ -1,5 +1,6 @@
 import 'dart:async';
 import 'package:flutter/material.dart';
+import '../widgets/center_loading_overlay.dart';
 import 'package:flutter_map/flutter_map.dart';
 import 'package:latlong2/latlong.dart';
 import 'package:provider/provider.dart';
@@ -179,7 +180,10 @@ class _DriverScheduleScreenState extends State<DriverScheduleScreen> {
 
     return Scaffold(
       backgroundColor: Colors.grey.shade50,
-      body: RefreshIndicator(
+      body: CenterLoadingOverlay(
+        isLoading: _isLoadingData || _isSendingRest,
+        message: _isSendingRest ? 'Đang cập nhật trạng thái phương tiện...' : 'Đang tải lịch trình tài xế...',
+        child: RefreshIndicator(
         onRefresh: () async {
           final AppState appState = context.read<AppState>();
           await _loadDriverData(silent: true);
@@ -212,6 +216,7 @@ class _DriverScheduleScreenState extends State<DriverScheduleScreen> {
             ],
           ),
         ),
+      ),
       ),
     );
   }
@@ -421,12 +426,7 @@ class _DriverScheduleScreenState extends State<DriverScheduleScreen> {
                   padding: const EdgeInsets.symmetric(horizontal: 8),
                   tapTargetSize: MaterialTapTargetSize.shrinkWrap,
                 ),
-                icon: _isSendingRest
-                    ? const SizedBox(
-                        width: 14, height: 14,
-                        child: CircularProgressIndicator(strokeWidth: 2),
-                      )
-                    : Icon(_isResting ? Icons.play_circle_outline : Icons.nightlight_outlined, size: 16),
+                icon: Icon(_isResting ? Icons.play_circle_outline : Icons.nightlight_outlined, size: 16),
                 label: Text(
                   _isResting ? "Trở lại hoạt động" : "Báo nghỉ",
                   style: const TextStyle(fontSize: 12, fontWeight: FontWeight.bold),
@@ -1035,12 +1035,7 @@ class _DriverScheduleScreenState extends State<DriverScheduleScreen> {
               ],
             ),
             const Divider(height: 20),
-            if (_isLoadingData)
-              const Padding(
-                padding: EdgeInsets.symmetric(vertical: 20),
-                child: Center(child: CircularProgressIndicator()),
-              )
-            else if (_myOrders.isEmpty)
+            if (_myOrders.isEmpty)
               Container(
                 width: double.infinity,
                 padding: const EdgeInsets.symmetric(vertical: 16, horizontal: 12),

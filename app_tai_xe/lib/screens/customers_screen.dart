@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 import 'package:url_launcher/url_launcher.dart';
 
 import '../services/admin_service.dart';
+import '../widgets/center_loading_overlay.dart';
 
 /// Màn hình Quản lý Khách hàng.
 /// Chỉ Điều phối viên, Quản lý / Giám đốc và Admin được vào (kiểm tra ở
@@ -35,6 +36,9 @@ class _CustomersScreenState extends State<CustomersScreen> {
   Timer? _zaloTimer;
   int _zaloPolls = 0;
   bool _zaloWaitingAuth = false;
+
+  // Danh sách nhóm (tag) Zalo OA
+  bool _groupsBusy = false;
 
   @override
   void initState() {
@@ -227,6 +231,64 @@ class _CustomersScreenState extends State<CustomersScreen> {
     if (message.isNotEmpty) _toast(message, error: error);
   }
 
+  // ---------------- NHÓM ZALO OA (TỰ ĐỘNG) ----------------
+
+  /// Bấm nút "Nhóm Zalo OA": hệ thống tự động làm mới dữ liệu nhóm hội thoại
+  /// (học qua webhook), cập nhật thẳng cột "Nhóm Zalo OA" của khách hàng rồi
+  /// tải lại bảng. Không hiển thị dialog danh sách nhóm.
+  Future<void> _refreshZaloGroups() async {
+    if (_groupsBusy) return;
+    setState(() => _groupsBusy = true);
+    int groupCount = 0;
+    int memberCount = 0;
+    int customerCount = 0;
+    String? err;
+    try {
+      // 1) Gọi backend làm mới dữ liệu nhóm (thống kê tổng nhóm/thành viên)
+      final res = await AdminService.refreshZaloOaChatGroups();
+      if (res['ok'] == true && res['data'] is Map) {
+        final stats = (res['data']['stats'] as Map?) ?? {};
+        groupCount = (stats['groups'] as num?)?.toInt() ?? 0;
+        memberCount = (stats['members'] as num?)?.toInt() ?? 0;
+      } else {
+        err = res['message']?.toString().isNotEmpty == true
+            ? res['message'].toString()
+            : 'Không làm mới được dữ liệu nhóm Zalo OA';
+      }
+      // 2) Tải lại danh sách khách hàng (cột Nhóm Zalo OA đã cập nhật)
+      final rows = await AdminService.fetchCustomers();
+      if (rows is List) {
+        customerCount = rows
+            .whereType<Map>()
+            .where((c) =>
+                ((c['zalo_chat_groups'] as List? ?? []).isNotEmpty) ||
+                ((c['zalo_oa_groups'] as List? ?? []).isNotEmpty))
+            .length;
+        if (mounted) {
+          setState(() {
+            _customers = rows
+                .whereType<Map>()
+                .map((e) => Map<String, dynamic>.from(e))
+                .toList();
+            _currentPage = 1;
+          });
+        }
+      }
+    } catch (e) {
+      err = e.toString();
+    }
+    if (!mounted) return;
+    setState(() => _groupsBusy = false);
+    if (err != null && err.isNotEmpty) {
+      _toast(err, error: true);
+    } else {
+      _toast(
+        'Đã cập nhật $groupCount nhóm Zalo OA ($memberCount thành viên) '
+        '— $customerCount khách hàng có nhóm',
+      );
+    }
+  }
+
   Future<void> _load() async {
     setState(() => _loading = true);
     final rows = await AdminService.fetchCustomers();
@@ -247,6 +309,16 @@ class _CustomersScreenState extends State<CustomersScreen> {
     final q = _query.toLowerCase().trim();
     if (q.isEmpty) return _customers;
     return _customers.where((c) {
+      final inGroups = (c['zalo_oa_groups'] as List? ?? [])
+          .any((g) => g.toString().toLowerCase().contains(q));
+      if (inGroups) return true;
+      // Tìm theo nhóm hội thoại (label hoặc group_id)
+      final inChatGroups = (c['zalo_chat_groups'] as List? ?? []).any((g) {
+        if (g is! Map) return false;
+        return g['label'].toString().toLowerCase().contains(q) ||
+            g['group_id'].toString().toLowerCase().contains(q);
+      });
+      if (inChatGroups) return true;
       return [
         'code',
         'name',
@@ -300,13 +372,7 @@ class _CustomersScreenState extends State<CustomersScreen> {
     bool filled = false,
   }) {
     final shape = RoundedRectangleBorder(borderRadius: BorderRadius.circular(4));
-    final iconW = busy
-        ? SizedBox(
-            width: 14,
-            height: 14,
-            child: CircularProgressIndicator(strokeWidth: 2, color: filled ? Colors.white : color),
-          )
-        : Icon(icon, size: 15);
+    final iconW = Icon(icon, size: 15);
     final text = Text(label, style: const TextStyle(fontWeight: FontWeight.w600, fontSize: 12.5));
     return SizedBox(
       height: 36,
@@ -444,6 +510,16 @@ class _CustomersScreenState extends State<CustomersScreen> {
               ),
               const SizedBox(width: 10),
               Tooltip(
+                message: "Tự động lấy danh sách nhóm Zalo OA và cập nhật cột Nhóm Zalo OA cho khách hàng",
+                child: _toolbarButton(
+                  icon: Icons.groups_2_outlined,
+                  label: _groupsBusy ? "Đang cập nhật nhóm..." : "Nhóm Zalo OA",
+                  color: const Color(0xFF0068FF),
+                  onPressed: _groupsBusy ? null : _refreshZaloGroups,
+                ),
+              ),
+              const SizedBox(width: 10),
+              Tooltip(
                 message: "Xin quyền Zalo OA và đồng bộ danh sách người quan tâm vào Khách hàng",
                 child: _toolbarButton(
                   icon: Icons.sync,
@@ -456,25 +532,25 @@ class _CustomersScreenState extends State<CustomersScreen> {
             ],
           ),
         ),
-        if (_zaloProgress.isNotEmpty)
-          Container(
-            width: double.infinity,
-            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 6),
-            color: const Color(0xFFE6F0FF),
-            child: Text(
-              _zaloProgress,
-              style: const TextStyle(fontSize: 12, color: Color(0xFF0068FF), fontWeight: FontWeight.w600),
-            ),
-          ),
         const Divider(height: 1),
         // Bảng danh sách khách hàng
         Expanded(
-          child: _loading
-              ? const Center(child: CircularProgressIndicator())
-              : RefreshIndicator(
-                  onRefresh: _load,
-                  child: pageItems.isEmpty ? _buildEmpty() : _buildTable(pageItems),
-                ),
+          child: CenterLoadingOverlay(
+            isLoading: _loading || _zaloBusy || _groupsBusy || _zaloProgress.isNotEmpty,
+            message: _zaloProgress.isNotEmpty
+                ? _zaloProgress
+                : (_zaloBusy
+                    ? 'Đang đồng bộ Zalo OA...'
+                    : (_groupsBusy
+                        ? 'Đang tự động cập nhật nhóm Zalo OA...'
+                        : 'Đang tải danh sách khách hàng...')),
+            child: _loading
+                ? const SizedBox.expand()
+                : RefreshIndicator(
+                    onRefresh: _load,
+                    child: pageItems.isEmpty ? _buildEmpty() : _buildTable(pageItems),
+                  ),
+          ),
         ),
         // THANH ĐIỀU HƯỚNG PHÂN TRANG
         if (!_loading && totalItems > 0)
@@ -559,6 +635,7 @@ class _CustomersScreenState extends State<CustomersScreen> {
                   col("Tên khách hàng"),
                   col("Mã khách hàng"),
                   col("Nguồn"),
+                  col("Nhóm Zalo OA"),
                   col("Người liên hệ"),
                   col("Mã số thuế"),
                   col("Địa chỉ"),
@@ -582,13 +659,29 @@ class _CustomersScreenState extends State<CustomersScreen> {
                         Row(
                           mainAxisSize: MainAxisSize.min,
                           children: [
-                            Container(
-                              padding: const EdgeInsets.all(6),
-                              decoration: BoxDecoration(
-                                color: Colors.blue.shade50,
-                                borderRadius: BorderRadius.circular(4),
-                              ),
-                              child: const Icon(Icons.storefront, size: 18, color: Colors.blue),
+                            Builder(
+                              builder: (_) {
+                                final ava = _s(c, 'zalo_avatar');
+                                if (ava.isNotEmpty) {
+                                  return Tooltip(
+                                    message: "ID Zalo: ${_s(c, 'zalo_user_id')}",
+                                    child: CircleAvatar(
+                                      radius: 16,
+                                      backgroundColor: Colors.blue.shade50,
+                                      backgroundImage: NetworkImage(ava),
+                                      onBackgroundImageError: (_, _) {},
+                                    ),
+                                  );
+                                }
+                                return Container(
+                                  padding: const EdgeInsets.all(6),
+                                  decoration: BoxDecoration(
+                                    color: Colors.blue.shade50,
+                                    borderRadius: BorderRadius.circular(4),
+                                  ),
+                                  child: const Icon(Icons.storefront, size: 18, color: Colors.blue),
+                                );
+                              },
                             ),
                             const SizedBox(width: 10),
                             ConstrainedBox(
@@ -649,7 +742,9 @@ class _CustomersScreenState extends State<CustomersScreen> {
                           ),
                         ),
                       ),
-                      // Cột 4: Người liên hệ (giống cột Tài xế chỉ định)
+                      // Cột 4: Nhóm Zalo OA (các nhãn tag từ Zalo)
+                      makeCell(_buildZaloGroupsCell(c)),
+                      // Cột 5: Người liên hệ (giống cột Tài xế chỉ định)
                       makeCell(
                         (contactName.isEmpty && subLine.isEmpty)
                             ? Text(
@@ -690,11 +785,11 @@ class _CustomersScreenState extends State<CustomersScreen> {
                                 ],
                               ),
                       ),
-                      // Cột 5: Mã số thuế
+                      // Cột 6: Mã số thuế
                       makeCell(plainText(_s(c, 'tax_code'), maxWidth: 150)),
-                      // Cột 6: Địa chỉ
+                      // Cột 7: Địa chỉ
                       makeCell(plainText(_s(c, 'address'))),
-                      // Cột 7: Thao tác
+                      // Cột 8: Thao tác
                       makeCell(
                         Row(
                           mainAxisSize: MainAxisSize.min,
@@ -725,6 +820,335 @@ class _CustomersScreenState extends State<CustomersScreen> {
           ),
         );
       },
+    );
+  }
+
+  /// Ô "Nhóm Zalo OA": hiện các nhóm của khách hàng.
+  /// - Nhóm hội thoại (học qua webhook): pill xanh lá kèm icon nhóm, tooltip
+  ///   hiển thị đầy đủ tên nhóm + group_id.
+  /// - Nhãn tag phân loại (khi Zalo cấp quyền API Tag): pill xanh dương.
+  /// Khách chưa có nhóm nào hiển thị gạch ngang mờ.
+  Widget _buildZaloGroupsCell(Map<String, dynamic> c) {
+    final chatGroups = (c['zalo_chat_groups'] as List? ?? [])
+        .whereType<Map>()
+        .map((g) => Map<String, dynamic>.from(g))
+        .where((g) => (g['label'] ?? '').toString().isNotEmpty)
+        .toList();
+    final tagGroups = (c['zalo_oa_groups'] as List? ?? [])
+        .map((e) => e.toString())
+        .where((g) => g.isNotEmpty)
+        .toList();
+    if (chatGroups.isEmpty && tagGroups.isEmpty) {
+      return Text("—", style: TextStyle(fontSize: 12.5, color: Colors.grey.shade400));
+    }
+    void showZaloGroupMembersDialog(String gid, String label) {
+      final members = _customers.where((c) {
+        final gs = (c['zalo_chat_groups'] as List? ?? []);
+        return gs.any((g) => g is Map && (g['group_id'] ?? '').toString() == gid);
+      }).toList();
+      showDialog(
+        context: context,
+        builder: (ctx) => AlertDialog(
+          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+          title: Row(
+            children: [
+              Icon(Icons.forum_outlined, size: 20, color: Colors.green.shade700),
+              const SizedBox(width: 8),
+              Expanded(
+                child: Text(
+                  label,
+                  style: const TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
+                ),
+              ),
+            ],
+          ),
+          content: SizedBox(
+            width: 380,
+            child: members.isEmpty
+                ? Padding(
+                    padding: const EdgeInsets.symmetric(vertical: 16),
+                    child: Text(
+                      "Chưa có khách hàng nào trong nhóm này được ghi nhận.\n"
+                      "Thành viên nhóm sẽ tự động được học khi họ nhắn tin trong nhóm Zalo.",
+                      style: TextStyle(fontSize: 13, color: Colors.grey.shade600),
+                    ),
+                  )
+                : Column(
+                    mainAxisSize: MainAxisSize.min,
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        "${members.length} khách hàng trong nhóm:",
+                        style: TextStyle(
+                          fontSize: 12.5,
+                          fontWeight: FontWeight.bold,
+                          color: Colors.grey.shade700,
+                        ),
+                      ),
+                      const SizedBox(height: 8),
+                      ConstrainedBox(
+                        constraints: const BoxConstraints(maxHeight: 320),
+                        child: SingleChildScrollView(
+                          child: Column(
+                            children: members.map((m) {
+                              final mMap = Map<String, dynamic>.from(m);
+                              final mName = _s(mMap, 'name');
+                              final mCode = _s(mMap, 'code');
+                              final mPhone = _s(mMap, 'phone');
+                              final mzName = _s(mMap, 'zalo_display_name');
+                              final mAvatar = _s(mMap, 'zalo_avatar');
+                              return Container(
+                                margin: const EdgeInsets.only(bottom: 6),
+                                padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+                                decoration: BoxDecoration(
+                                  color: Colors.grey.shade50,
+                                  borderRadius: BorderRadius.circular(8),
+                                  border: Border.all(color: Colors.grey.shade200),
+                                ),
+                                child: Row(
+                                  children: [
+                                    if (mAvatar.isNotEmpty)
+                                      CircleAvatar(
+                                        radius: 12,
+                                        backgroundColor: Colors.blue.shade50,
+                                        backgroundImage: NetworkImage(mAvatar),
+                                        onBackgroundImageError: (_, _) {},
+                                      )
+                                    else
+                                      Icon(Icons.storefront, size: 16, color: Colors.blue.shade400),
+                                    const SizedBox(width: 8),
+                                    Expanded(
+                                      child: Column(
+                                        crossAxisAlignment: CrossAxisAlignment.start,
+                                        children: [
+                                          Text(
+                                            mName,
+                                            maxLines: 1,
+                                            overflow: TextOverflow.ellipsis,
+                                            style: const TextStyle(
+                                              fontSize: 13,
+                                              fontWeight: FontWeight.bold,
+                                              color: Colors.blueGrey,
+                                            ),
+                                          ),
+                                          if (mzName.isNotEmpty && mzName != mName)
+                                            Text(
+                                              "Zalo: $mzName",
+                                              maxLines: 1,
+                                              overflow: TextOverflow.ellipsis,
+                                              style: TextStyle(
+                                                fontSize: 11,
+                                                color: Colors.grey.shade600,
+                                              ),
+                                            ),
+                                        ],
+                                      ),
+                                    ),
+                                    if (mCode.isNotEmpty)
+                                      Text(
+                                        mCode,
+                                        style: TextStyle(
+                                          fontSize: 11,
+                                          color: Colors.grey.shade500,
+                                        ),
+                                      ),
+                                    if (mPhone.isNotEmpty) ...[
+                                      const SizedBox(width: 8),
+                                      Icon(Icons.phone, size: 12, color: Colors.grey.shade400),
+                                      const SizedBox(width: 2),
+                                      Text(
+                                        mPhone,
+                                        style: TextStyle(fontSize: 11.5, color: Colors.grey.shade700),
+                                      ),
+                                    ],
+                                  ],
+                                ),
+                              );
+                            }).toList(),
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(ctx),
+              child: const Text("Đóng"),
+            ),
+          ],
+        ),
+      );
+    }
+
+    Widget tagPill(String g) {
+      return Tooltip(
+        message: "Nhãn phân loại Zalo: $g",
+        child: Container(
+          padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 2),
+          decoration: BoxDecoration(
+            color: const Color(0xFF0068FF).withValues(alpha: 0.08),
+            borderRadius: BorderRadius.circular(4),
+            border: Border.all(color: const Color(0xFF0068FF).withValues(alpha: 0.25)),
+          ),
+          child: Text(
+            g,
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
+            style: const TextStyle(
+              color: Color(0xFF0068FF),
+              fontSize: 10.5,
+              fontWeight: FontWeight.bold,
+            ),
+          ),
+        ),
+      );
+    }
+
+    void showGroupPickerDialog() {
+      if (chatGroups.length == 1) {
+        final g = chatGroups.first;
+        showZaloGroupMembersDialog(
+          (g['group_id'] ?? '').toString(),
+          (g['label'] ?? '').toString(),
+        );
+        return;
+      }
+      showDialog(
+        context: context,
+        builder: (ctx) => AlertDialog(
+          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+          title: Row(
+            children: [
+              Icon(Icons.forum_outlined, size: 20, color: Colors.green.shade700),
+              const SizedBox(width: 8),
+              Expanded(
+                child: Text(
+                  "Nhóm Zalo OA của ${_s(c, 'name')}",
+                  style: const TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
+                ),
+              ),
+            ],
+          ),
+          content: SizedBox(
+            width: 340,
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  "${chatGroups.length} nhóm - bấm vào nhóm để xem danh sách khách hàng:",
+                  style: TextStyle(fontSize: 12.5, color: Colors.grey.shade700),
+                ),
+                const SizedBox(height: 8),
+                ConstrainedBox(
+                  constraints: const BoxConstraints(maxHeight: 280),
+                  child: SingleChildScrollView(
+                    child: Column(
+                      children: chatGroups.map((g) {
+                        final label = (g['label'] ?? '').toString();
+                        final gid = (g['group_id'] ?? '').toString();
+                        final gcount = (g['member_count'] as int? ?? 0);
+                        return InkWell(
+                          onTap: () {
+                            Navigator.pop(ctx);
+                            showZaloGroupMembersDialog(gid, label);
+                          },
+                          borderRadius: BorderRadius.circular(8),
+                          child: Container(
+                            width: double.infinity,
+                            margin: const EdgeInsets.only(bottom: 6),
+                            padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+                            decoration: BoxDecoration(
+                              color: Colors.grey.shade50,
+                              borderRadius: BorderRadius.circular(8),
+                              border: Border.all(color: Colors.grey.shade200),
+                            ),
+                            child: Row(
+                              children: [
+                                Icon(Icons.forum_outlined, size: 14, color: Colors.green.shade700),
+                                const SizedBox(width: 8),
+                                Expanded(
+                                  child: Text(
+                                    label,
+                                    maxLines: 1,
+                                    overflow: TextOverflow.ellipsis,
+                                    style: const TextStyle(
+                                      fontSize: 12.5,
+                                      fontWeight: FontWeight.bold,
+                                      color: Colors.blueGrey,
+                                    ),
+                                  ),
+                                ),
+                                if (gcount > 0)
+                                  Text(
+                                    "$gcount thành viên",
+                                    style: TextStyle(fontSize: 11, color: Colors.grey.shade600),
+                                  ),
+                                const SizedBox(width: 4),
+                                Icon(Icons.chevron_right, size: 16, color: Colors.grey.shade400),
+                              ],
+                            ),
+                          ),
+                        );
+                      }).toList(),
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(ctx),
+              child: const Text("Đóng"),
+            ),
+          ],
+        ),
+      );
+    }
+
+    Widget groupsCountButton() {
+      final names = chatGroups.map((g) => (g['label'] ?? '').toString()).join("\n");
+      return Tooltip(
+        message: "${chatGroups.length} nhóm Zalo OA:\n$names\nBấm để xem khách hàng trong nhóm",
+        child: InkWell(
+          onTap: showGroupPickerDialog,
+          borderRadius: BorderRadius.circular(4),
+          child: Container(
+            padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+            decoration: BoxDecoration(
+              color: Colors.green.shade50,
+              borderRadius: BorderRadius.circular(4),
+              border: Border.all(color: Colors.green.shade300),
+            ),
+            child: Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Icon(Icons.forum_outlined, size: 13, color: Colors.green.shade800),
+                const SizedBox(width: 4),
+                Text(
+                  "${chatGroups.length}",
+                  style: TextStyle(
+                    color: Colors.green.shade900,
+                    fontSize: 11.5,
+                    fontWeight: FontWeight.bold,
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ),
+      );
+    }
+
+    return Row(
+      mainAxisSize: MainAxisSize.min,
+      crossAxisAlignment: CrossAxisAlignment.center,
+      children: [
+        groupsCountButton(),
+        ...tagGroups.map(tagPill),
+      ],
     );
   }
 

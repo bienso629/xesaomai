@@ -1,6 +1,7 @@
 import '../widgets/realtime_header_notification_bell.dart';
 import 'dart:async';
 import 'package:flutter/material.dart';
+import '../widgets/center_loading_overlay.dart';
 import 'package:flutter_map/flutter_map.dart';
 import 'package:latlong2/latlong.dart';
 import 'package:provider/provider.dart';
@@ -115,17 +116,7 @@ class _MapScreenState extends State<MapScreen> {
     if (_isLoadingOrders) {
       return const Padding(
         padding: EdgeInsets.symmetric(vertical: 2),
-        child: Row(
-          children: [
-            SizedBox(
-              width: 10,
-              height: 10,
-              child: CircularProgressIndicator(strokeWidth: 1.5, color: Colors.blue),
-            ),
-            SizedBox(width: 6),
-            Text('Đang tải thông tin đơn hàng...', style: TextStyle(fontSize: 10, color: Colors.grey)),
-          ],
-        ),
+        child: Text('Đang tải thông tin đơn hàng...', style: TextStyle(fontSize: 10, color: Colors.grey)),
       );
     }
 
@@ -414,14 +405,8 @@ class _MapScreenState extends State<MapScreen> {
           const RealtimeHeaderNotificationBell(),
           IconButton(
             tooltip: 'Làm mới toạ độ Vietmap & Bình Anh',
-            icon: state.isLoadingFleetGps
-                ? const SizedBox(
-                    width: 20,
-                    height: 20,
-                    child: CircularProgressIndicator(strokeWidth: 2, color: Colors.blue),
-                  )
-                : const Icon(Icons.refresh),
-            onPressed: () => state.refreshAllFleetGps(force: true),
+            icon: const Icon(Icons.refresh),
+            onPressed: state.isLoadingFleetGps ? null : () => state.refreshAllFleetGps(force: true),
           ),
           IconButton(
             tooltip: _showPanel ? 'Ẩn danh sách xe' : 'Hiện danh sách xe',
@@ -441,7 +426,12 @@ class _MapScreenState extends State<MapScreen> {
           ),
         ),
       ),
-      body: Row(
+      body: CenterLoadingOverlay(
+        isLoading: state.isLoadingFleetGps || _isLoadingOrders,
+        message: state.isLoadingFleetGps
+            ? 'Đang cập nhật tọa độ GPS đội xe...'
+            : 'Đang tải thông tin đơn hàng...',
+        child: Row(
         children: [
           // Khung danh sách xe bên trái
           if (_showPanel)
@@ -804,6 +794,7 @@ class _MapScreenState extends State<MapScreen> {
             ),
           ),
         ],
+      ),
       ),
     );
   }

@@ -3,6 +3,7 @@ import 'dart:io';
 
 import 'package:camera/camera.dart';
 import 'package:flutter/material.dart';
+import '../widgets/center_loading_overlay.dart';
 import 'package:permission_handler/permission_handler.dart';
 import 'package:provider/provider.dart';
 import '../services/app_state.dart';
@@ -436,16 +437,18 @@ class _SlipCaptureScreenState extends State<SlipCaptureScreen>
           ],
         ),
       ),
-      body: _buildBody(),
+      body: CenterLoadingOverlay(
+        isLoading: _isSubmitting,
+        message: 'Đang lưu ảnh chứng từ lên máy chủ...',
+        child: _buildBody(),
+      ),
     );
   }
 
   Widget _buildBody() {
     switch (_permissionState) {
       case 'checking':
-        return const Center(
-          child: CircularProgressIndicator(color: Colors.white),
-        );
+        return const CenterLoadingBox(message: 'Đang kiểm tra quyền Camera...');
       case 'denied':
       case 'permanentlyDenied':
         return _buildPermissionDenied();
@@ -703,14 +706,7 @@ class _SlipCaptureScreenState extends State<SlipCaptureScreen>
       bg = const Color(0xFF1E3A8A);
       content = const Row(
         children: [
-          SizedBox(
-            width: 14,
-            height: 14,
-            child: CircularProgressIndicator(
-              color: Colors.white,
-              strokeWidth: 2,
-            ),
-          ),
+          Icon(Icons.my_location, color: Colors.white70, size: 14),
           SizedBox(width: 8),
           Text(
             "Đang lấy tọa độ GPS...",
@@ -779,9 +775,7 @@ class _SlipCaptureScreenState extends State<SlipCaptureScreen>
               else if (controller != null && _isCameraReady)
                 CameraPreview(controller)
               else
-                const Center(
-                  child: CircularProgressIndicator(color: Colors.white),
-                ),
+                const CenterLoadingBox(message: 'Đang khởi động camera...'),
               if (captured == null)
                 Positioned(
                   top: 12,
@@ -868,15 +862,7 @@ class _SlipCaptureScreenState extends State<SlipCaptureScreen>
                         : Colors.green.shade600,
                     border: Border.all(color: Colors.white70, width: 3),
                   ),
-                  child: _isSubmitting
-                      ? const Padding(
-                          padding: EdgeInsets.all(16),
-                          child: CircularProgressIndicator(
-                            color: Colors.white,
-                            strokeWidth: 2.5,
-                          ),
-                        )
-                      : Icon(
+                  child: Icon(
                           captured == null ? Icons.camera_alt : Icons.check,
                           color: captured == null
                               ? Colors.black87

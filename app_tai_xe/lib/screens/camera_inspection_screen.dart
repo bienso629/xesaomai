@@ -1,6 +1,7 @@
 import 'dart:math';
 import 'package:camera/camera.dart';
 import 'package:flutter/material.dart';
+import '../widgets/center_loading_overlay.dart';
 import 'package:permission_handler/permission_handler.dart';
 import 'package:provider/provider.dart';
 import '../models/inspection_model.dart';
@@ -378,29 +379,10 @@ class _CameraInspectionScreenState extends State<CameraInspectionScreen> with Wi
                     showDialog(
                       context: context,
                       barrierDismissible: false,
-                      builder: (loadCtx) => PopScope(
+                      builder: (loadCtx) => const PopScope(
                         canPop: false,
-                        child: AlertDialog(
-                          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(4)),
-                          content: const Padding(
-                            padding: EdgeInsets.symmetric(vertical: 8.0),
-                            child: Row(
-                              children: [
-                                SizedBox(
-                                  width: 28,
-                                  height: 28,
-                                  child: CircularProgressIndicator(strokeWidth: 2.8),
-                                ),
-                                SizedBox(width: 18),
-                                Expanded(
-                                  child: Text(
-                                    "Đang tải 5 ảnh lên máy chủ...",
-                                    style: TextStyle(fontSize: 14, fontWeight: FontWeight.w500),
-                                  ),
-                                ),
-                              ],
-                            ),
-                          ),
+                        child: CenterLoadingBox(
+                          message: 'Đang tải 5 ảnh lên máy chủ...',
                         ),
                       ),
                     );
@@ -720,12 +702,7 @@ class _CameraInspectionScreenState extends State<CameraInspectionScreen> with Wi
                           shape: BoxShape.circle,
                           color: _isCameraReady ? Colors.white : Colors.white24,
                         ),
-                        child: _isCapturing
-                            ? const Padding(
-                                padding: EdgeInsets.all(16),
-                                child: CircularProgressIndicator(strokeWidth: 3, color: Colors.black54),
-                              )
-                            : null,
+                        child: null,
                       ),
                     ),
                   ),
@@ -746,6 +723,13 @@ class _CameraInspectionScreenState extends State<CameraInspectionScreen> with Wi
               ],
             ),
           ),
+          if (_isCapturing)
+            const Positioned.fill(
+              child: ColoredBox(
+                color: Color(0x40000000),
+                child: CenterLoadingBox(message: 'Đang chụp ảnh...'),
+              ),
+            ),
         ],
       ),
     );

@@ -1,6 +1,7 @@
 import 'dart:convert';
 import 'dart:io';
 import 'package:flutter/material.dart';
+import '../widgets/center_loading_overlay.dart';
 import 'package:http/http.dart' as http;
 import 'package:shared_preferences/shared_preferences.dart';
 import '../services/admin_service.dart';
@@ -518,7 +519,14 @@ class _VehicleInspectionReviewScreenState
     final screenWidth = MediaQuery.of(context).size.width;
     final isDesktop = screenWidth >= 1100;
 
-    return RefreshIndicator(
+    return CenterLoadingOverlay(
+      isLoading: _isLoading || _isSubmitting || _isAiChecking,
+      message: _isAiChecking
+          ? 'Đang phân tích chất lượng xe bằng AI...'
+          : (_isSubmitting
+              ? 'Đang cập nhật trạng thái duyệt...'
+              : 'Đang tải danh sách kiểm tra xe...'),
+      child: RefreshIndicator(
       onRefresh: _loadInspections,
       child: Padding(
         padding: const EdgeInsets.all(16),
@@ -765,7 +773,7 @@ class _VehicleInspectionReviewScreenState
             // Khung làm việc 2 cột: Danh sách bên trái, Chi tiết 5 ảnh bên phải
             Expanded(
               child: _isLoading
-                  ? const Center(child: CircularProgressIndicator())
+                  ? const SizedBox.expand()
                   : Row(
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
@@ -1353,18 +1361,6 @@ class _VehicleInspectionReviewScreenState
                                                   ),
                                                 ),
                                                 const SizedBox(height: 10),
-                                                if (_isSubmitting)
-                                                  const Center(
-                                                    child: SizedBox(
-                                                      width: 32,
-                                                      height: 32,
-                                                      child:
-                                                          CircularProgressIndicator(
-                                                            strokeWidth: 2.5,
-                                                          ),
-                                                    ),
-                                                  )
-                                                else
                                                   Wrap(
                                                     spacing: 8,
                                                     runSpacing: 8,
@@ -1384,13 +1380,7 @@ class _VehicleInspectionReviewScreenState
                                                             fixedSize: const Size.fromHeight(36),
                                                             shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(4)),
                                                           ),
-                                                          icon: _isAiChecking
-                                                              ? const SizedBox(
-                                                                  width: 16,
-                                                                  height: 16,
-                                                                  child: CircularProgressIndicator(strokeWidth: 2),
-                                                                )
-                                                              : const Icon(Icons.auto_awesome, size: 16),
+                                                          icon: const Icon(Icons.auto_awesome, size: 16),
                                                           label: const Text(
                                                             "Kiểm tra chất lượng xe",
                                                             style: TextStyle(fontWeight: FontWeight.w600, fontSize: 12.5),
@@ -1595,6 +1585,7 @@ class _VehicleInspectionReviewScreenState
             ),
           ],
         ),
+      ),
       ),
     );
   }

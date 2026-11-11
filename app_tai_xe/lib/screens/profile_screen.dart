@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import '../widgets/center_loading_overlay.dart';
 import 'package:image_picker/image_picker.dart';
 import 'package:provider/provider.dart';
 import '../config/api_config.dart';
@@ -287,7 +288,10 @@ class _ProfileScreenState extends State<ProfileScreen> {
           child: Container(color: Colors.grey.shade300, height: 1),
         ),
       ),
-      body: Container(
+      body: CenterLoadingOverlay(
+        isLoading: _savingProfile || _savingPassword,
+        message: _savingProfile ? 'Đang lưu thông tin hồ sơ...' : 'Đang đổi mật khẩu...',
+        child: Container(
         color: const Color(0xFFF1F5F9),
         child: Center(
           child: ConstrainedBox(
@@ -363,13 +367,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
                         width: double.infinity,
                         child: ElevatedButton.icon(
                           onPressed: _savingProfile ? null : _saveProfile,
-                          icon: _savingProfile
-                              ? const SizedBox(
-                                  width: 14,
-                                  height: 14,
-                                  child: CircularProgressIndicator(
-                                      strokeWidth: 2, color: Colors.white))
-                              : const Icon(Icons.save, size: 16),
+                          icon: const Icon(Icons.save, size: 16),
                           label: Text(_savingProfile ? 'Đang lưu...' : 'Lưu thay đổi'),
                         ),
                       ),
@@ -464,13 +462,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
                         width: double.infinity,
                         child: ElevatedButton.icon(
                           onPressed: _savingPassword ? null : _changePassword,
-                          icon: _savingPassword
-                              ? const SizedBox(
-                                  width: 14,
-                                  height: 14,
-                                  child: CircularProgressIndicator(
-                                      strokeWidth: 2, color: Colors.white))
-                              : const Icon(Icons.lock_reset, size: 16),
+                          icon: const Icon(Icons.lock_reset, size: 16),
                           label: Text(_savingPassword ? 'Đang xử lý...' : 'Đổi mật khẩu'),
                         ),
                       ),
@@ -481,6 +473,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
             ),
           ),
         ),
+      ),
       ),
     );
   }

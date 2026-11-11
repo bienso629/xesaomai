@@ -2,6 +2,7 @@ import 'dart:async';
 import 'dart:convert';
 
 import 'package:flutter/material.dart';
+import 'center_loading_overlay.dart';
 import 'package:flutter_map/flutter_map.dart';
 import 'package:http/http.dart' as http;
 import 'package:latlong2/latlong.dart';
@@ -256,7 +257,10 @@ class _MapPointPickerDialogState extends State<_MapPointPickerDialog> {
       ),
       content: SizedBox(
         width: 640,
-        child: Column(
+        child: CenterLoadingOverlay(
+          isLoading: _searching,
+          message: 'Đang tìm kiếm địa điểm...',
+          child: Column(
           mainAxisSize: MainAxisSize.min,
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
@@ -270,14 +274,7 @@ class _MapPointPickerDialogState extends State<_MapPointPickerDialog> {
                 isDense: true,
                 prefixIcon: const Icon(Icons.search, size: 18),
                 hintText: 'Tìm địa điểm (VD: Xi măng Bỉm Sơn)',
-                suffixIcon: _searching
-                    ? const Padding(
-                        padding: EdgeInsets.all(12),
-                        child: SizedBox(
-                            width: 14, height: 14,
-                            child: CircularProgressIndicator(strokeWidth: 2)),
-                      )
-                    : null,
+                suffixIcon: null,
               ),
             ),
             if (_searchMessage != null)
@@ -415,6 +412,7 @@ class _MapPointPickerDialogState extends State<_MapPointPickerDialog> {
                 ),
               ),
           ],
+        ),
         ),
       ),
       actionsPadding: const EdgeInsets.fromLTRB(20, 10, 20, 14),

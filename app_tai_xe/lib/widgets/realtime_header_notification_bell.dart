@@ -1,5 +1,6 @@
 import 'dart:async';
 import 'package:flutter/material.dart';
+import 'center_loading_overlay.dart';
 import 'package:provider/provider.dart';
 import '../services/app_state.dart';
 import '../services/admin_service.dart';
@@ -423,7 +424,10 @@ class _NotificationListDialogState extends State<_NotificationListDialog> {
           color: Colors.white,
           borderRadius: BorderRadius.circular(16),
         ),
-        child: Column(
+        child: CenterLoadingOverlay(
+          isLoading: _isRefreshing,
+          message: 'Đang làm mới thông báo...',
+          child: Column(
           children: [
             // Header Dialog
             Container(
@@ -471,17 +475,8 @@ class _NotificationListDialogState extends State<_NotificationListDialog> {
                     ),
                   ),
                   IconButton(
-                    icon: _isRefreshing
-                        ? const SizedBox(
-                            width: 18,
-                            height: 18,
-                            child: CircularProgressIndicator(
-                              strokeWidth: 2,
-                              color: Colors.white,
-                            ),
-                          )
-                        : const Icon(Icons.refresh_rounded,
-                            color: Colors.white),
+                    icon: const Icon(Icons.refresh_rounded,
+                        color: Colors.white),
                     tooltip: 'Làm mới dữ liệu',
                     onPressed: () async {
                       setState(() => _isRefreshing = true);
@@ -706,6 +701,7 @@ class _NotificationListDialogState extends State<_NotificationListDialog> {
                     ),
             ),
           ],
+        ),
         ),
       ),
     );
