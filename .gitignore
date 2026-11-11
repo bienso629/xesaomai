@@ -70,3 +70,13 @@ docs/**/my-release-key.jks
 graphify-out/
 error_zoom*.png
 dialog_screen_check.png
+
+# Backups and temp files
+*.bak
+*.bak2
+*.bak_style
+backend/main.py.bak_*
+backend/test_gps*.py
+.backup_bao_nghi/
+SaoMai_TaiXe_Windows_x64_*.zip
+docs/.~lock.*#
