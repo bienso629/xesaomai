@@ -36,7 +36,9 @@ class _MapScreenState extends State<MapScreen> {
   String _searchQuery = '';
   String? _selectedPlateOnMap;
   bool _showPanel = true;
-  String _statusFilter = 'running'; // 'running', 'stopped', 'assigned' - Mặc định tab "Đang chạy"
+  String _statusFilter = 'running'; // 'running', 'stopped', 'assigned', 'off' - Tab bộ lọc
+  // Danh sách xe từ DB (kèm cờ báo nghỉ) cho tab Off
+  List<dynamic> _offDutyVehicles = [];
 
   Timer? _autoRefreshTimer;
   List<dynamic> _allOrders = [];
@@ -74,6 +76,7 @@ class _MapScreenState extends State<MapScreen> {
       if (mounted) {
         context.read<AppState>().refreshAllFleetGps();
         _loadAllOrders();
+        _loadOffDutyVehicles();
       }
     });
     // Tự động làm mới toạ độ toàn đội xe mỗi 30 giây
@@ -81,8 +84,21 @@ class _MapScreenState extends State<MapScreen> {
       if (mounted) {
         context.read<AppState>().refreshAllFleetGps();
         _loadAllOrders();
+        _loadOffDutyVehicles();
       }
     });
+  }
+
+  /// Tải danh sách xe từ DB (kèm xe báo nghỉ) cho tab Off
+  Future<void> _loadOffDutyVehicles() async {
+    try {
+      final vehicles = await AdminService.fetchVehicles(includeInactive: true);
+      if (mounted) {
+        setState(() {
+          _offDutyVehicles = vehicles;
+        });
+      }
+    } catch (_) {}
   }
 
   @override
@@ -209,6 +225,12 @@ class _MapScreenState extends State<MapScreen> {
     final fleetStatuses = state.allFleetVehiclesStatus;
     final sortedPlates = fleetStatuses.keys.toList()..sort();
 
+    // Tap "Off": cac xe dang bao nghi (Quan ly/Dieu phoi bat tay, hoac khong con tren GPS)
+    final Set<String> offDutyPlates = _offDutyVehicles
+        .where((v) => v is Map && ((v['in_fleet'] == false) || ((v['status'] ?? '') == 'inactive')))
+        .map((v) => (v['plate'] ?? '').toString())
+        .toSet();
+
     // Tổng hợp dữ liệu thực tế từ đúng 2 dịch vụ Vietmap & Bình Anh
     final List<_VehicleMapItem> allVehicles = sortedPlates.map((plate) {
       final status = fleetStatuses[plate]!;
@@ -232,8 +254,14 @@ class _MapScreenState extends State<MapScreen> {
         statusText = timeStr.isNotEmpty ? 'Mất tín hiệu ($timeStr)' : 'Chưa có tọa độ GPS';
       }
 
+      // Xe báo nghỉ: ưu tiên hiển thị trạng thái nghỉ thay vì trạng thái GPS
+      if (offDutyPlates.contains(plate)) {
+        statusText = 'Đang báo nghỉ';
+      }
+
       return _VehicleMapItem(
         plate: plate,
+        manualStatus: offDutyPlates.contains(plate) ? 'inactive' : 'ready',
         position: hasValidCoords ? LatLng(status.latitude, status.longitude) : defaultCenter,
         hasValidCoords: hasValidCoords,
         speed: status.speed,
@@ -254,6 +282,8 @@ class _MapScreenState extends State<MapScreen> {
 
     final providerFiltered = allVehicles;
 
+    final int offDutyCount = providerFiltered.where((v) => offDutyPlates.contains(v.plate)).length;
+
     // Thống kê số lượng theo trạng thái
     final int runningCount = providerFiltered.where((v) => v.isOnline && v.speed > 0).length;
     final int idlingCount = providerFiltered.where((v) => v.isOnline && v.speed == 0 && v.isAccOn).length;
@@ -269,17 +299,20 @@ class _MapScreenState extends State<MapScreen> {
       if (_statusFilter == 'running') return v.isOnline && v.speed > 0;
       if (_statusFilter == 'stopped') return v.isOnline && v.speed == 0;
       if (_statusFilter == 'assigned') return _hasActiveOrder(v.plate);
+      if (_statusFilter == 'off') return offDutyPlates.contains(v.plate);
       return true;
     }).toList();
 
     // Tạo các Markers trên bản đồ (chỉ vẽ các xe có toạ độ hợp lệ thuộc bộ lọc nguồn hiện tại)
     final markers = filteredVehicles.where((v) => v.hasValidCoords).map((vehicle) {
       final isSelected = vehicle.plate == (_selectedPlateOnMap ?? state.selectedPlate);
-      final Color markerColor = vehicle.isOnline
-          ? (vehicle.speed > 0
-              ? const Color(0xFF16A34A)
-              : (vehicle.isAccOn ? const Color(0xFFEAB308) : const Color(0xFF64748B)))
-          : const Color(0xFF94A3B8);
+      final Color markerColor = offDutyPlates.contains(vehicle.plate)
+          ? const Color(0xFFDC2626)
+          : (vehicle.isOnline
+              ? (vehicle.speed > 0
+                  ? const Color(0xFF16A34A)
+                  : (vehicle.isAccOn ? const Color(0xFFEAB308) : const Color(0xFF64748B)))
+              : const Color(0xFF94A3B8));
 
       return Marker(
         point: vehicle.position,
@@ -472,6 +505,7 @@ class _MapScreenState extends State<MapScreen> {
                         _buildFilterChip('Đang chạy ($runningCount)', 'running'),
                         _buildFilterChip('Đang đỗ (${idlingCount + stoppedCount})', 'stopped'),
                         _buildFilterChip('Đã gắn đơn ($assignedOrderCount)', 'assigned'),
+                        _buildFilterChip('Off ($offDutyCount)', 'off'),
                       ],
                     ),
                   ),
@@ -485,7 +519,9 @@ class _MapScreenState extends State<MapScreen> {
                               child: Text(
                                 state.isLoadingFleetGps
                                     ? 'Đang đồng bộ dữ liệu GPS từ Vietmap & Bình Anh...'
-                                    : 'Không có xe phù hợp bộ lọc',
+                                    : (_statusFilter == 'off'
+                                        ? 'Không có xe nào đang báo nghỉ'
+                                        : 'Không có xe phù hợp bộ lọc'),
                                 textAlign: TextAlign.center,
                                 style: TextStyle(fontSize: 12, color: Colors.grey.shade600),
                               ),
@@ -497,11 +533,13 @@ class _MapScreenState extends State<MapScreen> {
                             itemBuilder: (context, index) {
                               final v = filteredVehicles[index];
                               final isSel = v.plate == (_selectedPlateOnMap ?? state.selectedPlate);
-                              final Color statusColor = v.isOnline
-                                  ? (v.speed > 0
-                                      ? const Color(0xFF16A34A)
-                                      : (v.isAccOn ? const Color(0xFFEAB308) : const Color(0xFF64748B)))
-                                  : const Color(0xFF94A3B8);
+                              final Color statusColor = offDutyPlates.contains(v.plate)
+                                  ? const Color(0xFFDC2626)
+                                  : (v.isOnline
+                                      ? (v.speed > 0
+                                          ? const Color(0xFF16A34A)
+                                          : (v.isAccOn ? const Color(0xFFEAB308) : const Color(0xFF64748B)))
+                                      : const Color(0xFF94A3B8));
                               final bool isBinhAnh = v.providerCode == 'binhanh';
 
                               return InkWell(
@@ -841,6 +879,8 @@ class _VehicleMapItem {
   final String statusText;
   final String providerCode;
   final String providerLabel;
+  // 'ready' | 'inactive' (Báo nghỉ do Quản lý/Điều phối đặt hoặc hết trên GPS)
+  final String manualStatus;
 
   _VehicleMapItem({
     required this.plate,
@@ -855,5 +895,6 @@ class _VehicleMapItem {
     required this.statusText,
     required this.providerCode,
     required this.providerLabel,
+    this.manualStatus = 'ready',
   });
 }
