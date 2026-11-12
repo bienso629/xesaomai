@@ -925,7 +925,6 @@ class _VehicleInspectionReviewScreenState
                                               item['plate_number'] ?? 'N/A';
                                           final driver =
                                               item['driver_name'] ?? 'Tài xế';
-                                          final date = item['check_date'] ?? '';
 
                                           return InkWell(
                                             borderRadius: BorderRadius.circular(
@@ -968,90 +967,106 @@ class _VehicleInspectionReviewScreenState
                                                 crossAxisAlignment:
                                                     CrossAxisAlignment.start,
                                                 children: [
+                                                  // Hang tieu de: bien so + chip loai xe (khi chon) | badge trang thai
                                                   Row(
-                                                    mainAxisAlignment:
-                                                        MainAxisAlignment
-                                                            .spaceBetween,
                                                     children: [
-                                                      Row(
-                                                        mainAxisSize:
-                                                            MainAxisSize.min,
-                                                        children: [
-                                                          Text(
-                                                            plate,
-                                                            style:
-                                                                const TextStyle(
+                                                      Flexible(
+                                                        child: Row(
+                                                          mainAxisSize:
+                                                              MainAxisSize.min,
+                                                          children: [
+                                                            Flexible(
+                                                              child: Text(
+                                                                plate,
+                                                                maxLines: 1,
+                                                                overflow:
+                                                                    TextOverflow
+                                                                        .ellipsis,
+                                                                style:
+                                                                    const TextStyle(
                                                                   fontWeight:
                                                                       FontWeight
                                                                           .bold,
-                                                                  fontSize:
-                                                                      13.5,
+                                                                  fontSize: 12,
                                                                 ),
-                                                          ),
-                                                          if (isSelected) ...[
-                                                            const SizedBox(
-                                                              width: 6,
+                                                              ),
                                                             ),
-                                                            Container(
-                                                              padding:
-                                                                  const EdgeInsets.symmetric(
+                                                            if (isSelected) ...[
+                                                              const SizedBox(
+                                                                width: 6,
+                                                              ),
+                                                              Flexible(
+                                                                child:
+                                                                    Container(
+                                                                  padding: const EdgeInsets
+                                                                      .symmetric(
                                                                     horizontal:
                                                                         6,
                                                                     vertical: 2,
                                                                   ),
-                                                              decoration: BoxDecoration(
-                                                                color: Colors
-                                                                    .white,
-                                                                borderRadius:
-                                                                    BorderRadius.circular(
-                                                                      3,
+                                                                  decoration:
+                                                                      BoxDecoration(
+                                                                    color: Colors
+                                                                        .white,
+                                                                    borderRadius:
+                                                                        BorderRadius
+                                                                            .circular(
+                                                                              3,
+                                                                            ),
+                                                                    border: Border
+                                                                        .all(
+                                                                      color: Colors
+                                                                          .blueGrey
+                                                                          .shade300,
                                                                     ),
-                                                                border: Border.all(
-                                                                  color: Colors
-                                                                      .blueGrey
-                                                                      .shade300,
+                                                                  ),
+                                                                  child: Text(
+                                                                    "${item['vehicle_type'] ?? 'Xe đầu kéo'}",
+                                                                    maxLines: 1,
+                                                                    overflow:
+                                                                        TextOverflow
+                                                                            .ellipsis,
+                                                                    style: const TextStyle(
+                                                                      fontSize:
+                                                                          12,
+                                                                      fontWeight:
+                                                                          FontWeight
+                                                                              .bold,
+                                                                      color: Colors
+                                                                          .blueGrey,
+                                                                    ),
+                                                                  ),
                                                                 ),
                                                               ),
-                                                              child: Text(
-                                                                "${item['vehicle_type'] ?? 'Xe đầu kéo'}",
-                                                                style: const TextStyle(
-                                                                  fontSize:
-                                                                      10.5,
-                                                                  fontWeight:
-                                                                      FontWeight
-                                                                          .bold,
-                                                                  color: Colors
-                                                                      .blueGrey,
-                                                                ),
-                                                              ),
-                                                            ),
+                                                            ],
                                                           ],
-                                                        ],
+                                                        ),
                                                       ),
+                                                      const SizedBox(width: 6),
                                                       Container(
                                                         padding:
                                                             const EdgeInsets.symmetric(
-                                                              horizontal: 6,
-                                                              vertical: 2,
-                                                            ),
+                                                          horizontal: 6,
+                                                          vertical: 2,
+                                                        ),
                                                         decoration: BoxDecoration(
                                                           color: statusBg,
                                                           borderRadius:
                                                               BorderRadius.circular(
-                                                                3,
-                                                              ),
+                                                            3,
+                                                          ),
                                                           border: Border.all(
                                                             color: statusColor
                                                                 .withValues(
-                                                                  alpha: 0.3,
-                                                                ),
+                                                              alpha: 0.3,
+                                                            ),
                                                           ),
                                                         ),
                                                         child: Text(
                                                           statusLabel,
                                                           style: TextStyle(
                                                             color: statusColor,
-                                                            fontSize: 10.5,
+                                                            fontSize: 12,
                                                             fontWeight:
                                                                 FontWeight.bold,
                                                           ),
@@ -1060,6 +1075,7 @@ class _VehicleInspectionReviewScreenState
                                                     ],
                                                   ),
                                                   const SizedBox(height: 5),
+                                                  // Tai xe
                                                   Row(
                                                     children: [
                                                       const Icon(
@@ -1073,81 +1089,81 @@ class _VehicleInspectionReviewScreenState
                                                           driver,
                                                           style:
                                                               const TextStyle(
-                                                                fontSize: 12,
-                                                                color: Colors
-                                                                    .black87,
-                                                              ),
+                                                            fontSize: 12,
+                                                            color:
+                                                                Colors.black87,
+                                                          ),
                                                           overflow: TextOverflow
                                                               .ellipsis,
                                                         ),
                                                       ),
                                                     ],
                                                   ),
-                                                  const SizedBox(height: 3),
-                                                  Row(
-                                                    children: [
-                                                      Icon(
-                                                        Icons.calendar_today,
-                                                        size: 12,
-                                                        color: Colors
-                                                            .grey
-                                                            .shade600,
-                                                      ),
-                                                      const SizedBox(width: 4),
-                                                      Text(
-                                                        date,
-                                                        style: TextStyle(
-                                                          fontSize: 11,
-                                                          color: Colors
-                                                              .grey
-                                                              .shade600,
+                                                  // Canh bao lech km
+                                                  if (item['flag_deviation_km'] ==
+                                                      true) ...[
+                                                    const SizedBox(height: 3),
+                                                    Row(
+                                                      children: [
+                                                        const Icon(
+                                                          Icons
+                                                              .warning_amber_rounded,
+                                                          size: 14,
+                                                          color: Colors.red,
                                                         ),
-                                                      ),
-                                                      const Spacer(),
-                                                      if (item['flag_deviation_km'] ==
-                                                          true)
+                                                        const SizedBox(
+                                                            width: 4),
                                                         Container(
                                                           padding:
-                                                              const EdgeInsets.symmetric(
-                                                                horizontal: 4,
-                                                                vertical: 1,
-                                                              ),
-                                                          decoration: BoxDecoration(
+                                                              const EdgeInsets
+                                                                  .symmetric(
+                                                            horizontal: 4,
+                                                            vertical: 1,
+                                                          ),
+                                                          decoration:
+                                                              BoxDecoration(
                                                             color: Colors
-                                                                .red
-                                                                .shade100,
+                                                                .red.shade100,
                                                             borderRadius:
-                                                                BorderRadius.circular(
-                                                                  2,
-                                                                ),
+                                                                BorderRadius
+                                                                    .circular(
+                                                              2,
+                                                            ),
                                                           ),
                                                           child: const Text(
                                                             "Lệch km",
                                                             style: TextStyle(
                                                               color: Colors.red,
-                                                              fontSize: 10,
+                                                              fontSize: 12,
                                                               fontWeight:
                                                                   FontWeight
                                                                       .bold,
                                                             ),
                                                           ),
                                                         ),
-                                                    ],
-                                                  ),
-
+                                                      ],
+                                                    ),
+                                                  ],
                                                   if (isSelected) ...[
-                                                    const SizedBox(height: 8),
+                                                    const SizedBox(height: 5),
+                                                    // Dien thoai
                                                     Row(
                                                       children: [
+                                                        const Icon(
+                                                          Icons.phone,
+                                                          size: 14,
+                                                          color: Colors.teal,
+                                                        ),
+                                                        const SizedBox(
+                                                            width: 4),
                                                         Expanded(
                                                           child: Text(
                                                             "Điện thoại: ${item['driver_phone'] ?? 'N/A'}",
-                                                            style:
-                                                                const TextStyle(
-                                                                  fontSize: 11,
-                                                                  color: Colors
-                                                                      .black87,
-                                                                ),
+                                                            style: const TextStyle(
+                                                              fontSize: 12,
+                                                              color: Colors
+                                                                  .black87,
+                                                            ),
                                                             overflow:
                                                                 TextOverflow
                                                                     .ellipsis,
@@ -1155,30 +1171,41 @@ class _VehicleInspectionReviewScreenState
                                                         ),
                                                       ],
                                                     ),
-                                                    const SizedBox(height: 4),
-                                                    Text(
-                                                      "Km Táp-lô: ${item['km_confirmed'] ?? item['km_ocr'] ?? 'N/A'} km",
-                                                      style: const TextStyle(
-                                                        fontWeight:
-                                                            FontWeight.bold,
-                                                        fontSize: 12,
-                                                        color: Colors.indigo,
-                                                      ),
-                                                    ),
-                                                    const SizedBox(height: 2),
-                                                    Text(
-                                                      "Thời gian gửi: ${item['completed_at'] ?? item['created_at'] ?? 'Hôm nay'}",
-                                                      style: const TextStyle(
-                                                        fontSize: 10,
-                                                        color: Colors.black54,
-                                                      ),
+                                                    const SizedBox(height: 3),
+                                                    // Km tap-lo
+                                                    Row(
+                                                      crossAxisAlignment:
+                                                          CrossAxisAlignment
+                                                              .start,
+                                                      children: [
+                                                        const Icon(
+                                                          Icons.speed,
+                                                          size: 14,
+                                                          color: Colors.indigo,
+                                                        ),
+                                                        const SizedBox(
+                                                            width: 4),
+                                                        Expanded(
+                                                          child: Text(
+                                                            "Km Táp-lô: ${item['km_confirmed'] ?? item['km_ocr'] ?? 'N/A'} km",
+                                                            style: const TextStyle(
+                                                              fontWeight:
+                                                                  FontWeight
+                                                                      .bold,
+                                                              fontSize: 12,
+                                                              color: Colors
+                                                                  .indigo,
+                                                            ),
+                                                          ),
+                                                        ),
+                                                      ],
                                                     ),
                                                   ],
                                                 ],
                                               ),
-                                            ),
-                                          );
-                                        },
+),
+                                           );
+},
                                       ),
                               ),
                             ],

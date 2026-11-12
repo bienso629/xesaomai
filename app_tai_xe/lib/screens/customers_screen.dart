@@ -5,6 +5,7 @@ import 'package:url_launcher/url_launcher.dart';
 
 import '../services/admin_service.dart';
 import '../widgets/center_loading_overlay.dart';
+import 'package:file_picker/file_picker.dart';
 
 /// Màn hình Quản lý Khách hàng.
 /// Chỉ Điều phối viên, Quản lý / Giám đốc và Admin được vào (kiểm tra ở
@@ -39,6 +40,9 @@ class _CustomersScreenState extends State<CustomersScreen> {
 
   // Danh sách nhóm (tag) Zalo OA
   bool _groupsBusy = false;
+
+  // Import khách hàng từ Excel
+  bool _importBusy = false;
 
   @override
   void initState() {
@@ -257,22 +261,20 @@ class _CustomersScreenState extends State<CustomersScreen> {
       }
       // 2) Tải lại danh sách khách hàng (cột Nhóm Zalo OA đã cập nhật)
       final rows = await AdminService.fetchCustomers();
-      if (rows is List) {
-        customerCount = rows
-            .whereType<Map>()
-            .where((c) =>
-                ((c['zalo_chat_groups'] as List? ?? []).isNotEmpty) ||
-                ((c['zalo_oa_groups'] as List? ?? []).isNotEmpty))
-            .length;
-        if (mounted) {
-          setState(() {
-            _customers = rows
-                .whereType<Map>()
-                .map((e) => Map<String, dynamic>.from(e))
-                .toList();
-            _currentPage = 1;
-          });
-        }
+      customerCount = rows
+          .whereType<Map>()
+          .where((c) =>
+              ((c['zalo_chat_groups'] as List? ?? []).isNotEmpty) ||
+              ((c['zalo_oa_groups'] as List? ?? []).isNotEmpty))
+          .length;
+      if (mounted) {
+        setState(() {
+          _customers = rows
+              .whereType<Map>()
+              .map((e) => Map<String, dynamic>.from(e))
+              .toList();
+          _currentPage = 1;
+        });
       }
     } catch (e) {
       err = e.toString();
@@ -287,6 +289,111 @@ class _CustomersScreenState extends State<CustomersScreen> {
         '— $customerCount khách hàng có nhóm',
       );
     }
+  }
+
+  /// Import danh sách khách hàng từ file Excel (mẫu "cấu trúc khách hàng.xlsx").
+  /// Chọn file qua FilePicker (web + desktop), gửi lên server, hiển thị kết quả chi tiết.
+  Future<void> _importExcel() async {
+    final picked = await FilePicker.platform.pickFiles(
+      type: FileType.custom,
+      allowedExtensions: ['xlsx', 'xls'],
+      withData: true,
+    );
+    if (picked == null || picked.files.isEmpty) return;
+    final f = picked.files.first;
+    final bytes = f.bytes;
+    if (bytes == null || bytes.isEmpty) {
+      _toast('Không đọc được nội dung file', error: true);
+      return;
+    }
+    setState(() => _importBusy = true);
+    final res = await AdminService.importCustomersExcel(
+      bytes.toList(),
+      f.name,
+    );
+    if (!mounted) return;
+    setState(() => _importBusy = false);
+    if (res['success'] == true) {
+      await _load();
+      _showImportResult(res);
+    } else {
+      _toast(res['message']?.toString() ?? 'Import thất bại', error: true);
+    }
+  }
+
+  /// Dialog kết quả import: thống kê thành công/cập nhật/bỏ qua + chi tiết lỗi.
+  void _showImportResult(Map<String, dynamic> res) {
+    final inserted = res['inserted'] ?? 0;
+    final updated = res['updated'] ?? 0;
+    final skipped = res['skipped'] ?? 0;
+    final groups = res['groupsLearned'] ?? 0;
+    final skippedDetails = (res['skippedDetails'] as List?) ?? [];
+    final errors = (res['errors'] as List?) ?? [];
+    showDialog(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(4)),
+        title: Row(
+          children: [
+            Icon(Icons.check_circle, color: Colors.green.shade700),
+            const SizedBox(width: 10),
+            const Text('Kết quả import khách hàng'),
+          ],
+        ),
+        content: SizedBox(
+          width: 460,
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              _resultRow('Thêm mới', inserted, Colors.green.shade700),
+              _resultRow('Cập nhật đã có', updated, Colors.blue.shade800),
+              _resultRow('Bỏ qua (thiếu Tên KH)', skipped, Colors.orange.shade800),
+              _resultRow('Nhóm Zalo học được', groups, const Color(0xFF0068FF)),
+              const SizedBox(height: 12),
+              if (skippedDetails.isNotEmpty) ...[
+                const Text('Chi tiết bỏ qua:',
+                    style: TextStyle(fontWeight: FontWeight.w600)),
+                ...skippedDetails.map((e) => Padding(
+                      padding: const EdgeInsets.only(top: 4),
+                      child: Text('- $e', style: const TextStyle(fontSize: 12.5)),
+                    )),
+                const SizedBox(height: 8),
+              ],
+              if (errors.isNotEmpty) ...[
+                const Text('Lỗi từng dòng:',
+                    style: TextStyle(fontWeight: FontWeight.w600, color: Colors.red)),
+                ...errors.take(10).map((e) => Padding(
+                      padding: const EdgeInsets.only(top: 4),
+                      child: Text('- $e',
+                          style: const TextStyle(fontSize: 12.5, color: Colors.red)),
+                    )),
+              ],
+            ],
+          ),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx),
+            child: const Text('Đã hiểu'),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _resultRow(String label, dynamic value, Color color) {
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 3),
+      child: Row(
+        children: [
+          Container(width: 10, height: 10, decoration: BoxDecoration(color: color, shape: BoxShape.circle)),
+          const SizedBox(width: 10),
+          Expanded(child: Text(label)),
+          Text('$value', style: TextStyle(fontWeight: FontWeight.w700, color: color)),
+        ],
+      ),
+    );
   }
 
   Future<void> _load() async {
@@ -501,6 +608,16 @@ class _CustomersScreenState extends State<CustomersScreen> {
                 ),
               ),
               const SizedBox(width: 12),
+              Tooltip(
+                message: "Import danh sách khách hàng từ file Excel (mẫu cấu trúc khách hàng)",
+                child: _toolbarButton(
+                  icon: Icons.upload_file_outlined,
+                  label: _importBusy ? "Đang import..." : "Import Excel",
+                  color: const Color(0xFF2E7D32),
+                  onPressed: _importBusy ? null : _importExcel,
+                ),
+              ),
+              const SizedBox(width: 10),
               _toolbarButton(
                 icon: Icons.person_add_alt_1,
                 label: "Thêm khách hàng",

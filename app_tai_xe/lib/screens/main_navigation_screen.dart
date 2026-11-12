@@ -230,9 +230,18 @@ class _MainNavigationScreenState extends State<MainNavigationScreen> {
         state.userRoles.any(
           (r) => ['admin', 'manager'].contains(r.toLowerCase()),
         );
-    // Đội xe & Tài xế (2), Quản lý Tài khoản (3), Cây dầu & Đối soát (4),
-    // Sản phẩm & Vật liệu (5): chỉ Admin và Quản lý / Giám đốc (manager)
-    if (const [2, 3, 4, 5].contains(tabIndex) && !canManageUsers) {
+    // Đội xe & Tài xế (2): Điều phối, Quản lý, Admin
+    // Quản lý Tài khoản (3), Cây dầu & Đối soát (4), Sản phẩm & Vật liệu (5):
+    // chỉ Admin và Quản lý / Giám đốc (manager)
+    final canViewFleet =
+        state.currentUsername == 'admin' ||
+        state.userRoles.any(
+          (r) => ['admin', 'manager', 'dispatcher'].contains(r.toLowerCase()),
+        );
+    if (tabIndex == 2 && !canViewFleet) {
+      return;
+    }
+    if (const [3, 4, 5].contains(tabIndex) && !canManageUsers) {
       return;
     }
     setState(() {
@@ -675,10 +684,13 @@ class _MainNavigationScreenState extends State<MainNavigationScreen> {
                       onTap: () => _onSelectManagementTab(10),
                     ),
                   ],
-                  // Chỉ Admin và Quản lý / Giám đốc (manager) được thấy các mục dưới
+                  // Đội xe & Tài xế: Điều phối, Quản lý, Admin
+                  // (Điều phối cần đổi trạng thái xe: Báo nghỉ thay cho Tài xế)
                   if (state.currentUsername == 'admin' ||
                       state.userRoles.any(
-                        (r) => ['admin', 'manager'].contains(r.toLowerCase()),
+                        (r) => ['admin', 'manager', 'dispatcher'].contains(
+                          r.toLowerCase(),
+                        ),
                       )) ...[
                     _buildDrawerItem(
                       isSelected: _currentRoot == 2 && _activeManagementTab == 2,
@@ -688,6 +700,12 @@ class _MainNavigationScreenState extends State<MainNavigationScreen> {
                       subtitle: "Xe nội bộ, xe thuê ngoài, phân bổ",
                       onTap: () => _onSelectManagementTab(2),
                     ),
+                  ],
+                  // Chỉ Admin và Quản lý / Giám đốc (manager) được thấy các mục dưới
+                  if (state.currentUsername == 'admin' ||
+                      state.userRoles.any(
+                        (r) => ['admin', 'manager'].contains(r.toLowerCase()),
+                      )) ...[
                     _buildDrawerItem(
                       isSelected: _currentRoot == 2 && _activeManagementTab == 4,
                       icon: Icons.ev_station_outlined,

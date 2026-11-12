@@ -912,29 +912,10 @@ class _DriverScheduleScreenState extends State<DriverScheduleScreen> {
               ),
             const SizedBox(height: 12),
 
-            // Trạng thái 1: TRƯỚC BƠM (Chụp ảnh trước khi bơm)
-            // Luồng mới theo ảnh điều phối: 4 bước độc lập, không khóa chéo tuần tự.
-            _buildMilestoneStepRow(
-              title: "1. Chụp ảnh TRƯỚC KHI BƠM",
-              timeText: (trip?.pumpBeforePhotoUrl != null)
-                  ? "Đã gửi Điều phối (kèm GPS)"
-                  : "Bắt buộc: chụp đồng hồ/vòi bơm trước khi bơm",
-              isRecorded: trip?.pumpBeforePhotoUrl != null,
-              buttonLabel: trip?.pumpBeforePhotoUrl != null ? "Chụp lại" : "Trước bơm",
-              isDisabled: stepDisabled,
-              onPressed: () => SlipCaptureScreen.show(
-                context,
-                slipType: 'pump_before',
-                orderId: trip?.orderId,
-                orderCode: trip?.orderCode ?? '',
-              ),
-            ),
-            const SizedBox(height: 8),
-
             // Trạng thái 2: PHIẾU CÂN (so GPS với Nơi nhận hàng)
             // Không còn phụ thuộc Bước 1: tài xế có thể chụp phiếu cân bất cứ lúc nào.
             _buildMilestoneStepRow(
-              title: "2. Chụp & Gửi Phiếu Cân",
+              title: "1. Chụp & Gửi Phiếu Cân",
               timeText: (trip?.weighSlipPhotoUrl != null)
                   ? "Khối lượng: ${trip!.weighTonnage} Tấn (Đã đồng bộ Zalo OA)"
                   : "Chụp phiếu cân OCR khối lượng & mã lệnh (tại nơi nhận hàng)",
@@ -952,7 +933,7 @@ class _DriverScheduleScreenState extends State<DriverScheduleScreen> {
             // Trạng thái 3: ĐẾN ĐIỂM GIAO (so GPS với Điểm giao hàng)
             // Không còn phụ thuộc Bước 2: hiển thị mọi lúc khi có đơn được gắn.
             _buildMilestoneStepRow(
-              title: "3. Chụp ảnh ĐẾN ĐIỂM GIAO",
+              title: "2. Chụp ảnh ĐẾN ĐIỂM GIAO",
               timeText: (trip?.arrivalPhotoUrl != null)
                   ? "Đã gửi Điều phối (kèm GPS)"
                   : "Bắt buộc: chụp hiện trạng xe khi đến điểm giao hàng",
@@ -971,7 +952,7 @@ class _DriverScheduleScreenState extends State<DriverScheduleScreen> {
             // Trạng thái 4: GIAO (Chụp & gửi Phiếu Giao Hàng)
             // Không còn phụ thuộc Bước 3: cả 4 bước độc lập, tài xế chụp được bước nào chụp bước đó.
             _buildMilestoneStepRow(
-              title: "4. Chụp & Gửi Phiếu Giao Hàng",
+              title: "3. Chụp & Gửi Phiếu Giao Hàng",
               timeText: (trip?.deliverySlipPhotoUrl != null)
                   ? "Đã gửi vào nhóm Zalo khách hàng"
                   : "Chụp biên bản giao nhận hàng hoàn tất chuyến",

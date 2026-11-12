@@ -42,6 +42,9 @@ class _LocationsScreenState extends State<LocationsScreen> {
   String _scanProgress = '';
   Timer? _scanTimer;
 
+  // Danh mục khách hàng (để gán điểm cho nhiều khách hàng trong form thêm / sửa)
+  List<Map<String, dynamic>> _customers = [];
+
   static const _kindLabels = {
     'PICKUP': 'Điểm nhận',
     'DELIVERY': 'Điểm giao',
@@ -73,11 +76,13 @@ class _LocationsScreenState extends State<LocationsScreen> {
     final results = await Future.wait([
       AdminService.fetchLocations(),
       AdminService.fetchLocationSuggestions(status: 'ALL'),
+      AdminService.fetchCustomers(),
     ]);
     if (!mounted) return;
     setState(() {
       _locations = _asMaps(results[0]);
       _suggestions = _asMaps(results[1]);
+      _customers = _asMaps(results[2]);
       _loading = false;
       _pruneSelection();
     });
@@ -367,11 +372,14 @@ class _LocationsScreenState extends State<LocationsScreen> {
           break;
       }
       if (q.isEmpty) return true;
-      return [
+      if ([
         'name',
         'address',
         'note',
-      ].any((k) => _s(l, k).toLowerCase().contains(q));
+      ].any((k) => _s(l, k).toLowerCase().contains(q))) {
+        return true;
+      }
+      return _customerNames(l).any((n) => n.toLowerCase().contains(q));
     }).toList();
     locs.sort(
       (a, b) =>
@@ -533,7 +541,7 @@ class _LocationsScreenState extends State<LocationsScreen> {
                         minHeight: 36,
                         maxHeight: 36,
                       ),
-                      hintText: "Tìm theo tên, địa chỉ, ghi chú, biển số...",
+                      hintText: "Tìm theo tên điểm, khách hàng, địa chỉ, ghi chú, biển số...",
                       hintStyle: const TextStyle(fontSize: 12.5),
                       prefixIcon: const Icon(Icons.search, size: 17),
                       prefixIconConstraints: const BoxConstraints(
@@ -750,6 +758,7 @@ class _LocationsScreenState extends State<LocationsScreen> {
         columns: [
           DataColumn(label: _headerCheckbox(items)),
           _col("Tên điểm / Địa chỉ"),
+          _col("Khách hàng"),
           _col("Trạng thái"),
           _col("Loại"),
           _col("Tọa độ"),
@@ -1123,11 +1132,85 @@ class _LocationsScreenState extends State<LocationsScreen> {
     );
   }
 
+  /// Danh sách tên khách hàng liên kết với điểm (customer_ids).
+  List<String> _customerNames(Map<String, dynamic> l) {
+    final ids = (l['customer_ids'] as List?) ?? const [];
+    final idSet = ids.map((e) => int.tryParse('$e') ?? -1).toSet();
+    return _customers
+        .where((c) => idSet.contains(int.tryParse('${c['id']}')))
+        .map((c) => (c['name'] ?? '').toString())
+        .where((n) => n.isNotEmpty)
+        .toList();
+  }
+
+  Widget _customerCell(List<String> custNames) {
+    if (custNames.isEmpty) {
+      return Text(
+        "—",
+        style: TextStyle(fontSize: 12.5, color: Colors.grey.shade400),
+      );
+    }
+    final display = custNames.take(2).toList();
+    final extra = custNames.length - display.length;
+    return Tooltip(
+      message: custNames.join('\n'),
+      child: ConstrainedBox(
+        constraints: const BoxConstraints(maxWidth: 240),
+        child: Wrap(
+          spacing: 4,
+          runSpacing: 4,
+          crossAxisAlignment: WrapCrossAlignment.center,
+          children: [
+            for (final name in display)
+              Container(
+                padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 2),
+                decoration: BoxDecoration(
+                  color: Colors.indigo.shade50,
+                  borderRadius: BorderRadius.circular(4),
+                  border: Border.all(color: Colors.indigo.shade200),
+                ),
+                child: ConstrainedBox(
+                  constraints: const BoxConstraints(maxWidth: 160),
+                  child: Text(
+                    name,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: TextStyle(
+                      fontSize: 11,
+                      fontWeight: FontWeight.w600,
+                      color: Colors.indigo.shade800,
+                    ),
+                  ),
+                ),
+              ),
+            if (extra > 0)
+              Container(
+                padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                decoration: BoxDecoration(
+                  color: Colors.grey.shade200,
+                  borderRadius: BorderRadius.circular(4),
+                ),
+                child: Text(
+                  "+$extra",
+                  style: TextStyle(
+                    fontSize: 11,
+                    fontWeight: FontWeight.bold,
+                    color: Colors.grey.shade800,
+                  ),
+                ),
+              ),
+          ],
+        ),
+      ),
+    );
+  }
+
   List<DataCell> _locationCells(Map<String, dynamic> l) {
     final kind = _s(l, 'kind').isEmpty ? 'BOTH' : _s(l, 'kind');
     final fromGps = _s(l, 'source').startsWith('GPS');
     final address = _s(l, 'address');
     final note = _s(l, 'note');
+    final custNames = _customerNames(l);
     return [
       _cell(
         _nameCell(
@@ -1136,6 +1219,7 @@ class _LocationsScreenState extends State<LocationsScreen> {
           confirmed: true,
         ),
       ),
+      _cell(_customerCell(custNames)),
       _cell(
         Tooltip(
           message: fromGps ? "Đã duyệt từ lịch sử dừng đỗ GPS" : "Tạo thủ công",
@@ -1196,6 +1280,12 @@ class _LocationsScreenState extends State<LocationsScreen> {
               : (address.isNotEmpty ? address : "Không rõ địa chỉ"),
           subtitle: station.isNotEmpty && address.isNotEmpty ? address : '',
           confirmed: false,
+        ),
+      ),
+      _cell(
+        Text(
+          "—",
+          style: TextStyle(fontSize: 12.5, color: Colors.grey.shade400),
         ),
       ),
       _cell(
@@ -1490,6 +1580,145 @@ class _LocationsScreenState extends State<LocationsScreen> {
     );
   }
 
+  /// Multiselect khách hàng liên kết với điểm nhận / giao.
+  /// Gõ để tìm, tick chọn nhiều khách hàng; để trống = điểm dùng chung cho mọi khách hàng.
+  Widget _buildCustomerMultiSelect({
+    required Set<int> selectedCustomerIds,
+    required TextEditingController searchCtrl,
+    required VoidCallback onChanged,
+  }) {
+    final q = searchCtrl.text.trim().toLowerCase();
+    final filtered = _customers.where((c) {
+      if (q.isEmpty) return true;
+      return (c['name'] ?? '').toString().toLowerCase().contains(q) ||
+          (c['code'] ?? '').toString().toLowerCase().contains(q);
+    }).toList();
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        Row(
+          children: [
+            Text(
+              "Khách hàng liên kết",
+              style: TextStyle(
+                fontSize: 12.5,
+                fontWeight: FontWeight.w600,
+                color: Colors.grey.shade800,
+              ),
+            ),
+            const Spacer(),
+            Text(
+              selectedCustomerIds.isEmpty
+                  ? "Bỏ trống = dùng chung"
+                  : "Đã chọn ${selectedCustomerIds.length}",
+              style: TextStyle(
+                fontSize: 11,
+                fontWeight: FontWeight.w600,
+                color: selectedCustomerIds.isEmpty
+                    ? Colors.grey.shade500
+                    : Colors.teal.shade700,
+              ),
+            ),
+          ],
+        ),
+        const SizedBox(height: 6),
+        TextField(
+          controller: searchCtrl,
+          onChanged: (_) => onChanged(),
+          decoration: InputDecoration(
+            isDense: true,
+            hintText: "Gõ để tìm khách hàng...",
+            prefixIcon: const Icon(Icons.search, size: 17),
+            prefixIconConstraints: const BoxConstraints(
+              minWidth: 34,
+              minHeight: 0,
+            ),
+          ),
+        ),
+        const SizedBox(height: 6),
+        Container(
+          constraints: const BoxConstraints(maxHeight: 150),
+          decoration: BoxDecoration(
+            border: Border.all(color: Colors.grey.shade300),
+            borderRadius: BorderRadius.circular(4),
+          ),
+          child: filtered.isEmpty
+              ? Padding(
+                  padding: const EdgeInsets.all(12),
+                  child: Text(
+                    "Không có khách hàng khớp",
+                    style: TextStyle(fontSize: 12, color: Colors.grey.shade600),
+                  ),
+                )
+              : ListView.builder(
+                  shrinkWrap: true,
+                  padding: const EdgeInsets.symmetric(vertical: 2),
+                  itemCount: filtered.length,
+                  itemBuilder: (context, index) {
+                    final c = filtered[index];
+                    final cid = int.tryParse('${c['id']}');
+                    final checked = cid != null && selectedCustomerIds.contains(cid);
+                    return InkWell(
+                      onTap: () {
+                        if (cid == null) return;
+                        checked
+                            ? selectedCustomerIds.remove(cid)
+                            : selectedCustomerIds.add(cid);
+                        onChanged();
+                      },
+                      child: Padding(
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 10,
+                          vertical: 6,
+                        ),
+                        child: Row(
+                          children: [
+                            SizedBox(
+                              width: 18,
+                              height: 18,
+                              child: Checkbox(
+                                value: checked,
+                                visualDensity: VisualDensity.compact,
+                                materialTapTargetSize:
+                                    MaterialTapTargetSize.shrinkWrap,
+                                onChanged: (v) {
+                                  if (cid == null) return;
+                                  v == true
+                                      ? selectedCustomerIds.add(cid)
+                                      : selectedCustomerIds.remove(cid);
+                                  onChanged();
+                                },
+                              ),
+                            ),
+                            const SizedBox(width: 8),
+                            Expanded(
+                              child: Text(
+                                (c['name'] ?? '').toString(),
+                                maxLines: 1,
+                                overflow: TextOverflow.ellipsis,
+                                style: const TextStyle(fontSize: 12.5),
+                              ),
+                            ),
+                            Text(
+                              (c['code'] ?? '').toString(),
+                              style: TextStyle(
+                                fontSize: 11,
+                                color: Colors.grey.shade600,
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                    );
+                  },
+                ),
+        ),
+      ],
+    );
+  }
+
   Future<void> _showForm({Map<String, dynamic>? location}) async {
     final isEdit = location != null;
     final nameCtrl = TextEditingController(
@@ -1513,8 +1742,19 @@ class _LocationsScreenState extends State<LocationsScreen> {
     String kind = isEdit && _kindLabels.containsKey(_s(location, 'kind'))
         ? _s(location, 'kind')
         : 'BOTH';
+    // Multiselect khách hàng liên kết với điểm: rỗng = điểm dùng chung cho mọi khách hàng
+    final selectedCustomerIds = (isEdit
+            ? ((location['customer_ids'] as List?) ?? const [])
+            : const [])
+        .map((e) => int.tryParse('$e') ?? -1)
+        .where((id) => id > 0)
+        .toSet();
+    final custSearchCtrl = TextEditingController();
     final formKey = GlobalKey<FormState>();
     bool saving = false;
+    // Co chan moi setDialogState khi dialog dang dong: cac callback async
+    // (luu diem, tai du lieu) khong duoc cham vao dialog da pop.
+    bool dialogClosed = false;
 
     String? coordValidator(String? v, double limit) {
       final t = (v ?? '').trim();
@@ -1555,7 +1795,7 @@ class _LocationsScreenState extends State<LocationsScreen> {
                       padding: const EdgeInsets.only(bottom: 10),
                       child: _kindDropdown(
                         kind,
-                        (v) => setDialogState(() => kind = v),
+                        (v) { if (!dialogClosed) setDialogState(() => kind = v); },
                       ),
                     ),
                     _textField(
@@ -1618,6 +1858,13 @@ class _LocationsScreenState extends State<LocationsScreen> {
                       Icons.notes_outlined,
                       maxLines: 2,
                     ),
+                    const SizedBox(height: 12),
+                    // Khách hàng liên kết (chọn nhiều): điểm không gán KH = dùng chung
+                    _buildCustomerMultiSelect(
+                      selectedCustomerIds: selectedCustomerIds,
+                      searchCtrl: custSearchCtrl,
+                      onChanged: () { if (!dialogClosed) setDialogState(() {}); },
+                    ),
                   ],
                 ),
               ),
@@ -1625,7 +1872,13 @@ class _LocationsScreenState extends State<LocationsScreen> {
           ),
           actions: [
             TextButton(
-              onPressed: saving ? null : () => Navigator.pop(dialogContext),
+              onPressed: saving
+                    ? null
+                    : () {
+                        dialogClosed = true;
+                        FocusManager.instance.primaryFocus?.unfocus();
+                        Navigator.pop(dialogContext);
+                      },
               child: const Text("Hủy bỏ"),
             ),
             ElevatedButton(
@@ -1650,7 +1903,7 @@ class _LocationsScreenState extends State<LocationsScreen> {
                         );
                         return;
                       }
-                      setDialogState(() => saving = true);
+                      if (!dialogClosed) setDialogState(() => saving = true);
                       final res = await AdminService.saveLocation(
                         id: isEdit ? int.tryParse('${location['id']}') : null,
                         data: {
@@ -1661,11 +1914,18 @@ class _LocationsScreenState extends State<LocationsScreen> {
                           'longitude': lng,
                           'radius_m': int.tryParse(radiusCtrl.text.trim()),
                           'note': noteCtrl.text.trim(),
+                          'customer_ids': selectedCustomerIds.toList(),
                         },
                       );
-                      if (!dialogContext.mounted) return;
-                      setDialogState(() => saving = false);
+                      if (dialogClosed || !dialogContext.mounted) return;
+                      if (!dialogClosed) setDialogState(() => saving = false);
                       if (res['ok'] == true) {
+                        // Go focus va cho frame hien tai ket truoc khi dong
+                        // dialog (tranh loi assertion _dependents.isEmpty).
+                        FocusManager.instance.primaryFocus?.unfocus();
+                        await WidgetsBinding.instance.endOfFrame;
+                        dialogClosed = true;
+                        if (!dialogContext.mounted) return;
                         Navigator.pop(dialogContext);
                         _toast(isEdit ? "Đã cập nhật điểm" : "Đã thêm điểm");
                         _load();
@@ -1686,6 +1946,7 @@ class _LocationsScreenState extends State<LocationsScreen> {
       lngCtrl,
       radiusCtrl,
       noteCtrl,
+      custSearchCtrl,
     ]) {
       c.dispose();
     }
@@ -1700,8 +1961,14 @@ class _LocationsScreenState extends State<LocationsScreen> {
     final addrCtrl = TextEditingController(text: address);
     final noteCtrl = TextEditingController();
     String kind = 'BOTH';
+    // Multiselect khách hàng liên kết với điểm: rỗng = điểm dùng chung cho mọi khách hàng
+    final Set<int> selectedCustomerIds = {};
+    final custSearchCtrl = TextEditingController();
     final formKey = GlobalKey<FormState>();
     bool saving = false;
+    // Co chan moi setDialogState khi dialog dang dong: cac callback async
+    // (luu diem, tai du lieu) khong duoc cham vao dialog da pop.
+    bool dialogClosed = false;
 
     await showDialog(
       context: context,
@@ -1743,7 +2010,7 @@ class _LocationsScreenState extends State<LocationsScreen> {
                       padding: const EdgeInsets.only(bottom: 10),
                       child: _kindDropdown(
                         kind,
-                        (v) => setDialogState(() => kind = v),
+                        (v) { if (!dialogClosed) setDialogState(() => kind = v); },
                       ),
                     ),
                     _textField(
@@ -1759,6 +2026,13 @@ class _LocationsScreenState extends State<LocationsScreen> {
                       Icons.notes_outlined,
                       maxLines: 2,
                     ),
+                    const SizedBox(height: 12),
+                    // Khách hàng liên kết (chọn nhiều): điểm không gán KH = dùng chung
+                    _buildCustomerMultiSelect(
+                      selectedCustomerIds: selectedCustomerIds,
+                      searchCtrl: custSearchCtrl,
+                      onChanged: () { if (!dialogClosed) setDialogState(() {}); },
+                    ),
                   ],
                 ),
               ),
@@ -1766,7 +2040,13 @@ class _LocationsScreenState extends State<LocationsScreen> {
           ),
           actions: [
             TextButton(
-              onPressed: saving ? null : () => Navigator.pop(dialogContext),
+              onPressed: saving
+                    ? null
+                    : () {
+                        dialogClosed = true;
+                        FocusManager.instance.primaryFocus?.unfocus();
+                        Navigator.pop(dialogContext);
+                      },
               child: const Text("Hủy bỏ"),
             ),
             ElevatedButton(
@@ -1782,7 +2062,7 @@ class _LocationsScreenState extends State<LocationsScreen> {
                   ? null
                   : () async {
                       if (!formKey.currentState!.validate()) return;
-                      setDialogState(() => saving = true);
+                      if (!dialogClosed) setDialogState(() => saving = true);
                       final res = await AdminService.approveLocationSuggestion(
                         int.parse('${s['id']}'),
                         {
@@ -1790,11 +2070,18 @@ class _LocationsScreenState extends State<LocationsScreen> {
                           'address': addrCtrl.text.trim(),
                           'kind': kind,
                           'note': noteCtrl.text.trim(),
+                          'customer_ids': selectedCustomerIds.toList(),
                         },
                       );
-                      if (!dialogContext.mounted) return;
-                      setDialogState(() => saving = false);
+                      if (dialogClosed || !dialogContext.mounted) return;
+                      if (!dialogClosed) setDialogState(() => saving = false);
                       if (res['ok'] == true) {
+                        // Go focus va cho frame hien tai ket truoc khi dong
+                        // dialog (tranh loi assertion _dependents.isEmpty).
+                        FocusManager.instance.primaryFocus?.unfocus();
+                        await WidgetsBinding.instance.endOfFrame;
+                        dialogClosed = true;
+                        if (!dialogContext.mounted) return;
                         Navigator.pop(dialogContext);
                         _toast(
                           "Đã thêm \"${nameCtrl.text.trim()}\" vào danh mục",
@@ -1810,7 +2097,7 @@ class _LocationsScreenState extends State<LocationsScreen> {
         ),
       ),
     );
-    for (final c in [nameCtrl, addrCtrl, noteCtrl]) {
+    for (final c in [nameCtrl, addrCtrl, noteCtrl, custSearchCtrl]) {
       c.dispose();
     }
   }

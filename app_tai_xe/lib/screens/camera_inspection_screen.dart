@@ -8,7 +8,6 @@ import '../models/inspection_model.dart';
 import '../services/app_state.dart';
 import '../services/admin_service.dart';
 import '../services/gps_service.dart';
-import '../widgets/camera_overlay_painter.dart';
 import 'breakdown_dialog.dart';
 
 class CameraInspectionScreen extends StatefulWidget {
@@ -44,13 +43,13 @@ class _CameraInspectionScreenState extends State<CameraInspectionScreen> with Wi
     {
       'step': InspectionStep.frontUndercarriage,
       'title': "1. Gầm trước",
-      'guide': "Căn chỉnh cản trước, trục lái và 2 bánh xe trước vào khung viền vàng.",
+      'guide': "Chụp rõ cản trước, trục lái và 2 bánh xe trước.",
       'flashDefault': true,
     },
     {
       'step': InspectionStep.rearUndercarriage,
       'title': "2. Gầm sau",
-      'guide': "Căn bầu vi sai và cụm nhíp cầu sau vào giữa tâm khung.",
+      'guide': "Chụp rõ bầu vi sai và cụm nhíp cầu sau.",
       'flashDefault': true,
     },
     {
@@ -68,7 +67,7 @@ class _CameraInspectionScreenState extends State<CameraInspectionScreen> with Wi
     {
       'step': InspectionStep.dashboard,
       'title': "5. Táp lô (Đồng hồ ODO)",
-      'guide': "Căn rõ ràng dãy số hiển thị km hành trình trên đồng hồ vào khung.",
+      'guide': "Chụp rõ dãy số hiển thị km hành trình trên đồng hồ.",
       'flashDefault': false,
     },
   ];
@@ -548,7 +547,6 @@ class _CameraInspectionScreenState extends State<CameraInspectionScreen> with Wi
   Widget build(BuildContext context) {
     final state = context.watch<AppState>();
     final currentConfig = _stepsConfig[_currentStepIndex];
-    final step = currentConfig['step'] as InspectionStep;
 
     return Scaffold(
       backgroundColor: Colors.black,
@@ -596,13 +594,6 @@ class _CameraInspectionScreenState extends State<CameraInspectionScreen> with Wi
         children: [
           // Ống kính camera thật (xem trước trực tiếp)
           Positioned.fill(child: _buildCameraPreview()),
-
-          // Custom Overlay theo từng bước & loại xe
-          Positioned.fill(
-            child: CustomPaint(
-              painter: CameraOverlayPainter(step: step, vehicleType: state.selectedVehicleType),
-            ),
-          ),
 
           // Hướng dẫn góc chụp
           Positioned(

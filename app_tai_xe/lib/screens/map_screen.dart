@@ -109,6 +109,11 @@ class _MapScreenState extends State<MapScreen> {
 
 
   /// Kiem tra xe co don hang dang thuc hien (chua hoan thanh / chua huy) hay khong
+  /// Chuẩn hóa biển số để so khớp: bỏ gạch chấm, in thường
+  static String _normalizePlate(String plate) {
+    return plate.replaceAll('-', '').replaceAll('.', '').replaceAll(' ', '').trim().toLowerCase();
+  }
+
   bool _hasActiveOrder(String plate) {
     final cleanPlate = plate.replaceAll('-', '').replaceAll('.', '').trim().toLowerCase();
     return _allOrders.any((o) {
@@ -228,7 +233,7 @@ class _MapScreenState extends State<MapScreen> {
     // Tap "Off": cac xe dang bao nghi (Quan ly/Dieu phoi bat tay, hoac khong con tren GPS)
     final Set<String> offDutyPlates = _offDutyVehicles
         .where((v) => v is Map && ((v['in_fleet'] == false) || ((v['status'] ?? '') == 'inactive')))
-        .map((v) => (v['plate'] ?? '').toString())
+        .map((v) => (v['plate_number'] ?? v['plate'] ?? '').toString())
         .toSet();
 
     // Tổng hợp dữ liệu thực tế từ đúng 2 dịch vụ Vietmap & Bình Anh
@@ -275,6 +280,42 @@ class _MapScreenState extends State<MapScreen> {
         providerLabel: providerLabel,
       );
     }).toList();
+
+    // Bổ sung các xe BÁO NGHỈ không còn trên GPS (GPS provider đã gỡ thiết bị):
+    // các xe này không có trong fleetStatuses nên phải thêm thủ công để tab "Off" đếm đúng.
+    {
+      final existingPlates = allVehicles.map((v) => _normalizePlate(v.plate)).toSet();
+      for (final v in _offDutyVehicles) {
+        if (v is! Map) continue;
+        final bool isOff = (v['in_fleet'] == false) || ((v['status'] ?? '') == 'inactive');
+        if (!isOff) continue;
+        final String plate = (v['plate_number'] ?? v['plate'] ?? '').toString().trim();
+        if (plate.isEmpty) continue;
+        if (existingPlates.contains(_normalizePlate(plate))) continue;
+        final dynamic lat = v['latitude'];
+        final dynamic lng = v['longitude'];
+        final double dLat = lat is num ? lat.toDouble() : 0;
+        final double dLng = lng is num ? lng.toDouble() : 0;
+        final bool hasCoords = dLat > 0 && dLng > 0;
+        allVehicles.add(_VehicleMapItem(
+          plate: plate,
+          manualStatus: 'inactive',
+          position: hasCoords ? LatLng(dLat, dLng) : defaultCenter,
+          hasValidCoords: hasCoords,
+          speed: 0,
+          isAccOn: false,
+          address: 'Chưa xác định vị trí',
+          driverName: (v['driver_name'] ?? '').toString().isNotEmpty
+              ? (v['driver_name'] ?? '').toString()
+              : 'Chưa gắn thẻ',
+          odoKm: v['odometer_km'] is int ? v['odometer_km'] as int : 0,
+          isOnline: false,
+          statusText: 'Đang báo nghỉ',
+          providerCode: '',
+          providerLabel: 'Nghỉ',
+        ));
+      }
+    }
 
     // Thống kê theo nguồn dịch vụ GPS
     final int vietmapCount = allVehicles.where((v) => v.providerCode == 'vietmap').length;
@@ -504,7 +545,7 @@ class _MapScreenState extends State<MapScreen> {
                       children: [
                         _buildFilterChip('Đang chạy ($runningCount)', 'running'),
                         _buildFilterChip('Đang đỗ (${idlingCount + stoppedCount})', 'stopped'),
-                        _buildFilterChip('Đã gắn đơn ($assignedOrderCount)', 'assigned'),
+                        _buildFilterChip('Có đơn ($assignedOrderCount)', 'assigned'),
                         _buildFilterChip('Off ($offDutyCount)', 'off'),
                       ],
                     ),

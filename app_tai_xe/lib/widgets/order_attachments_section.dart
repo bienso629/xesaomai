@@ -406,18 +406,6 @@ class OrderAttachmentsSection extends StatelessWidget {
         (order['assigned_vehicle_plate'] ?? order['vehicle_plate'] ?? '')
             .toString();
 
-    final pumpBeforePhoto = (order['pump_slip_before_photo_url'] ??
-            order['pump_before_photo_url'] ??
-            '')
-        .toString()
-        .trim();
-    final pumpBeforeTime = _fmtTime(order['pump_slip_before_time'] ?? order['pump_before_time']);
-    final pumpBeforeBy = (order['pump_slip_before_by'] ?? order['pump_before_by'] ?? '').toString().trim();
-    final pumpBeforeLat = _asDouble(order['pump_slip_before_gps_lat'] ?? order['pump_before_gps_lat']);
-    final pumpBeforeLng = _asDouble(order['pump_slip_before_gps_lng'] ?? order['pump_before_gps_lng']);
-    final pumpBeforeAcc = _asDouble(order['pump_slip_before_gps_accuracy'] ?? order['pump_before_gps_accuracy']);
-    final pumpBeforeGpsAt = (order['pump_slip_before_gps_captured_at'] ?? order['pump_before_gps_captured_at'] ?? '').toString();
-
     final weighPhoto = (order['weigh_slip_photo_url'] ?? '').toString().trim();
     final weighTime = _fmtTime(order['weigh_slip_time']);
     final weighTonnage = order['weigh_slip_tonnage'];
@@ -500,31 +488,9 @@ class OrderAttachmentsSection extends StatelessWidget {
         const SizedBox(height: 8),
         _buildAttachmentCard(
           context,
-          icon: Icons.local_gas_station_outlined,
-          accentColor: const Color(0xFF0284C7),
-          title: "1a. Bơm hàng - Trước khi bơm (Tài xế, bắt buộc)",
-          photoUrl: pumpBeforePhoto,
-          statusText: pumpBeforePhoto.isNotEmpty
-              ? "Đã chụp${pumpBeforeTime.isNotEmpty ? ' • $pumpBeforeTime' : ''}${pumpBeforeBy.isNotEmpty ? ' • $pumpBeforeBy' : ''}"
-              : "Chưa có ảnh TRƯỚC khi bơm",
-          canCapture: isDriver && orderId != null,
-          captureLabel: pumpBeforePhoto.isNotEmpty
-              ? "Chụp lại (Trước khi bơm)"
-              : "Chụp ảnh Trước khi bơm",
-          geoCheck: geo('pump_slip_before'),
-          onCapture: () => captureType('pump_before'),
-          gpsLat: pumpBeforeLat,
-          gpsLng: pumpBeforeLng,
-          gpsAccuracy: pumpBeforeAcc,
-          gpsCapturedAt: pumpBeforeGpsAt,
-          photoGeoLabel: geoSummary('pump_slip_before'),
-        ),
-        const SizedBox(height: 8),
-        _buildAttachmentCard(
-          context,
           icon: Icons.scale_outlined,
           accentColor: const Color(0xFF2563EB),
-          title: "2. Phiếu cân hàng (Tài xế - Bước 2)",
+          title: "1. Phiếu cân hàng (Tài xế - Bước 1)",
           photoUrl: weighPhoto,
           statusText: weighPhoto.isNotEmpty
               ? "Đã chụp${weighTime.isNotEmpty ? ' • $weighTime' : ''}"
@@ -550,7 +516,7 @@ class OrderAttachmentsSection extends StatelessWidget {
           context,
           icon: Icons.where_to_vote_outlined,
           accentColor: const Color(0xFF7C3AED),
-          title: "3. Ảnh Đến điểm giao hàng (Tài xế - Bước 3)",
+          title: "2. Ảnh Đến điểm giao hàng (Tài xế - Bước 2)",
           photoUrl: arrivalPhoto,
           statusText: arrivalPhoto.isNotEmpty
               ? "Đã chụp${arrivalTime.isNotEmpty ? ' • $arrivalTime' : ''}"
@@ -572,7 +538,7 @@ class OrderAttachmentsSection extends StatelessWidget {
           context,
           icon: Icons.assignment_turned_in_outlined,
           accentColor: const Color(0xFF15803D),
-          title: "4. Phiếu giao hàng (Tài xế - Bước 4)",
+          title: "3. Phiếu giao hàng (Tài xế - Bước 3)",
           photoUrl: deliveryPhoto,
           statusText: deliveryPhoto.isNotEmpty
               ? "Đã chụp${deliveryTime.isNotEmpty ? ' • $deliveryTime' : ''}"
@@ -597,7 +563,7 @@ class OrderAttachmentsSection extends StatelessWidget {
           accentColor: hasBreakdown
               ? const Color(0xFFDC2626)
               : const Color(0xFF64748B),
-          title: "5. Tình trạng Báo hỏng xe (Tài xế báo sự cố)",
+          title: "4. Tình trạng Báo hỏng xe (Tài xế báo sự cố)",
           photoUrl: breakdownPhoto,
           statusText: hasBreakdown
               ? (breakdownStatus == 'resolved'
@@ -622,7 +588,7 @@ class OrderAttachmentsSection extends StatelessWidget {
           context,
           icon: Icons.build_circle_outlined,
           accentColor: const Color(0xFFD97706),
-          title: "6. Báo cáo Sửa chữa xe (Tài khoản Kỹ thuật)",
+          title: "5. Báo cáo Sửa chữa xe (Tài khoản Kỹ thuật)",
           photoUrl: repairPhoto,
           statusText: repairPhoto.isNotEmpty
               ? "${repairStatus == 'fixed' ? 'Đã sửa chữa hoàn tất' : 'Đang sửa chữa'}${repairTime.isNotEmpty ? ' • $repairTime' : ''}${repairBy.isNotEmpty ? ' • KT: $repairBy' : ''}"

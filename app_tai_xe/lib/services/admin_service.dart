@@ -423,6 +423,18 @@ class AdminService {
     return res['ok'] == true && res['data'] is List ? res['data'] as List<dynamic> : [];
   }
 
+  /// Gợi ý điểm nhận / giao theo khách hàng: điểm liên kết với khách hàng đó
+  /// (qua customer_ids) hoặc điểm dùng chung (không liên kết khách hàng nào).
+  static Future<List<dynamic>> fetchLocationsByCustomer({
+    required String customerCode,
+    String? kind,
+  }) async {
+    final q = 'locations/by-customer?customer_code=${Uri.encodeComponent(customerCode)}'
+        '${kind == null ? '' : '&kind=$kind'}';
+    final res = await _locationCall('GET', q);
+    return res['ok'] == true && res['data'] is List ? res['data'] as List<dynamic> : [];
+  }
+
   /// Tạo mới hoặc cập nhật một điểm trong danh mục.
   static Future<Map<String, dynamic>> saveLocation({int? id, required Map<String, dynamic> data}) {
     return id == null
@@ -991,6 +1003,53 @@ class AdminService {
       }
     } catch (e) {
       return {'success': false, 'message': 'Không thể upload ảnh: $e'};
+    }
+  }
+
+  /// Import danh sách khách hàng từ file Excel (theo mẫu "cấu trúc khách hàng.xlsx").
+  /// [bytes] là nội dung file .xlsx, [filename] là tên gốc của file.
+  /// Trả về: {success, inserted, updated, groupsLearned, skipped, skippedDetails, errors, total, message}
+  static Future<Map<String, dynamic>> importCustomersExcel(
+    List<int> bytes,
+    String filename,
+  ) async {
+    try {
+      final request = http.MultipartRequest(
+        'POST',
+        Uri.parse('$baseUrl/customers/import-excel'),
+      );
+      request.headers.addAll(await _headers().then((h) {
+        h.remove('Content-Type'); // để http tự đặt multipart boundary
+        return h;
+      }));
+      request.files.add(http.MultipartFile.fromBytes(
+        'file',
+        bytes,
+        filename: filename,
+      ));
+      final streamedResponse =
+          await request.send().timeout(const Duration(seconds: 60));
+      final response = await http.Response.fromStream(streamedResponse);
+      await _checkUnauthorized(response);
+      final data = jsonDecode(response.body);
+      if (response.statusCode == 200) {
+        return {
+          'success': true,
+          'inserted': data['inserted'] ?? 0,
+          'updated': data['updated'] ?? 0,
+          'groupsLearned': data['groups_learned'] ?? 0,
+          'skipped': data['skipped'] ?? 0,
+          'skippedDetails': List<String>.from(data['skipped_details'] ?? []),
+          'errors': List<String>.from(data['errors'] ?? []),
+          'total': data['total'] ?? 0,
+        };
+      }
+      return {
+        'success': false,
+        'message': (data['detail'] ?? 'Import thất bại').toString(),
+      };
+    } catch (e) {
+      return {'success': false, 'message': 'Không thể import Excel: $e'};
     }
   }
 

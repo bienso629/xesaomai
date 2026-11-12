@@ -14,6 +14,7 @@ import '../services/admin_service.dart';
 
 import '../services/quanlyxe_service.dart';
 import '../models/quanlyxe_model.dart';
+import '../widgets/inline_autocomplete_field.dart';
 import '../widgets/assign_order_approve_dialog.dart';
 import '../widgets/driver_activity_history_dialog.dart';
 import '../widgets/order_attachments_section.dart';
@@ -72,6 +73,7 @@ class _DispatchSupervisorScreenState extends State<DispatchSupervisorScreen> {
   List<dynamic> _orders = [];
   List<dynamic> _vehicles = [];
   bool _isSyncingFleet = false;
+  String _vehicleStatusBusy = '';
 
   /// Xe đang Tạm ngừng hoạt động (không còn trên Vietmap / Bình Anh)
   bool _isVehicleInactive(dynamic v) =>
@@ -451,6 +453,95 @@ class _DispatchSupervisorScreenState extends State<DispatchSupervisorScreen> {
   }
 
   /// Dòng chỉ để xem: tài xế phụ trách của xe đang chọn (không chọn tay nữa).
+  // HELPER: Ô CHỌN XE VẬN CHUYỂN (AUTOCOMPLETE + NHẬP TỰ DO)
+  /// Gợi ý xe từ Đội xe; cho phép nhập biển số tự do ngoài danh sách.
+  Widget _buildVehicleAutocompleteInput({
+    required TextEditingController controller,
+    required String labelText,
+    required List<Map<String, dynamic>> options,
+    String? hintText,
+    bool isRequired = false,
+    IconData prefixIcon = Icons.fire_truck,
+    bool showLabel = true,
+  }) {
+    // Dung autocomplete IN-LINE (khong Overlay) de tranh crash assertion
+    // _dependents.isEmpty khi dong dialog trong khi goi y dang mo.
+    return InlineAutocompleteField(
+      controller: controller,
+      label: labelText,
+      isRequired: isRequired,
+      showLabel: showLabel,
+      hintText: hintText,
+      prefixIcon: prefixIcon,
+      options: options
+          .map(
+            (o) => InlineAutocompleteOption(
+              value: (o['value'] ?? '').toString(),
+              title: (o['title'] ?? '').toString(),
+              sub: (o['sub'] ?? '').toString(),
+              badge: {
+                'text': (o['badge'] ?? '').toString(),
+                'bg': o['badgeBg'] as Color?,
+                'border': o['badgeBorder'] as Color?,
+                'fg': o['badgeText'] as Color?,
+              },
+            ),
+          )
+          .toList(),
+      onOptionSelected: (opt) {
+        controller.text = opt.value;
+      },
+    );
+  }
+
+  /// Danh sách đơn vị vận chuyển gợi ý cho "Xe thuê ngoài".
+  /// Danh sách đối tác cố định + gộp thêm các đơn vị đã nhập trong đơn hàng.
+  static const List<String> _kCarrierSuggestions = [
+    'Huy Hoàng',
+    'Khanh An',
+    'Nhật Khang',
+    'Phương Mai',
+    'Long An',
+    'Đại Thành',
+    'Hoàng Minh',
+  ];
+
+  List<String> _carrierSuggestions() {
+    final set = <String>{};
+    for (final item in _kCarrierSuggestions) {
+      set.add(item);
+    }
+    for (final o in _orders) {
+      if (o is! Map) continue;
+      final c = (o['carrier_name'] ?? '').toString().trim();
+      if (c.isNotEmpty) set.add(c);
+    }
+    final list = set.toList();
+    list.sort((a, b) => a.toLowerCase().compareTo(b.toLowerCase()));
+    return list;
+  }
+
+  /// Ô CHỌN ĐƠN VỊ VẬN CHUYỂN (AUTOCOMPLETE + NHẬP TỰ DO)
+  /// Gợi ý từ danh sách đối tác & các đơn vị đã dùng; cho phép nhập tự do.
+  Widget _buildCarrierAutocompleteInput({
+    required TextEditingController controller,
+    String? hintText,
+  }) {
+    final options = _carrierSuggestions()
+        .map<Map<String, dynamic>>(
+          (c) => {'value': c, 'title': c, 'sub': '', 'badge': ''},
+        )
+        .toList();
+    return _buildVehicleAutocompleteInput(
+      controller: controller,
+      labelText: '',
+      showLabel: false,
+      hintText: hintText ?? 'Nhập hoặc chọn đơn vị vận chuyển...',
+      options: options,
+      prefixIcon: Icons.business_outlined,
+    );
+  }
+
   Widget _buildVehicleDriverInfo(String? plate, {String? keepDriverName}) {
     String text;
     Color color;
@@ -548,16 +639,29 @@ class _DispatchSupervisorScreenState extends State<DispatchSupervisorScreen> {
       case 3:
       case 4:
       case 5:
-        // Đội xe, Tài khoản, Cây dầu, Sản phẩm: chỉ Admin và Quản lý / Giám đốc
+        // Đội xe (2): Điều phối, Quản lý, Admin (Điều phối đổi trạng thái Báo nghỉ thay Tài xế)
+        // Tài khoản (3), Cây dầu (4), Sản phẩm (5): chỉ Admin và Quản lý / Giám đốc
         final canManageUsers =
             state.currentUsername == 'admin' ||
             state.userRoles.any(
               (r) => ['admin', 'manager'].contains(r.toLowerCase()),
             );
+        if (widget.activeTab == 2) {
+          final canViewFleet =
+              state.currentUsername == 'admin' ||
+              state.userRoles.any(
+                (r) => ['admin', 'manager', 'dispatcher'].contains(
+                  r.toLowerCase(),
+                ),
+              );
+          if (!canViewFleet) {
+            return _buildOverviewTab(state);
+          }
+          return _buildVehiclesTab();
+        }
         if (!canManageUsers) {
           return _buildOverviewTab(state);
         }
-        if (widget.activeTab == 2) return _buildVehiclesTab();
         if (widget.activeTab == 3) return _buildUserListSubtab();
         if (widget.activeTab == 4) return _buildGasStationsTab();
         return _buildProductsTab();
@@ -3150,40 +3254,10 @@ class _DispatchSupervisorScreenState extends State<DispatchSupervisorScreen> {
                                           ),
                                         ),
                                       ),
-                                      // Cột 6: Trạng thái
+                                      // Cột 6: Trạng thái (select box đổi nhanh)
                                       // (Tạm ngừng hoạt động = không còn trên Vietmap / Bình Anh)
                                       makeCell(
-                                        Container(
-                                          padding: const EdgeInsets.symmetric(
-                                            horizontal: 8,
-                                            vertical: 3,
-                                          ),
-                                          decoration: BoxDecoration(
-                                            color: _isVehicleInactive(v)
-                                                ? Colors.grey.shade100
-                                                : Colors.green.shade50,
-                                            borderRadius: BorderRadius.circular(
-                                              4,
-                                            ),
-                                            border: Border.all(
-                                              color: _isVehicleInactive(v)
-                                                  ? Colors.grey.shade400
-                                                  : Colors.green.shade200,
-                                            ),
-                                          ),
-                                          child: Text(
-                                            _isVehicleInactive(v)
-                                                ? "Tạm ngừng hoạt động"
-                                                : "Sẵn sàng hoạt động",
-                                            style: TextStyle(
-                                              color: _isVehicleInactive(v)
-                                                  ? Colors.grey.shade700
-                                                  : Colors.green.shade800,
-                                              fontSize: 11,
-                                              fontWeight: FontWeight.bold,
-                                            ),
-                                          ),
-                                        ),
+                                        _buildVehicleStatusSelector(v),
                                       ),
                                       // Cột 7: Thao tác (Sửa thông tin phương tiện)
                                       makeCell(
@@ -10174,6 +10248,131 @@ class _DispatchSupervisorScreenState extends State<DispatchSupervisorScreen> {
   }
 
   // DIALOG: CHỈNH SỬA THÔNG TIN PHƯƠNG TIỆN
+  // ================== SELECT BOX TRẠNG THÁI XE ==================
+  // Quản lý / Điều phối đổi nhanh giữa "Sẵn sàng hoạt động" và "Báo nghỉ"
+  // (Điều phối báo nghỉ thay cho Tài xế khi tài xế không thao tác được trên app).
+  Widget _buildVehicleStatusSelector(dynamic v) {
+    final plate = (v['plate_number'] ?? '').toString();
+    final inactive = _isVehicleInactive(v);
+    final busy = _vehicleStatusBusy == plate;
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+      decoration: BoxDecoration(
+        color: inactive ? Colors.grey.shade100 : Colors.green.shade50,
+        borderRadius: BorderRadius.circular(4),
+        border: Border.all(
+          color: inactive ? Colors.grey.shade400 : Colors.green.shade200,
+        ),
+      ),
+      child: busy
+          ? const SizedBox(
+              width: 18,
+              height: 18,
+              child: CircularProgressIndicator(strokeWidth: 2),
+            )
+          : DropdownButtonHideUnderline(
+              child: DropdownButton<String>(
+                value: inactive ? 'inactive' : 'ready',
+                isDense: true,
+                borderRadius: BorderRadius.circular(8),
+                style: TextStyle(
+                  color: inactive ? Colors.grey.shade700 : Colors.green.shade800,
+                  fontSize: 11,
+                  fontWeight: FontWeight.bold,
+                ),
+                items: const [
+                  DropdownMenuItem(
+                    value: 'ready',
+                    child: Text(
+                      "Sẵn sàng hoạt động",
+                      style: TextStyle(fontSize: 12, color: Colors.black87),
+                    ),
+                  ),
+                  DropdownMenuItem(
+                    value: 'inactive',
+                    child: Text(
+                      "Báo nghỉ",
+                      style: TextStyle(fontSize: 12, color: Colors.black87),
+                    ),
+                  ),
+                ],
+                onChanged: (val) {
+                  if (val == null) return;
+                  final cur = inactive ? 'inactive' : 'ready';
+                  if (val == cur) return;
+                  _changeVehicleStatus(plate, val);
+                },
+              ),
+            ),
+    );
+  }
+
+  Future<void> _changeVehicleStatus(String plate, String newStatus) async {
+    if (_vehicleStatusBusy.isNotEmpty) return;
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: Text(
+          newStatus == 'inactive'
+              ? 'Báo nghỉ xe $plate?'
+              : 'Kích hoạt lại xe $plate?',
+        ),
+        content: Text(
+          newStatus == 'inactive'
+              ? 'Xe sẽ chuyển sang "Tạm ngừng hoạt động": tài xế không thể nhận chuyến/đơn hàng cho đến khi được kích hoạt lại.'
+              : 'Xe sẽ quay lại trạng thái "Sẵn sàng hoạt động" và nhận chuyến bình thường.',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, false),
+            child: const Text('Hủy'),
+          ),
+          ElevatedButton(
+            style: ElevatedButton.styleFrom(
+              backgroundColor: newStatus == 'inactive'
+                  ? Colors.red.shade700
+                  : Colors.green.shade600,
+              foregroundColor: Colors.white,
+            ),
+            onPressed: () => Navigator.pop(ctx, true),
+            child: Text(newStatus == 'inactive' ? 'Báo nghỉ' : 'Kích hoạt'),
+          ),
+        ],
+      ),
+    );
+    if (confirmed != true || !mounted) return;
+    setState(() => _vehicleStatusBusy = plate);
+    final res = await AdminService.updateVehicle(plate, {'status': newStatus});
+    if (!mounted) return;
+    setState(() => _vehicleStatusBusy = '');
+    if (res['success'] == true) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(
+            newStatus == 'inactive'
+                ? 'Đã báo nghỉ xe $plate'
+                : 'Đã kích hoạt lại xe $plate',
+          ),
+          backgroundColor: newStatus == 'inactive'
+              ? Colors.red.shade700
+              : Colors.green.shade600,
+        ),
+      );
+      // Tải lại danh sách xe để đồng bộ toàn bộ màn hình (ô chọn xe, tổng quan...)
+      try {
+        final vehicles = await AdminService.fetchVehicles(includeInactive: true);
+        if (mounted) setState(() => _vehicles = vehicles);
+      } catch (_) {}
+    } else {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(res['message']?.toString() ?? 'Cập nhật trạng thái thất bại'),
+          backgroundColor: Colors.red.shade700,
+        ),
+      );
+    }
+  }
+
   void _showEditVehicleDialog(dynamic vehicleData) {
     final v = vehicleData is Map ? vehicleData : <String, dynamic>{};
     final plate = (v['plate_number'] ?? '').toString();
@@ -11047,119 +11246,6 @@ class _DispatchSupervisorScreenState extends State<DispatchSupervisorScreen> {
   }
 
   // HELPER: Ô NHẬP LIỆU GỢI Ý TỰ ĐỘNG (AUTOCOMPLETE INPUT) CHO FORM ĐƠN HÀNG
-  Widget _buildOrderAutocompleteInput({
-    required TextEditingController controller,
-    required String labelText,
-    required IconData prefixIcon,
-    required List<String> suggestions,
-    String? hintText,
-    bool isRequired = false,
-  }) {
-    return Autocomplete<String>(
-      initialValue: TextEditingValue(text: controller.text),
-      optionsBuilder: (TextEditingValue textEditingValue) {
-        final query = textEditingValue.text.trim().toLowerCase();
-        if (query.isEmpty) {
-          return suggestions.take(6);
-        }
-        return suggestions
-            .where((option) => option.toLowerCase().contains(query))
-            .take(8);
-      },
-      onSelected: (String selection) {
-        controller.text = selection;
-      },
-      fieldViewBuilder:
-          (
-            context,
-            fieldTextEditingController,
-            fieldFocusNode,
-            onFieldSubmitted,
-          ) {
-            // Đồng bộ dữ liệu khi người dùng nhập tay tự do
-            fieldTextEditingController.addListener(() {
-              if (controller.text != fieldTextEditingController.text) {
-                controller.text = fieldTextEditingController.text;
-              }
-            });
-            return Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                _buildFormLabel(isRequired ? "$labelText *" : labelText),
-                TextField(
-                  controller: fieldTextEditingController,
-                  focusNode: fieldFocusNode,
-                  decoration: InputDecoration(
-                    isDense: true,
-                    hintText: hintText,
-                    prefixIcon: Icon(prefixIcon, size: 17),
-                    prefixIconConstraints: const BoxConstraints(
-                      minWidth: 34,
-                      minHeight: 0,
-                    ),
-                  ),
-                  onSubmitted: (val) => onFieldSubmitted(),
-                ),
-              ],
-            );
-          },
-      optionsViewBuilder: (context, onSelected, options) {
-        return Align(
-          alignment: Alignment.topLeft,
-          child: Material(
-            elevation: 4,
-            borderRadius: BorderRadius.circular(4),
-            color: Colors.white,
-            child: ConstrainedBox(
-              constraints: const BoxConstraints(maxHeight: 220, maxWidth: 460),
-              child: ListView.separated(
-                padding: const EdgeInsets.symmetric(vertical: 4),
-                shrinkWrap: true,
-                itemCount: options.length,
-                separatorBuilder: (_, __) =>
-                    Divider(height: 1, color: Colors.grey.shade200),
-                itemBuilder: (BuildContext context, int index) {
-                  final String option = options.elementAt(index);
-                  return InkWell(
-                    hoverColor: Colors.blue.shade50,
-                    onTap: () => onSelected(option),
-                    child: Padding(
-                      padding: const EdgeInsets.symmetric(
-                        horizontal: 14,
-                        vertical: 10,
-                      ),
-                      child: Row(
-                        children: [
-                          Icon(
-                            prefixIcon,
-                            size: 16,
-                            color: Colors.blue.shade700,
-                          ),
-                          const SizedBox(width: 10),
-                          Expanded(
-                            child: Text(
-                              option,
-                              style: const TextStyle(
-                                fontSize: 13,
-                                color: Colors.black87,
-                              ),
-                              overflow: TextOverflow.ellipsis,
-                            ),
-                          ),
-                        ],
-                      ),
-                    ),
-                  );
-                },
-              ),
-            ),
-          ),
-        );
-      },
-    );
-  }
-
   // HELPER: Ô NƠI NHẬN / ĐIỂM GIAO (DANH MỤC ĐIỂM + ĐỊA CHỈ ĐƠN CŨ)
   /// Giá trị điền vào ô khi chọn một điểm trong danh mục.
   String _locationFillText(Map<String, dynamic> loc) {
@@ -11169,191 +11255,104 @@ class _DispatchSupervisorScreenState extends State<DispatchSupervisorScreen> {
     return "$name - $addr";
   }
 
+  /// Kiểm tra điểm nhận/giao có được gắn trực tiếp với ID khách hàng hay không.
+  bool _isLocationLinkedToCustomer(Map<String, dynamic> loc, int? customerId) {
+    if (customerId == null) return false;
+    final rawIds = loc['customer_ids'];
+    if (rawIds is List) {
+      for (final item in rawIds) {
+        final parsed = item is int ? item : int.tryParse(item.toString());
+        if (parsed == customerId) return true;
+      }
+    }
+    return false;
+  }
+
   Widget _buildLocationAutocomplete({
     required TextEditingController controller,
     required String labelText,
     required IconData prefixIcon,
     required List<Map<String, dynamic>> catalog,
+    int? selectedCustomerId,
     String? hintText,
     bool isRequired = false,
     void Function(Map<String, dynamic> loc)? onCatalogSelected,
   }) {
-    // Chỉ gợi ý điểm đã xác nhận trong danh mục Điểm nhận / giao
-    final options = <Map<String, dynamic>>[];
-    final seen = <String>{};
-    for (final loc in catalog) {
-      final value = _locationFillText(loc);
-      if (value.isEmpty || !seen.add(value.toLowerCase())) continue;
-      options.add({
-        'value': value,
-        'title': (loc['name'] ?? '').toString().trim(),
-        'sub': (loc['address'] ?? '').toString().trim(),
-        'catalog': true,
-        'loc': loc,
+    // Chi goi y diem da xac nhan trong danh muc Diem nhan / giao.
+    // Uu tien dua cac diem gan truc tiep voi khach hang len dau danh sach.
+    final sortedCatalog = List<Map<String, dynamic>>.from(catalog);
+    if (selectedCustomerId != null) {
+      sortedCatalog.sort((a, b) {
+        final aLinked = _isLocationLinkedToCustomer(a, selectedCustomerId);
+        final bLinked = _isLocationLinkedToCustomer(b, selectedCustomerId);
+        if (aLinked != bLinked) return aLinked ? -1 : 1;
+        return (a['name'] ?? '')
+            .toString()
+            .toLowerCase()
+            .compareTo((b['name'] ?? '').toString().toLowerCase());
       });
     }
 
-    return Autocomplete<Map<String, dynamic>>(
-      initialValue: TextEditingValue(text: controller.text),
-      displayStringForOption: (o) => o['value'].toString(),
-      optionsBuilder: (TextEditingValue v) {
-        final q = v.text.trim().toLowerCase();
-        if (q.isEmpty) return options.take(8);
-        return options
-            .where(
-              (o) => [
-                o['value'],
-                o['title'],
-                o['sub'],
-              ].any((e) => e.toString().toLowerCase().contains(q)),
-            )
-            .take(10);
-      },
-      onSelected: (o) {
-        controller.text = o['value'].toString();
-        if (o['catalog'] == true &&
-            o['loc'] is Map &&
-            onCatalogSelected != null) {
-          onCatalogSelected(Map<String, dynamic>.from(o['loc'] as Map));
+    final options = <InlineAutocompleteOption>[];
+    final seen = <String>{};
+    for (final loc in sortedCatalog) {
+      final value = _locationFillText(loc);
+      if (value.isEmpty || !seen.add(value.toLowerCase())) continue;
+      final isCustLinked = _isLocationLinkedToCustomer(loc, selectedCustomerId);
+      options.add(
+        InlineAutocompleteOption(
+          value: value,
+          title: (loc['name'] ?? '').toString().trim(),
+          sub: (loc['address'] ?? '').toString().trim(),
+          icon: isCustLinked ? Icons.verified_user_outlined : Icons.place,
+          badge: isCustLinked
+              ? {
+                  'text': 'Điểm của KH',
+                  'bg': Colors.teal.shade50,
+                  'border': Colors.teal.shade300,
+                  'fg': Colors.teal.shade800,
+                }
+              : const {},
+          raw: {'catalog': true, 'loc': loc},
+        ),
+      );
+    }
+
+    // Dung autocomplete IN-LINE (khong Overlay) de tranh crash assertion
+    // _dependents.isEmpty khi dong dialog trong khi goi y dang mo.
+    return InlineAutocompleteField(
+      controller: controller,
+      label: labelText,
+      isRequired: isRequired,
+      hintText: hintText,
+      prefixIcon: prefixIcon,
+      options: options,
+      maxOptions: 12,
+      suffix: ValueListenableBuilder<TextEditingValue>(
+        valueListenable: controller,
+        builder: (context, value, _) {
+          if (value.text.trim().isEmpty) return const SizedBox.shrink();
+          return IconButton(
+            visualDensity: VisualDensity.compact,
+            padding: EdgeInsets.zero,
+            constraints: const BoxConstraints(minWidth: 30, minHeight: 30),
+            splashRadius: 16,
+            tooltip: "Xoá địa chỉ",
+            icon: Icon(Icons.close, size: 16, color: Colors.grey.shade600),
+            onPressed: () {
+              controller.clear();
+            },
+          );
+        },
+      ),
+      onOptionSelected: (opt) {
+        controller.text = opt.value;
+        final raw = opt.raw;
+        if (raw['catalog'] == true && raw['loc'] is Map) {
+          onCatalogSelected?.call(
+            Map<String, dynamic>.from(raw['loc'] as Map),
+          );
         }
-      },
-      fieldViewBuilder: (context, fieldCtrl, focusNode, onFieldSubmitted) {
-        // Đồng bộ dữ liệu khi người dùng nhập tay tự do
-        fieldCtrl.addListener(() {
-          if (controller.text != fieldCtrl.text)
-            controller.text = fieldCtrl.text;
-        });
-        // Địa chỉ được điền từ bên ngoài (VD: chọn điểm trên bản đồ) thì hiện lên ô
-        if (controller.text != fieldCtrl.text && !focusNode.hasFocus) {
-          WidgetsBinding.instance.addPostFrameCallback((_) {
-            if (controller.text != fieldCtrl.text && !focusNode.hasFocus) {
-              fieldCtrl.value = TextEditingValue(
-                text: controller.text,
-                selection: TextSelection.collapsed(
-                  offset: controller.text.length,
-                ),
-              );
-            }
-          });
-        }
-        return Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            _buildFormLabel(isRequired ? "$labelText *" : labelText),
-            TextField(
-              controller: fieldCtrl,
-              focusNode: focusNode,
-              decoration: InputDecoration(
-                isDense: true,
-                hintText: hintText,
-                prefixIcon: Icon(prefixIcon, size: 17),
-                prefixIconConstraints: const BoxConstraints(
-                  minWidth: 34,
-                  minHeight: 0,
-                ),
-              ),
-              onSubmitted: (_) => onFieldSubmitted(),
-            ),
-          ],
-        );
-      },
-      optionsViewBuilder: (context, onSelected, opts) {
-        return Align(
-          alignment: Alignment.topLeft,
-          child: Material(
-            elevation: 4,
-            borderRadius: BorderRadius.circular(4),
-            color: Colors.white,
-            child: ConstrainedBox(
-              constraints: const BoxConstraints(maxHeight: 260, maxWidth: 520),
-              child: ListView.separated(
-                padding: const EdgeInsets.symmetric(vertical: 4),
-                shrinkWrap: true,
-                itemCount: opts.length,
-                separatorBuilder: (_, _) =>
-                    Divider(height: 1, color: Colors.grey.shade200),
-                itemBuilder: (context, index) {
-                  final o = opts.elementAt(index);
-                  final isCatalog = o['catalog'] == true;
-                  final sub = o['sub'].toString();
-                  return InkWell(
-                    hoverColor: Colors.blue.shade50,
-                    onTap: () => onSelected(o),
-                    child: Padding(
-                      padding: const EdgeInsets.symmetric(
-                        horizontal: 14,
-                        vertical: 9,
-                      ),
-                      child: Row(
-                        children: [
-                          Icon(
-                            isCatalog ? Icons.place : prefixIcon,
-                            size: 16,
-                            color: isCatalog
-                                ? Colors.teal.shade700
-                                : Colors.blue.shade700,
-                          ),
-                          const SizedBox(width: 10),
-                          Expanded(
-                            child: Column(
-                              crossAxisAlignment: CrossAxisAlignment.start,
-                              mainAxisSize: MainAxisSize.min,
-                              children: [
-                                Text(
-                                  o['title'].toString(),
-                                  overflow: TextOverflow.ellipsis,
-                                  style: TextStyle(
-                                    fontSize: 13,
-                                    color: Colors.black87,
-                                    fontWeight: isCatalog
-                                        ? FontWeight.w600
-                                        : FontWeight.normal,
-                                  ),
-                                ),
-                                if (sub.isNotEmpty)
-                                  Text(
-                                    sub,
-                                    overflow: TextOverflow.ellipsis,
-                                    style: TextStyle(
-                                      fontSize: 11.5,
-                                      color: Colors.grey.shade600,
-                                    ),
-                                  ),
-                              ],
-                            ),
-                          ),
-                          if (isCatalog) ...[
-                            const SizedBox(width: 8),
-                            Container(
-                              padding: const EdgeInsets.symmetric(
-                                horizontal: 6,
-                                vertical: 2,
-                              ),
-                              decoration: BoxDecoration(
-                                color: Colors.teal.shade50,
-                                borderRadius: BorderRadius.circular(4),
-                                border: Border.all(color: Colors.teal.shade200),
-                              ),
-                              child: Text(
-                                "Danh mục",
-                                style: TextStyle(
-                                  fontSize: 10.5,
-                                  fontWeight: FontWeight.bold,
-                                  color: Colors.teal.shade800,
-                                ),
-                              ),
-                            ),
-                          ],
-                        ],
-                      ),
-                    ),
-                  );
-                },
-              ),
-            ),
-          ),
-        );
       },
     );
   }
@@ -11703,10 +11702,44 @@ class _DispatchSupervisorScreenState extends State<DispatchSupervisorScreen> {
     );
   }
 
+  /// Tải điểm nhận / giao đề xuất theo khách hàng: điểm liên kết với khách hàng
+  /// (qua customer_ids) hoặc điểm dùng chung. Trả về (điểm nhận, điểm giao).
+  Future<(List<Map<String, dynamic>>, List<Map<String, dynamic>>)>
+  _loadLocationsForCustomer(String customerCode) async {
+    List<Map<String, dynamic>> list = [];
+    try {
+      final raw = await AdminService.fetchLocationsByCustomer(
+        customerCode: customerCode,
+      );
+      list = raw
+          .whereType<Map>()
+          .map((e) => Map<String, dynamic>.from(e))
+          .where((e) => (e['name'] ?? '').toString().trim().isNotEmpty)
+          .toList();
+    } catch (_) {
+      list = [];
+    }
+    list.sort(
+      (a, b) => (a['name'] ?? '').toString().toLowerCase().compareTo(
+        (b['name'] ?? '').toString().toLowerCase(),
+      ),
+    );
+    bool isKind(Map<String, dynamic> e, String k) {
+      final kind = (e['kind'] ?? 'BOTH').toString().toUpperCase();
+      return kind == k || kind == 'BOTH' || kind.isEmpty;
+    }
+
+    return (
+      list.where((e) => isKind(e, 'PICKUP')).toList(),
+      list.where((e) => isKind(e, 'DELIVERY')).toList(),
+    );
+  }
+
   // HELPER: Ô MÃ KHÁCH HÀNG (AUTOCOMPLETE - CHỈ CHO PHÉP CHỌN TỪ DANH SÁCH)
   Widget _buildCustomerCodeAutocomplete({
     required TextEditingController controller,
     required List<Map<String, dynamic>> customers,
+    void Function(String customerCode)? onCustomerChanged,
   }) {
     String norm(String v) => v.trim().toLowerCase();
     Map<String, dynamic>? findByCode(String code) {
@@ -11718,188 +11751,74 @@ class _DispatchSupervisorScreenState extends State<DispatchSupervisorScreen> {
       return null;
     }
 
-    return Autocomplete<Map<String, dynamic>>(
-      initialValue: TextEditingValue(text: controller.text),
-      displayStringForOption: (cu) => (cu['code'] ?? '').toString(),
-      optionsBuilder: (TextEditingValue value) {
-        final q = norm(value.text);
-        if (q.isEmpty) return customers.take(8);
-        return customers
-            .where(
-              (cu) =>
-                  norm((cu['name'] ?? '').toString()).contains(q) ||
-                  norm((cu['code'] ?? '').toString()).contains(q),
-            )
-            .take(10);
-      },
-      onSelected: (cu) {
-        controller.text = (cu['code'] ?? '').toString();
-      },
-      fieldViewBuilder: (context, fieldCtrl, focusNode, onFieldSubmitted) {
-        fieldCtrl.addListener(() {
-          if (controller.text != fieldCtrl.text) {
-            controller.text = fieldCtrl.text;
-          }
-        });
-        return Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            _buildFormLabel("Mã khách hàng"),
-            ValueListenableBuilder<TextEditingValue>(
-              valueListenable: fieldCtrl,
-              builder: (context, value, _) {
-                final match = findByCode(value.text);
-                return Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    TextField(
-                      controller: fieldCtrl,
-                      focusNode: focusNode,
-                      decoration: InputDecoration(
-                        isDense: true,
-                        hintText: "Gõ tên khách hàng để tìm",
-                        prefixIcon: const Icon(Icons.person_outline, size: 17),
-                        prefixIconConstraints: const BoxConstraints(
-                          minWidth: 34,
-                          minHeight: 0,
-                        ),
-                        suffixIcon: value.text.trim().isEmpty
-                            ? null
-                            : IconButton(
-                                visualDensity: VisualDensity.compact,
-                                padding: EdgeInsets.zero,
-                                constraints: const BoxConstraints(
-                                  minWidth: 30,
-                                  minHeight: 30,
-                                ),
-                                splashRadius: 16,
-                                tooltip: "Xoá lựa chọn",
-                                icon: Icon(
-                                  Icons.close,
-                                  size: 16,
-                                  color: Colors.grey.shade600,
-                                ),
-                                onPressed: () {
-                                  fieldCtrl.clear();
-                                  controller.clear();
-                                  focusNode.requestFocus();
-                                },
-                              ),
-                      ),
-                      onSubmitted: (_) => onFieldSubmitted(),
-                    ),
-                    Padding(
-                      padding: const EdgeInsets.only(top: 4),
-                      child: Text(
-                        match != null
-                            ? (match['name'] ?? '').toString()
-                            : "Không có trong danh sách Khách hàng. Vui lòng chọn từ danh sách gợi ý.",
-                        maxLines: 1,
-                        overflow: TextOverflow.ellipsis,
-                        style: TextStyle(
-                          fontSize: 11,
-                          fontWeight: match != null
-                              ? FontWeight.w600
-                              : FontWeight.normal,
-                          color: match != null
-                              ? Colors.teal.shade700
-                              : Colors.red.shade700,
-                        ),
-                      ),
-                    ),
-                  ],
-                );
-              },
+    // Dung autocomplete IN-LINE (khong Overlay) de tranh crash assertion
+    // _dependents.isEmpty khi dong dialog trong khi goi y dang mo.
+    return InlineAutocompleteField(
+      controller: controller,
+      label: "Mã khách hàng",
+      hintText: "Gõ tên khách hàng để tìm",
+      prefixIcon: Icons.person_outline,
+      options: customers
+          .map(
+            (cu) => InlineAutocompleteOption(
+              value: (cu['code'] ?? '').toString(),
+              title: (cu['name'] ?? '').toString(),
+              sub: (cu['code'] ?? '').toString(),
+              icon: Icons.storefront_outlined,
             ),
-          ],
-        );
+          )
+          .toList(),
+      maxOptions: 10,
+      onOptionSelected: (opt) {
+        controller.text = opt.value;
+        onCustomerChanged?.call(opt.value.trim());
       },
-      optionsViewBuilder: (context, onSelected, options) {
-        return Align(
-          alignment: Alignment.topLeft,
-          child: Material(
-            elevation: 4,
-            borderRadius: BorderRadius.circular(4),
-            color: Colors.white,
-            child: ConstrainedBox(
-              constraints: const BoxConstraints(maxHeight: 260, maxWidth: 520),
-              child: options.isEmpty
-                  ? Padding(
-                      padding: const EdgeInsets.symmetric(
-                        horizontal: 14,
-                        vertical: 10,
-                      ),
-                      child: Text(
-                        "Không có khách hàng khớp trong danh sách",
-                        style: TextStyle(
-                          fontSize: 12,
-                          color: Colors.grey.shade600,
-                        ),
-                      ),
-                    )
-                  : ListView.separated(
-                      padding: const EdgeInsets.symmetric(vertical: 4),
-                      shrinkWrap: true,
-                      itemCount: options.length,
-                      separatorBuilder: (_, _) =>
-                          Divider(height: 1, color: Colors.grey.shade200),
-                      itemBuilder: (context, index) {
-                        final cu = options.elementAt(index);
-                        final name = (cu['name'] ?? '').toString();
-                        final code = (cu['code'] ?? '').toString();
-                        return InkWell(
-                          hoverColor: Colors.blue.shade50,
-                          onTap: () => onSelected(cu),
-                          child: Padding(
-                            padding: const EdgeInsets.symmetric(
-                              horizontal: 14,
-                              vertical: 8,
-                            ),
-                            child: Row(
-                              children: [
-                                Icon(
-                                  Icons.storefront_outlined,
-                                  size: 16,
-                                  color: Colors.blue.shade700,
-                                ),
-                                const SizedBox(width: 10),
-                                Expanded(
-                                  child: Column(
-                                    crossAxisAlignment:
-                                        CrossAxisAlignment.start,
-                                    children: [
-                                      Text(
-                                        name,
-                                        style: const TextStyle(
-                                          fontSize: 13,
-                                          color: Colors.black87,
-                                          fontWeight: FontWeight.w600,
-                                        ),
-                                        overflow: TextOverflow.ellipsis,
-                                      ),
-                                      Text(
-                                        code,
-                                        style: TextStyle(
-                                          fontSize: 11,
-                                          color: Colors.grey.shade600,
-                                        ),
-                                        overflow: TextOverflow.ellipsis,
-                                      ),
-                                    ],
-                                  ),
-                                ),
-                              ],
-                            ),
-                          ),
-                        );
-                      },
-                    ),
+      onChanged: (text) {
+        onCustomerChanged?.call(text.trim());
+      },
+      suffix: ValueListenableBuilder<TextEditingValue>(
+        valueListenable: controller,
+        builder: (context, value, _) {
+          if (value.text.trim().isEmpty) return const SizedBox.shrink();
+          return IconButton(
+            visualDensity: VisualDensity.compact,
+            padding: EdgeInsets.zero,
+            constraints: const BoxConstraints(minWidth: 30, minHeight: 30),
+            splashRadius: 16,
+            tooltip: "Xoá lựa chọn",
+            icon: Icon(Icons.close, size: 16, color: Colors.grey.shade600),
+            onPressed: () {
+              controller.clear();
+              onCustomerChanged?.call('');
+            },
+          );
+        },
+      ),
+      helperBelow: ValueListenableBuilder<TextEditingValue>(
+        valueListenable: controller,
+        builder: (context, value, _) {
+          final match = findByCode(value.text);
+          return Padding(
+            padding: const EdgeInsets.only(top: 4),
+            child: Text(
+              match != null
+                  ? (match['name'] ?? '').toString()
+                  : "Không có trong danh sách Khách hàng. Vui lòng chọn từ danh sách gợi ý.",
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              style: TextStyle(
+                fontSize: 11,
+                fontWeight: match != null
+                    ? FontWeight.w600
+                    : FontWeight.normal,
+                color: match != null
+                    ? Colors.teal.shade700
+                    : Colors.red.shade700,
+              ),
             ),
-          ),
-        );
-      },
+          );
+        },
+      ),
     );
   }
 
@@ -11964,6 +11883,9 @@ class _DispatchSupervisorScreenState extends State<DispatchSupervisorScreen> {
         : null;
     final activeVehicles = _activeVehicles;
 
+    // Xe vận chuyển: nhập tự do hoặc chọn từ gợi ý (ô autocomplete)
+    final vehicleCtrl = TextEditingController();
+
     // Sử dụng GPS hợp nhất từ Vietmap + Bình Anh
     Map<String, QuanLyXeStatus> fleetGps = freshGps.isNotEmpty
         ? freshGps
@@ -11995,25 +11917,37 @@ class _DispatchSupervisorScreenState extends State<DispatchSupervisorScreen> {
     List<Map<String, dynamic>> prioritizedCandidateVehicles =
         updatePrioritizedVehicles(pickupAddrCtrl.text);
 
-    String? selectedVehiclePlate;
+    // Điểm nhận / giao đề xuất theo khách hàng đang chọn (mặc định: toàn danh mục).
+    // Khi chọn/xoá Khách hàng sẽ tải lại danh sách này (điểm liên kết KH + điểm dùng chung)
+    // và tự động điền địa chỉ nhận / giao gắn với khách hàng đó nếu có.
+    List<Map<String, dynamic>> custPickupCatalog = pickupCatalog;
+    List<Map<String, dynamic>> custDeliveryCatalog = deliveryCatalog;
+    int? selectedCustomerId;
+    String lastSuggestedCustomerCode = '';
+    String lastAutoFilledPickup = '';
+    String lastAutoFilledDelivery = '';
+    bool isLoadingCustomerPoints = false;
+    Timer? _custPointsDebounce;
+    // Co chan moi setState khi dialog dang dong - nguyen nhan chinh la cac
+    // callback async/timer van goi setDialogState sau khi dialog da dong.
+    bool dialogClosed = false;
 
-    // Danh sách gợi ý Nhà máy, Nơi nhận và Điểm giao hàng
-    final factorySuggestions = <String>{
-      "NM-BIMSON",
-      "NM_LONG_AN",
-      "NM-NGHISON",
-      "NM-HAIPHONG",
-      "NM-CAMPHA",
-    };
-
-    for (final ord in _orders) {
-      if (ord is Map) {
-        final f = (ord['factory_code'] ?? '').toString().trim();
-        if (f.isNotEmpty) factorySuggestions.add(f);
+    int? findCustomerIdByCode(String code) {
+      final c = code.trim().toLowerCase();
+      if (c.isEmpty) return null;
+      for (final cu in customers) {
+        if ((cu['code'] ?? '').toString().trim().toLowerCase() == c) {
+          final rawId = cu['id'];
+          return rawId is int ? rawId : int.tryParse(rawId.toString());
+        }
       }
+      return null;
     }
 
     showDialog(
+      barrierDismissible: false,
+      // Chan dong dialog khi bam ra ngoai: dialog chi dong qua nut
+      // Huy/Luu (noi co dat co dialogClosed) - tranh timer bắn vào dialog đóng.
       context: context,
       builder: (dialogCtx) => StatefulBuilder(
         builder: (context, setDialogState) => AlertDialog(
@@ -12046,48 +11980,126 @@ class _DispatchSupervisorScreenState extends State<DispatchSupervisorScreen> {
                 mainAxisSize: MainAxisSize.min,
                 crossAxisAlignment: CrossAxisAlignment.stretch,
                 children: [
-                  Row(
+                  // Mã đơn hàng: Quản lý / Điều phối tự nhập khi tạo đơn
+                  Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      Expanded(
-                        child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            _buildFormLabel("Mã đơn hàng *"),
-                            TextField(
-                              controller: orderCodeCtrl,
-                              decoration: const InputDecoration(
-                                isDense: true,
-                                prefixIcon: Icon(
-                                  Icons.receipt_long_outlined,
-                                  size: 17,
-                                ),
-                                prefixIconConstraints: BoxConstraints(
-                                  minWidth: 34,
-                                  minHeight: 0,
-                                ),
-                              ),
-                            ),
-                          ],
-                        ),
-                      ),
-                      const SizedBox(width: 14),
-                      Expanded(
-                        child: _buildOrderAutocompleteInput(
-                          controller: factoryCodeCtrl,
-                          labelText: "Mã nhà máy",
-                          prefixIcon: Icons.factory_outlined,
-                          suggestions: factorySuggestions.toList(),
-                          isRequired: true,
+                      _buildFormLabel("Mã đơn hàng *"),
+                      TextField(
+                        controller: orderCodeCtrl,
+                        decoration: const InputDecoration(
+                          isDense: true,
+                          prefixIcon: Icon(
+                            Icons.receipt_long_outlined,
+                            size: 17,
+                          ),
+                          prefixIconConstraints: BoxConstraints(
+                            minWidth: 34,
+                            minHeight: 0,
+                          ),
                         ),
                       ),
                     ],
+                  ),
+                  // Mã nhà máy: ẩn khỏi form (giá trị mặc định vẫn được gửi kèm)
+                  Offstage(
+                    offstage: true,
+                    child: TextField(controller: factoryCodeCtrl),
                   ),
                   const SizedBox(height: 16),
                   // Mã khách hàng (full width)
                   _buildCustomerCodeAutocomplete(
                     controller: customerCodeCtrl,
                     customers: customers,
+                    onCustomerChanged: (code) {
+                      _custPointsDebounce?.cancel();
+                      final trimmed = code.trim();
+                      if (trimmed == lastSuggestedCustomerCode) return;
+                      final matchedCustId = findCustomerIdByCode(trimmed);
+                      // Nếu chọn trực tiếp khách hàng hợp lệ thì chạy ngay (50ms), nếu đang gõ dở thì debounce 300ms
+                      final delayMs = (matchedCustId != null || trimmed.isEmpty) ? 50 : 300;
+                      _custPointsDebounce = Timer(Duration(milliseconds: delayMs), () async {
+                        if (dialogClosed || !dialogCtx.mounted) return;
+                        if (!dialogClosed) {
+                          setDialogState(() {
+                            isLoadingCustomerPoints = true;
+                            selectedCustomerId = matchedCustId;
+                          });
+                        }
+                        final (pList, dList) = trimmed.isEmpty
+                            ? (pickupCatalog, deliveryCatalog)
+                            : await _loadLocationsForCustomer(trimmed);
+                        if (dialogClosed || !dialogCtx.mounted) return;
+
+                        // Tìm các điểm gắn trực tiếp với khách hàng này (qua customer_ids)
+                        final linkedPickups = matchedCustId != null
+                            ? pList
+                                .where((loc) => _isLocationLinkedToCustomer(loc, matchedCustId))
+                                .toList()
+                            : <Map<String, dynamic>>[];
+                        final linkedDeliveries = matchedCustId != null
+                            ? dList
+                                .where((loc) => _isLocationLinkedToCustomer(loc, matchedCustId))
+                                .toList()
+                            : <Map<String, dynamic>>[];
+
+                        // Tự động điền Điểm nhận hàng của khách hàng đang chọn (nếu có)
+                        final curPickup = pickupAddrCtrl.text.trim();
+                        if (linkedPickups.isNotEmpty) {
+                          final fillP = _locationFillText(linkedPickups.first);
+                          pickupAddrCtrl.text = fillP;
+                          lastAutoFilledPickup = fillP;
+                          final double? lat = double.tryParse(
+                            (linkedPickups.first['latitude'] ?? '').toString(),
+                          );
+                          final double? lng = double.tryParse(
+                            (linkedPickups.first['longitude'] ?? '').toString(),
+                          );
+                          if (lat != null && lng != null) {
+                            prioritizedCandidateVehicles =
+                                _prioritizeVehiclesForPickup(
+                                  vehicles: activeVehicles,
+                                  orders: _orders,
+                                  inspections: _inspections,
+                                  fleetGps: fleetGps,
+                                  pickupLat: lat,
+                                  pickupLng: lng,
+                                );
+                            if (prioritizedCandidateVehicles.isNotEmpty) {
+                              vehicleCtrl.text =
+                                  prioritizedCandidateVehicles[0]['plate']
+                                          ?.toString() ??
+                                      '';
+                            }
+                          }
+                        } else if (curPickup.isNotEmpty && curPickup == lastAutoFilledPickup) {
+                          // Khách hàng mới không có điểm nhận riêng -> xoá điểm nhận tự điền của KH trước đó
+                          pickupAddrCtrl.clear();
+                          lastAutoFilledPickup = '';
+                        }
+
+                        // Tự động điền Điểm giao hàng của khách hàng đang chọn (nếu có)
+                        final curDelivery = deliveryAddrCtrl.text.trim();
+                        if (linkedDeliveries.isNotEmpty) {
+                          final fillD = _locationFillText(linkedDeliveries.first);
+                          deliveryAddrCtrl.text = fillD;
+                          lastAutoFilledDelivery = fillD;
+                        } else if (curDelivery.isNotEmpty && curDelivery == lastAutoFilledDelivery) {
+                          // Khách hàng mới không có điểm giao riêng -> xoá điểm giao tự điền của KH trước đó
+                          deliveryAddrCtrl.clear();
+                          lastAutoFilledDelivery = '';
+                        }
+
+                        if (!dialogClosed) {
+                          setDialogState(() {
+                            custPickupCatalog = pList;
+                            custDeliveryCatalog = dList;
+                            lastSuggestedCustomerCode = trimmed;
+                            isLoadingCustomerPoints = false;
+                          });
+                        }
+                      });
+                    },
                   ),
                   const SizedBox(height: 16),
                   // Hàng hóa (chọn từ danh mục) | Sản phẩm (điều phối nhập tay)
@@ -12128,7 +12140,7 @@ class _DispatchSupervisorScreenState extends State<DispatchSupervisorScreen> {
                                 );
                               }).toList(),
                               onChanged: (val) {
-                                setDialogState(() => selectedProductId = val);
+                                if (!dialogClosed) setDialogState(() => selectedProductId = val);
                               },
                             ),
                           ],
@@ -12223,7 +12235,7 @@ class _DispatchSupervisorScreenState extends State<DispatchSupervisorScreen> {
                               ],
                               onChanged: (val) {
                                 if (val != null) {
-                                  setDialogState(() => transportType = val);
+                                  if (!dialogClosed) setDialogState(() => transportType = val);
                                 }
                               },
                             ),
@@ -12237,21 +12249,9 @@ class _DispatchSupervisorScreenState extends State<DispatchSupervisorScreen> {
                             crossAxisAlignment: CrossAxisAlignment.start,
                             children: [
                               _buildFormLabel("Đơn vị vận chuyển"),
-                              TextField(
+                              _buildCarrierAutocompleteInput(
                                 controller: carrierNameCtrl,
-                                style: const TextStyle(fontSize: 13),
-                                decoration: const InputDecoration(
-                                  hintText: "Nhập đơn vị vận chuyển",
-                                  isDense: true,
-                                  prefixIcon: Icon(
-                                    Icons.business_outlined,
-                                    size: 17,
-                                  ),
-                                  prefixIconConstraints: BoxConstraints(
-                                    minWidth: 34,
-                                    minHeight: 0,
-                                  ),
-                                ),
+                                hintText: "Nhập đơn vị vận chuyển",
                               ),
                             ],
                           ),
@@ -12260,12 +12260,35 @@ class _DispatchSupervisorScreenState extends State<DispatchSupervisorScreen> {
                     ],
                   ),
                   const SizedBox(height: 16),
+                  // Trạng thái tải điểm đề xuất theo khách hàng
+                  if (isLoadingCustomerPoints)
+                    Padding(
+                      padding: const EdgeInsets.only(bottom: 8),
+                      child: Row(
+                        children: [
+                          const SizedBox(
+                            width: 12,
+                            height: 12,
+                            child: CircularProgressIndicator(strokeWidth: 2),
+                          ),
+                          const SizedBox(width: 8),
+                          Text(
+                            "Đang tải điểm nhận / giao của khách hàng...",
+                            style: TextStyle(
+                              fontSize: 11,
+                              color: Colors.grey.shade600,
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
                   // Điểm nhận hàng (Gợi ý tự động Autocomplete)
                   _buildLocationAutocomplete(
                     controller: pickupAddrCtrl,
                     labelText: "Nơi nhận hàng (Địa chỉ lấy hàng)",
                     prefixIcon: Icons.warehouse_outlined,
-                    catalog: pickupCatalog,
+                    catalog: custPickupCatalog,
+                    selectedCustomerId: selectedCustomerId,
                     hintText: "Nhập hoặc chọn kho hàng...",
                     isRequired: true,
                     onCatalogSelected: (loc) {
@@ -12287,19 +12310,20 @@ class _DispatchSupervisorScreenState extends State<DispatchSupervisorScreen> {
                               pickupLng: lng,
                             );
                         if (prioritizedCandidateVehicles.isNotEmpty) {
-                          selectedVehiclePlate =
+                          vehicleCtrl.text =
                               prioritizedCandidateVehicles[0]['plate']
-                                  ?.toString();
+                                      ?.toString() ??
+                                  '';
                         } else {
-                          selectedVehiclePlate = null;
+                          vehicleCtrl.text = '';
                         }
-                        setDialogState(() {});
+                        if (!dialogClosed) setDialogState(() {});
                       }
                     },
                   ),
                   _buildPointCoordsInfo(
                     pickupAddrCtrl,
-                    pickupCatalog,
+                    custPickupCatalog,
                     pickupOrig,
                   ),
                   ValueListenableBuilder<TextEditingValue>(
@@ -12324,14 +12348,15 @@ class _DispatchSupervisorScreenState extends State<DispatchSupervisorScreen> {
                             ? newList[0]['plate']?.toString()
                             : null;
                         if (firstPlate != null &&
-                            selectedVehiclePlate != firstPlate &&
+                            vehicleCtrl.text.trim() != firstPlate &&
                             (prioritizedCandidateVehicles.isEmpty ||
                                 prioritizedCandidateVehicles[0]['distance_km'] ==
                                     null)) {
                           WidgetsBinding.instance.addPostFrameCallback((_) {
-                            setDialogState(() {
+                            if (dialogClosed || !dialogCtx.mounted) return;
+                            if (!dialogClosed) setDialogState(() {
                               prioritizedCandidateVehicles = newList;
-                              selectedVehiclePlate = firstPlate;
+                              vehicleCtrl.text = firstPlate;
                             });
                           });
                         }
@@ -12345,17 +12370,18 @@ class _DispatchSupervisorScreenState extends State<DispatchSupervisorScreen> {
                     controller: deliveryAddrCtrl,
                     labelText: "Điểm giao hàng (Địa chỉ trả hàng)",
                     prefixIcon: Icons.location_on_outlined,
-                    catalog: deliveryCatalog,
+                    catalog: custDeliveryCatalog,
+                    selectedCustomerId: selectedCustomerId,
                     hintText: "Nhập địa chỉ hoặc chọn công trình...",
                     isRequired: true,
                   ),
                   _buildPointCoordsInfo(
                     deliveryAddrCtrl,
-                    deliveryCatalog,
+                    custDeliveryCatalog,
                     deliveryOrig,
                   ),
                   const SizedBox(height: 16),
-                  // Phương tiện chỉ định
+                  // Phương tiện chỉ định (label do widget autocomplete tự vẽ)
                   Builder(
                     builder: (context) {
                       final currentPickupPt = _resolvePointCoords(
@@ -12365,133 +12391,104 @@ class _DispatchSupervisorScreenState extends State<DispatchSupervisorScreen> {
                       );
                       return Row(
                         children: [
-                          _buildFormLabel("Phương tiện vận chuyển *"),
-                          const Spacer(),
                           if (currentPickupPt.lat != null &&
                               currentPickupPt.lng != null)
-                            Text(
-                              "Ưu tiên: Rảnh • Gần kho • Ít chuyến",
-                              style: TextStyle(
-                                fontSize: 11,
-                                fontWeight: FontWeight.w600,
-                                color: Colors.blue.shade700,
+                            Expanded(
+                              child: Align(
+                                alignment: Alignment.centerRight,
+                                child: Text(
+                                  "Ưu tiên: Rảnh • Gần kho • Ít chuyến",
+                                  style: TextStyle(
+                                    fontSize: 11,
+                                    fontWeight: FontWeight.w600,
+                                    color: Colors.blue.shade700,
+                                  ),
+                                ),
                               ),
                             ),
                         ],
                       );
                     },
                   ),
-                  DropdownButtonFormField<String?>(
-                    value: selectedVehiclePlate,
-                    isDense: true,
-                    isExpanded: true,
-                    decoration: InputDecoration(
-                      isDense: true,
-                      hintText: prioritizedCandidateVehicles.isEmpty
-                          ? "Không có phương tiện khả dụng"
-                          : "Chọn phương tiện",
-                      hintStyle: const TextStyle(fontSize: 12.5),
-                      prefixIcon: const Icon(Icons.fire_truck, size: 17),
-                      prefixIconConstraints: const BoxConstraints(
-                        minWidth: 34,
-                        minHeight: 0,
-                      ),
-                    ),
-                    items: [
-                      ...prioritizedCandidateVehicles.map((cand) {
-                        final v = cand['vehicle'] as Map;
-                        final plate = (cand['plate'] ?? '').toString();
-                        final vtype = (v['vehicle_type'] ?? '').toString();
-                        final double? distKm = cand['distance_km'] as double?;
-                        final int trips = (cand['total_trips'] as int?) ?? 0;
-                        final int tier = (cand['tier'] as int?) ?? 2;
-                        final int activeOrders =
-                            (cand['active_orders'] as int?) ?? 0;
+                  // Xe vận chuyển: nhập tự do hoặc chọn từ gợi ý (autocomplete)
+                  Builder(
+                    builder: (context) {
+                      final vehicleOptions = prioritizedCandidateVehicles
+                          .map<Map<String, dynamic>>((cand) {
+                            final v = cand['vehicle'] as Map;
+                            final plate = (cand['plate'] ?? '').toString();
+                            final vtype = (v['vehicle_type'] ?? '').toString();
+                            final double? distKm =
+                                cand['distance_km'] as double?;
+                            final int trips = (cand['total_trips'] as int?) ?? 0;
+                            final int tier = (cand['tier'] as int?) ?? 2;
+                            final int activeOrders =
+                                (cand['active_orders'] as int?) ?? 0;
 
-                        // Nhãn phụ thông tin ưu tiên theo tầng (tier)
-                        final tags = <String>[];
-                        Color tagBgColor = Colors.green.shade50;
-                        Color tagBorderColor = Colors.green.shade300;
-                        Color tagTextColor = Colors.green.shade800;
+                            // Nhãn phụ thông tin ưu tiên theo tầng (tier)
+                            final tags = <String>[];
+                            Color tagBgColor = Colors.green.shade50;
+                            Color tagBorderColor = Colors.green.shade300;
+                            Color tagTextColor = Colors.green.shade800;
 
-                        if (tier == 1) {
-                          tags.add("Duyệt hôm nay");
-                          if (distKm != null) {
-                            tags.add(
-                              distKm < 1
-                                  ? "${(distKm * 1000).toStringAsFixed(0)}m"
-                                  : "${distKm.toStringAsFixed(1)}km",
-                            );
-                          } else {
-                            tags.add("Mất GPS");
-                          }
-                          tags.add("$trips chuyến");
-                        } else if (tier == 2) {
-                          tagBgColor = Colors.amber.shade50;
-                          tagBorderColor = Colors.amber.shade400;
-                          tagTextColor = Colors.brown.shade800;
-                          tags.add("Xe rảnh");
-                          tags.add("$trips chuyến");
-                          if (distKm != null) {
-                            tags.add(
-                              distKm < 1
-                                  ? "${(distKm * 1000).toStringAsFixed(0)}m"
-                                  : "${distKm.toStringAsFixed(1)}km",
-                            );
-                          }
-                        } else {
-                          // Tier 3: Xe bận
-                          tagBgColor = Colors.red.shade50;
-                          tagBorderColor = Colors.red.shade300;
-                          tagTextColor = Colors.red.shade800;
-                          tags.add("Bận ($activeOrders đơn)");
-                          tags.add("$trips chuyến");
-                        }
+                            if (tier == 1) {
+                              tags.add("Duyệt hôm nay");
+                              if (distKm != null) {
+                                tags.add(
+                                  distKm < 1
+                                      ? "${(distKm * 1000).toStringAsFixed(0)}m"
+                                      : "${distKm.toStringAsFixed(1)}km",
+                                );
+                              } else {
+                                tags.add("Mất GPS");
+                              }
+                              tags.add("$trips chuyến");
+                            } else if (tier == 2) {
+                              tagBgColor = Colors.amber.shade50;
+                              tagBorderColor = Colors.amber.shade400;
+                              tagTextColor = Colors.brown.shade800;
+                              tags.add("Xe rảnh");
+                              tags.add("$trips chuyến");
+                              if (distKm != null) {
+                                tags.add(
+                                  distKm < 1
+                                      ? "${(distKm * 1000).toStringAsFixed(0)}m"
+                                      : "${distKm.toStringAsFixed(1)}km",
+                                );
+                              }
+                            } else {
+                              // Tier 3: Xe bận
+                              tagBgColor = Colors.red.shade50;
+                              tagBorderColor = Colors.red.shade300;
+                              tagTextColor = Colors.red.shade800;
+                              tags.add("Bận ($activeOrders đơn)");
+                              tags.add("$trips chuyến");
+                            }
 
-                        return DropdownMenuItem<String?>(
-                          value: plate,
-                          child: Row(
-                            mainAxisSize: MainAxisSize.min,
-                            children: [
-                              Flexible(
-                                child: Text(
-                                  "$plate ($vtype)",
-                                  style: const TextStyle(fontSize: 13),
-                                  overflow: TextOverflow.ellipsis,
-                                ),
-                              ),
-                              const SizedBox(width: 8),
-                              Container(
-                                padding: const EdgeInsets.symmetric(
-                                  horizontal: 5,
-                                  vertical: 1.5,
-                                ),
-                                decoration: BoxDecoration(
-                                  color: tagBgColor,
-                                  border: Border.all(
-                                    color: tagBorderColor,
-                                    width: 0.8,
-                                  ),
-                                  borderRadius: BorderRadius.circular(3),
-                                ),
-                                child: Text(
-                                  tags.join(" • "),
-                                  style: TextStyle(
-                                    fontSize: 10.5,
-                                    fontWeight: FontWeight.w500,
-                                    color: tagTextColor,
-                                  ),
-                                ),
-                              ),
-                            ],
-                          ),
-                        );
-                      }),
-                    ],
-                    onChanged: (val) {
-                      setDialogState(() => selectedVehiclePlate = val);
+                            return {
+                              'value': plate,
+                              'title': "$plate ($vtype)",
+                              'sub': '',
+                              'badge': tags.join(" • "),
+                              'badgeBg': tagBgColor,
+                              'badgeBorder': tagBorderColor,
+                              'badgeText': tagTextColor,
+                            };
+                          })
+                          .toList();
+
+                      return _buildVehicleAutocompleteInput(
+                        controller: vehicleCtrl,
+                        labelText: "Chọn xe vận chuyển",
+                        isRequired: true,
+                        hintText: vehicleOptions.isEmpty
+                            ? "Nhập biển số xe hoặc chọn từ gợi ý"
+                            : "Nhập hoặc chọn xe vận chuyển...",
+                        options: vehicleOptions,
+                      );
                     },
                   ),
+
                   if (prioritizedCandidateVehicles.isEmpty)
                     Padding(
                       padding: const EdgeInsets.only(top: 6),
@@ -12505,7 +12502,7 @@ class _DispatchSupervisorScreenState extends State<DispatchSupervisorScreen> {
                           const SizedBox(width: 6),
                           Expanded(
                             child: Text(
-                              "Không tìm thấy phương tiện nào khả dụng trong hệ thống.",
+                              "Không có gợi ý xe khả dụng. Bạn vẫn có thể nhập biển số xe tự do.",
                               style: TextStyle(
                                 fontSize: 11.5,
                                 color: Colors.orange.shade800,
@@ -12516,14 +12513,26 @@ class _DispatchSupervisorScreenState extends State<DispatchSupervisorScreen> {
                       ),
                     ),
                   // Tài xế đi theo xe (mỗi xe có 1 tài khoản tài xế phụ trách)
-                  _buildVehicleDriverInfo(selectedVehiclePlate),
+                  ValueListenableBuilder<TextEditingValue>(
+                    valueListenable: vehicleCtrl,
+                    builder: (context, val, _) {
+                      final plate = val.text.trim();
+                      return _buildVehicleDriverInfo(
+                        plate.isEmpty ? null : plate,
+                      );
+                    },
+                  ),
                 ],
               ),
             ),
           ),
           actions: [
             TextButton(
-              onPressed: () => Navigator.of(dialogCtx).pop(),
+              onPressed: () {
+                dialogClosed = true;
+                FocusManager.instance.primaryFocus?.unfocus();
+                Navigator.of(dialogCtx).pop();
+              },
               child: const Text("Hủy"),
             ),
             ElevatedButton(
@@ -12562,21 +12571,22 @@ class _DispatchSupervisorScreenState extends State<DispatchSupervisorScreen> {
                   );
                   return;
                 }
-                if (selectedVehiclePlate == null ||
-                    selectedVehiclePlate!.isEmpty) {
+                final vehiclePlate = vehicleCtrl.text.trim();
+                if (vehiclePlate.isEmpty) {
                   ScaffoldMessenger.of(context).showSnackBar(
-                    const SnackBar(content: Text("Vui lòng chọn phương tiện")),
+                    const SnackBar(content: Text("Vui lòng chọn xe vận chuyển")),
                   );
                   return;
                 }
-                if (_vehicleByPlate(
-                      selectedVehiclePlate,
-                    )?['default_driver_id'] ==
-                    null) {
+                // Xe có trong Đội xe thì phải được gán tài xế phụ trách;
+                // xe nhập tự do (chưa có trong Đội xe) thì bỏ qua kiểm tra này.
+                final pickedVehicle = _vehicleByPlate(vehiclePlate);
+                if (pickedVehicle != null &&
+                    pickedVehicle['default_driver_id'] == null) {
                   ScaffoldMessenger.of(context).showSnackBar(
                     SnackBar(
                       content: Text(
-                        "Xe $selectedVehiclePlate chưa được gán tài xế phụ trách. Vào Đội xe & Tài xế để gán trước.",
+                        "Xe $vehiclePlate chưa được gán tài xế phụ trách. Vào Đội xe & Tài xế để gán trước.",
                       ),
                     ),
                   );
@@ -12611,6 +12621,12 @@ class _DispatchSupervisorScreenState extends State<DispatchSupervisorScreen> {
                   deliveryOrig,
                 );
 
+                // Go focus de overlay goi y Autocomplete duoc go dung thu tu
+                // truoc khi dong dialog (tranh loi assertion _dependents.isEmpty).
+                FocusManager.instance.primaryFocus?.unfocus();
+                await WidgetsBinding.instance.endOfFrame;
+                dialogClosed = true;
+                if (!dialogCtx.mounted) return;
                 Navigator.of(dialogCtx).pop();
                 setState(() => _isLoading = true);
 
@@ -12632,7 +12648,7 @@ class _DispatchSupervisorScreenState extends State<DispatchSupervisorScreen> {
                   "delivery_lat": deliveryPt.lat,
                   "delivery_lng": deliveryPt.lng,
                   "delivery_radius_m": deliveryPt.radius,
-                  "assigned_vehicle_plate": selectedVehiclePlate,
+                  "assigned_vehicle_plate": vehiclePlate,
                   "cargo_weight_tons": weight,
                 };
 
@@ -12658,7 +12674,9 @@ class _DispatchSupervisorScreenState extends State<DispatchSupervisorScreen> {
           ],
         ),
       ),
-    );
+    ).then((_) {
+      _custPointsDebounce?.cancel();
+    });
   }
 
   // DIALOG: CHỈNH SỬA ĐƠN HÀNG
@@ -12705,16 +12723,10 @@ class _DispatchSupervisorScreenState extends State<DispatchSupervisorScreen> {
         : originalTransportType;
     int? selectedProductId = o['product_id'] as int?;
     String? selectedVehiclePlate = o['assigned_vehicle_plate']?.toString();
-
-    // Gợi ý lấy từ dữ liệu thật: các đơn hàng đã có trong hệ thống
-    final factorySuggestions = <String>{};
-
-    for (final ord in _orders) {
-      if (ord is Map) {
-        final f = (ord['factory_code'] ?? '').toString().trim();
-        if (f.isNotEmpty) factorySuggestions.add(f);
-      }
-    }
+    // Xe vận chuyển: nhập tự do hoặc chọn từ gợi ý (ô autocomplete)
+    final vehicleCtrl = TextEditingController(
+      text: selectedVehiclePlate ?? '',
+    );
 
     // Hàng hóa của đơn không còn trong danh mục thì vẫn giữ, hiện theo tên đã lưu
     final editProducts = _products.whereType<Map>().toList();
@@ -12726,7 +12738,7 @@ class _DispatchSupervisorScreenState extends State<DispatchSupervisorScreen> {
         'name': pn.isNotEmpty ? pn : 'Hàng hóa #$selectedProductId',
       });
     }
-    // Xe chọn được: xe đang hoạt động + xe hiện tại của đơn (kể cả khi xe đó đã Tạm ngừng)
+    // Xe gợi ý: xe đang hoạt động + xe hiện tại của đơn (kể cả khi xe đó đã Tạm ngừng)
     final currentPlate = selectedVehiclePlate;
     final editVehicles = _vehicles
         .where(
@@ -12738,17 +12750,6 @@ class _DispatchSupervisorScreenState extends State<DispatchSupervisorScreen> {
         .toList();
     if (selectedVehiclePlate != null && selectedVehiclePlate.trim().isEmpty) {
       selectedVehiclePlate = null;
-    }
-    if (selectedVehiclePlate != null &&
-        !editVehicles.any(
-          (v) =>
-              v is Map &&
-              (v['plate_number'] ?? '').toString() == selectedVehiclePlate,
-        )) {
-      editVehicles.insert(0, {
-        'plate_number': selectedVehiclePlate,
-        'vehicle_type': 'không có trong danh sách xe',
-      });
     }
 
     const transportLabels = {
@@ -12762,7 +12763,41 @@ class _DispatchSupervisorScreenState extends State<DispatchSupervisorScreen> {
       ...transportLabels,
     };
 
+    int? findEditCustomerIdByCode(String code) {
+      final c = code.trim().toLowerCase();
+      if (c.isEmpty) return null;
+      for (final cu in customers) {
+        if ((cu['code'] ?? '').toString().trim().toLowerCase() == c) {
+          final rawId = cu['id'];
+          return rawId is int ? rawId : int.tryParse(rawId.toString());
+        }
+      }
+      return null;
+    }
+
+    // Điểm nhận / giao đề xuất theo khách hàng đang chọn (mặc định: toàn danh mục).
+    // Nếu đơn đang sửa đã có Mã khách hàng, tải sẵn danh sách điểm của khách hàng đó.
+    final initialCustomerCode = (o['customer_code'] ?? '').toString().trim();
+    int? selectedCustomerId = findEditCustomerIdByCode(initialCustomerCode);
+    List<Map<String, dynamic>> custPickupCatalog = pickupCatalog;
+    List<Map<String, dynamic>> custDeliveryCatalog = deliveryCatalog;
+    if (initialCustomerCode.isNotEmpty) {
+      final (initP, initD) = await _loadLocationsForCustomer(initialCustomerCode);
+      if (!mounted) return;
+      custPickupCatalog = initP;
+      custDeliveryCatalog = initD;
+    }
+    String lastSuggestedCustomerCode = initialCustomerCode;
+    bool isLoadingCustomerPoints = false;
+    Timer? _custPointsDebounce;
+    // Co chan moi setState khi dialog dang dong - nguyen nhan chinh la cac
+    // callback async/timer van goi setDialogState sau khi dialog da dong.
+    bool dialogClosed = false;
+
     showDialog(
+      barrierDismissible: false,
+      // Chan dong dialog khi bam ra ngoai: dialog chi dong qua nut
+      // Huy/Luu (noi co dat co dialogClosed) - tranh timer bắn vào dialog đóng.
       context: context,
       builder: (dialogCtx) => StatefulBuilder(
         builder: (context, setDialogState) => AlertDialog(
@@ -12798,31 +12833,86 @@ class _DispatchSupervisorScreenState extends State<DispatchSupervisorScreen> {
                 mainAxisSize: MainAxisSize.min,
                 crossAxisAlignment: CrossAxisAlignment.stretch,
                 children: [
-                  // Ma don hang khong hien thi tren form sua (da co trong tieu de dialog),
-                  // van giu orderCodeCtrl de gui lai gia tri goc khi luu.
-                  Offstage(
-                    offstage: true,
-                    child: TextField(controller: orderCodeCtrl),
-                  ),
-                  Row(
+                  // Mã đơn hàng: Quản lý / Điều phối có thể chỉnh sửa
+                  Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      Expanded(
-                        child: _buildOrderAutocompleteInput(
-                          controller: factoryCodeCtrl,
-                          labelText: "Mã nhà máy",
-                          prefixIcon: Icons.factory_outlined,
-                          suggestions: factorySuggestions.toList(),
-                          isRequired: true,
+                      _buildFormLabel("Mã đơn hàng *"),
+                      TextField(
+                        controller: orderCodeCtrl,
+                        decoration: const InputDecoration(
+                          isDense: true,
+                          prefixIcon: Icon(
+                            Icons.receipt_long_outlined,
+                            size: 17,
+                          ),
+                          prefixIconConstraints: BoxConstraints(
+                            minWidth: 34,
+                            minHeight: 0,
+                          ),
                         ),
                       ),
                     ],
+                  ),
+                  // Mã nhà máy: ẩn khỏi form (giữ nguyên giá trị gốc khi lưu)
+                  Offstage(
+                    offstage: true,
+                    child: TextField(controller: factoryCodeCtrl),
                   ),
                   const SizedBox(height: 16),
                   // Mã khách hàng (full width)
                   _buildCustomerCodeAutocomplete(
                     controller: customerCodeCtrl,
                     customers: customers,
+                    onCustomerChanged: (code) {
+                      _custPointsDebounce?.cancel();
+                      final trimmed = code.trim();
+                      if (trimmed == lastSuggestedCustomerCode) return;
+                      final matchedCustId = findEditCustomerIdByCode(trimmed);
+                      final delayMs = (matchedCustId != null || trimmed.isEmpty) ? 50 : 300;
+                      _custPointsDebounce = Timer(Duration(milliseconds: delayMs), () async {
+                        if (dialogClosed || !dialogCtx.mounted) return;
+                        if (!dialogClosed) {
+                          setDialogState(() {
+                            isLoadingCustomerPoints = true;
+                            selectedCustomerId = matchedCustId;
+                          });
+                        }
+                        final (pList, dList) = trimmed.isEmpty
+                            ? (pickupCatalog, deliveryCatalog)
+                            : await _loadLocationsForCustomer(trimmed);
+                        if (dialogClosed || !dialogCtx.mounted) return;
+
+                        // Khi đổi sang khách hàng khác trong lúc sửa đơn:
+                        // tự động điền địa chỉ nhận / giao gắn với khách hàng mới đó nếu có.
+                        final linkedPickups = matchedCustId != null
+                            ? pList
+                                .where((loc) => _isLocationLinkedToCustomer(loc, matchedCustId))
+                                .toList()
+                            : <Map<String, dynamic>>[];
+                        final linkedDeliveries = matchedCustId != null
+                            ? dList
+                                .where((loc) => _isLocationLinkedToCustomer(loc, matchedCustId))
+                                .toList()
+                            : <Map<String, dynamic>>[];
+
+                        if (linkedPickups.isNotEmpty) {
+                          pickupAddrCtrl.text = _locationFillText(linkedPickups.first);
+                        }
+                        if (linkedDeliveries.isNotEmpty) {
+                          deliveryAddrCtrl.text = _locationFillText(linkedDeliveries.first);
+                        }
+
+                        if (!dialogClosed) {
+                          setDialogState(() {
+                            custPickupCatalog = pList;
+                            custDeliveryCatalog = dList;
+                            lastSuggestedCustomerCode = trimmed;
+                            isLoadingCustomerPoints = false;
+                          });
+                        }
+                      });
+                    },
                   ),
                   const SizedBox(height: 16),
                   // Hàng hóa (chọn từ danh mục) | Sản phẩm (điều phối nhập tay)
@@ -12863,7 +12953,7 @@ class _DispatchSupervisorScreenState extends State<DispatchSupervisorScreen> {
                                 );
                               }).toList(),
                               onChanged: (val) {
-                                setDialogState(() => selectedProductId = val);
+                                if (!dialogClosed) setDialogState(() => selectedProductId = val);
                               },
                             ),
                           ],
@@ -12946,7 +13036,7 @@ class _DispatchSupervisorScreenState extends State<DispatchSupervisorScreen> {
                                   .toList(),
                               onChanged: (val) {
                                 if (val != null) {
-                                  setDialogState(() => transportType = val);
+                                  if (!dialogClosed) setDialogState(() => transportType = val);
                                 }
                               },
                             ),
@@ -12960,21 +13050,9 @@ class _DispatchSupervisorScreenState extends State<DispatchSupervisorScreen> {
                             crossAxisAlignment: CrossAxisAlignment.start,
                             children: [
                               _buildFormLabel("Đơn vị vận chuyển"),
-                              TextField(
+                              _buildCarrierAutocompleteInput(
                                 controller: carrierNameCtrl,
-                                style: const TextStyle(fontSize: 13),
-                                decoration: const InputDecoration(
-                                  hintText: "Nhập đơn vị vận chuyển",
-                                  isDense: true,
-                                  prefixIcon: Icon(
-                                    Icons.business_outlined,
-                                    size: 17,
-                                  ),
-                                  prefixIconConstraints: BoxConstraints(
-                                    minWidth: 34,
-                                    minHeight: 0,
-                                  ),
-                                ),
+                                hintText: "Nhập đơn vị vận chuyển",
                               ),
                             ],
                           ),
@@ -12983,18 +13061,41 @@ class _DispatchSupervisorScreenState extends State<DispatchSupervisorScreen> {
                     ],
                   ),
                   const SizedBox(height: 16),
+                  // Trạng thái tải điểm đề xuất theo khách hàng
+                  if (isLoadingCustomerPoints)
+                    Padding(
+                      padding: const EdgeInsets.only(bottom: 8),
+                      child: Row(
+                        children: [
+                          const SizedBox(
+                            width: 12,
+                            height: 12,
+                            child: CircularProgressIndicator(strokeWidth: 2),
+                          ),
+                          const SizedBox(width: 8),
+                          Text(
+                            "Đang tải điểm nhận / giao của khách hàng...",
+                            style: TextStyle(
+                              fontSize: 11,
+                              color: Colors.grey.shade600,
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
                   // Điểm nhận hàng (Gợi ý tự động Autocomplete)
                   _buildLocationAutocomplete(
                     controller: pickupAddrCtrl,
                     labelText: "Nơi nhận hàng",
                     prefixIcon: Icons.warehouse_outlined,
-                    catalog: pickupCatalog,
+                    catalog: custPickupCatalog,
+                    selectedCustomerId: selectedCustomerId,
                     hintText: "Nhập hoặc chọn kho hàng...",
                     isRequired: true,
                   ),
                   _buildPointCoordsInfo(
                     pickupAddrCtrl,
-                    pickupCatalog,
+                    custPickupCatalog,
                     pickupOrig,
                   ),
                   const SizedBox(height: 16),
@@ -13003,55 +13104,56 @@ class _DispatchSupervisorScreenState extends State<DispatchSupervisorScreen> {
                     controller: deliveryAddrCtrl,
                     labelText: "Điểm giao hàng",
                     prefixIcon: Icons.location_on_outlined,
-                    catalog: deliveryCatalog,
+                    catalog: custDeliveryCatalog,
+                    selectedCustomerId: selectedCustomerId,
                     hintText: "Nhập địa chỉ hoặc chọn công trình...",
                     isRequired: true,
                   ),
                   _buildPointCoordsInfo(
                     deliveryAddrCtrl,
-                    deliveryCatalog,
+                    custDeliveryCatalog,
                     deliveryOrig,
                   ),
                   const SizedBox(height: 16),
-                  // Phương tiện chỉ định
-                  _buildFormLabel("Phương tiện vận chuyển *"),
-                  DropdownButtonFormField<String?>(
-                    isExpanded: true,
-                    value: selectedVehiclePlate,
-                    isDense: true,
-                    decoration: const InputDecoration(
-                      isDense: true,
-                      prefixIcon: Icon(Icons.fire_truck, size: 17),
-                      prefixIconConstraints: BoxConstraints(
-                        minWidth: 34,
-                        minHeight: 0,
-                      ),
-                    ),
-                    items: [
-                      ...editVehicles.map((v) {
-                        final plate = (v['plate_number'] ?? '').toString();
-                        final vtype = (v['vehicle_type'] ?? '').toString();
-                        return DropdownMenuItem<String?>(
-                          value: plate,
-                          child: Text(
-                            "$plate ($vtype)",
-                            style: const TextStyle(fontSize: 13),
-                          ),
-                        );
-                      }),
-                    ],
-                    onChanged: (val) {
-                      setDialogState(() => selectedVehiclePlate = val);
-                    },
+                  // Xe vận chuyển: nhập tự do hoặc chọn từ gợi ý (autocomplete)
+                  _buildVehicleAutocompleteInput(
+                    controller: vehicleCtrl,
+                    labelText: "Chọn xe vận chuyển",
+                    isRequired: true,
+                    hintText: "Nhập hoặc chọn xe vận chuyển...",
+                    options: editVehicles
+                        .map<Map<String, dynamic>>((v) {
+                          final plate = (v['plate_number'] ?? '').toString();
+                          final vtype = (v['vehicle_type'] ?? '').toString();
+                          final isResting = _isVehicleInactive(v);
+                          return {
+                            'value': plate,
+                            'title': "$plate ($vtype)",
+                            'sub': '',
+                            'badge': isResting ? "Tạm ngừng" : '',
+                            'badgeBg': Colors.orange.shade50,
+                            'badgeBorder': Colors.orange.shade300,
+                            'badgeText': Colors.orange.shade800,
+                          };
+                        })
+                        .toList(),
                   ),
                   // Tài xế đi theo xe: giữ xe cũ thì giữ tài xế hiện tại của đơn
-                  _buildVehicleDriverInfo(
-                    selectedVehiclePlate,
-                    keepDriverName:
-                        selectedVehiclePlate ==
-                            o['assigned_vehicle_plate']?.toString()
-                        ? (o['driver_name'] ?? '').toString()
-                        : null,
+                  ValueListenableBuilder<TextEditingValue>(
+                    valueListenable: vehicleCtrl,
+                    builder: (context, val, _) {
+                      final plate = val.text.trim();
+                      return _buildVehicleDriverInfo(
+                        plate.isEmpty ? null : plate,
+                        keepDriverName:
+                            plate ==
+                                (o['assigned_vehicle_plate'] ?? '')
+                                    .toString()
+                                    .trim()
+                            ? (o['driver_name'] ?? '').toString()
+                            : null,
+                      );
+                    },
                   ),
                 ],
               ),
@@ -13059,7 +13161,11 @@ class _DispatchSupervisorScreenState extends State<DispatchSupervisorScreen> {
           ),
           actions: [
             TextButton(
-              onPressed: () => Navigator.of(dialogCtx).pop(),
+              onPressed: () {
+                dialogClosed = true;
+                FocusManager.instance.primaryFocus?.unfocus();
+                Navigator.of(dialogCtx).pop();
+              },
               child: const Text("Hủy"),
             ),
             ElevatedButton(
@@ -13128,6 +13234,12 @@ class _DispatchSupervisorScreenState extends State<DispatchSupervisorScreen> {
                   deliveryOrig,
                 );
 
+                // Go focus de overlay goi y Autocomplete duoc go dung thu tu
+                // truoc khi dong dialog (tranh loi assertion _dependents.isEmpty).
+                FocusManager.instance.primaryFocus?.unfocus();
+                await WidgetsBinding.instance.endOfFrame;
+                dialogClosed = true;
+                if (!dialogCtx.mounted) return;
                 Navigator.of(dialogCtx).pop();
                 setState(() => _isLoading = true);
 
@@ -13150,7 +13262,7 @@ class _DispatchSupervisorScreenState extends State<DispatchSupervisorScreen> {
                   "delivery_lat": deliveryPt.lat,
                   "delivery_lng": deliveryPt.lng,
                   "delivery_radius_m": deliveryPt.radius,
-                  "assigned_vehicle_plate": selectedVehiclePlate,
+                  "assigned_vehicle_plate": vehicleCtrl.text.trim(),
                   "cargo_weight_tons": weight,
                 };
 
@@ -13176,7 +13288,9 @@ class _DispatchSupervisorScreenState extends State<DispatchSupervisorScreen> {
           ],
         ),
       ),
-    );
+    ).then((_) {
+      _custPointsDebounce?.cancel();
+    });
   }
 
   String _normalizeOrderStatus(String raw) {
@@ -13449,9 +13563,6 @@ class _DispatchSupervisorScreenState extends State<DispatchSupervisorScreen> {
     final o = orderData is Map
         ? Map<String, dynamic>.from(orderData)
         : <String, dynamic>{};
-    final pumpBeforeUrl = (o['pump_slip_before_photo_url'] ?? '')
-        .toString()
-        .trim();
     final weighUrl = (o['weigh_slip_photo_url'] ?? '').toString().trim();
     final arrivalUrl = (o['arrival_photo_url'] ?? '').toString().trim();
     final delivUrl = (o['delivery_slip_photo_url'] ?? '').toString().trim();
@@ -13539,28 +13650,6 @@ class _DispatchSupervisorScreenState extends State<DispatchSupervisorScreen> {
       runSpacing: 4,
       crossAxisAlignment: WrapCrossAlignment.center,
       children: [
-        badge(
-          shortLabel: "Trước bơm",
-          fullTitle: "Bơm hàng - Trước khi bơm (Tài xế)",
-          url: pumpBeforeUrl,
-          icon: Icons.local_gas_station_outlined,
-          activeColor: const Color(0xFF0284C7),
-          gpsLat: _asDouble(
-            o['pump_slip_before_gps_lat'] ?? o['pump_before_gps_lat'],
-          ),
-          gpsLng: _asDouble(
-            o['pump_slip_before_gps_lng'] ?? o['pump_before_gps_lng'],
-          ),
-          gpsAccuracy: _asDouble(
-            o['pump_slip_before_gps_accuracy'] ?? o['pump_before_gps_accuracy'],
-          ),
-          gpsCapturedAt:
-              (o['pump_slip_before_gps_captured_at'] ??
-                      o['pump_before_gps_captured_at'] ??
-                      '')
-                  .toString(),
-          photoGeoLabel: _geoSummary(o, 'pump_slip_before'),
-        ),
         badge(
           shortLabel: "Cân",
           fullTitle: "Phiếu cân hàng (Tài xế)",

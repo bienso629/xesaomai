@@ -21,7 +21,9 @@ import psycopg2
 from psycopg2.extras import RealDictCursor
 from fastapi import FastAPI, HTTPException, Depends, status, UploadFile, File, WebSocket, WebSocketDisconnect, Body, Request
 from fastapi.staticfiles import StaticFiles
-from fastapi.responses import HTMLResponse
+from importlib import import_module
+from io import BytesIO
+from fastapi.responses import HTMLResponse, PlainTextResponse
 from fastapi.security import OAuth2PasswordBearer, OAuth2PasswordRequestForm
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 from jose import JWTError, jwt
@@ -224,6 +226,8 @@ class LocationCreate(BaseModel):
     longitude: Optional[float] = None
     radius_m: Optional[int] = None
     note: Optional[str] = None
+    # Danh sách khách hàng liên kết (multiselect): rỗng / bỏ trống = điểm dùng chung cho mọi khách hàng
+    customer_ids: Optional[List[int]] = None
 
 class LocationUpdate(BaseModel):
     name: Optional[str] = None
@@ -233,10 +237,12 @@ class LocationUpdate(BaseModel):
     longitude: Optional[float] = None
     radius_m: Optional[int] = None
     note: Optional[str] = None
+    customer_ids: Optional[List[int]] = None
 
 class LocationSuggestionApprove(BaseModel):
     name: Optional[str] = None
     address: Optional[str] = None
+    customer_ids: Optional[List[int]] = None
     kind: Optional[str] = "BOTH"
     note: Optional[str] = None
 
@@ -380,6 +386,14 @@ class MilestoneArrive(BaseModel):
     plate_number: str
     arrive_lat: float
     arrive_lng: float
+
+class MilestonePumpDone(BaseModel):
+    order_id: int
+    plate_number: str
+    pump_done_lat: float
+    pump_done_lng: float
+    wait_reason_code: Optional[str] = None
+    wait_reason_note: Optional[str] = None
 
 class OrderAttachmentSubmit(BaseModel):
     # Hình chụp chứng từ / sự cố gắn vào đơn hàng (POST /api/v1/orders/{order_id}/attachment)
@@ -815,7 +829,33 @@ LOCATIONS_DDL = [
     "CREATE INDEX IF NOT EXISTS ix_location_suggestions_status ON location_suggestions(status)",
     # Bán kính nhận diện mặc định của điểm nhận / giao: 50 m
     "ALTER TABLE locations ALTER COLUMN radius_m SET DEFAULT 100",
+    # Khách hàng liên kết với điểm nhận / giao (multiselect): INT[] rỗng = dùng chung cho mọi khách hàng
+    "ALTER TABLE locations ADD COLUMN IF NOT EXISTS customer_ids INTEGER[] DEFAULT '{}' NOT NULL",
 ]
+
+def ensure_order_vehicle_free_text():
+    """Cho phép ô 'Chọn xe vận chuyển' nhập biển số tự do: bỏ ràng buộc FK
+    orders.assigned_vehicle_plate -> vehicles(plate_number) nếu đang tồn tại."""
+    try:
+        conn = get_db()
+        cur = conn.cursor()
+        cur.execute("""
+            SELECT conname
+            FROM pg_constraint
+            WHERE conrelid = 'orders'::regclass
+              AND contype = 'f'
+              AND confrelid = 'vehicles'::regclass
+        """)
+        for row in cur.fetchall():
+            try:
+                cur.execute(f'ALTER TABLE orders DROP CONSTRAINT IF EXISTS "{row["conname"]}"')
+            except Exception:
+                pass
+        conn.commit()
+        cur.close()
+        conn.close()
+    except Exception as e:
+        print(f"[orders] Không bỏ được FK assigned_vehicle_plate -> vehicles: {e}")
 
 def ensure_locations_tables():
     try:
@@ -836,6 +876,7 @@ def _startup_ensure_customers():
     ensure_vehicle_gps_columns()
     ensure_locations_tables()
     ensure_driver_activity_logs_table()
+    ensure_order_vehicle_free_text()
 
 # ----------------- REALTIME WEBSOCKET & DEVICE TOKEN (PUSH NOTIFICATION) -----------------
 
@@ -1012,6 +1053,16 @@ def health_check():
     }
 
 # Endpoint Upload hình ảnh lưu trữ trên server
+@app.get("/health")
+def health_check():
+    return {
+        "status": "online",
+        "service": "Taxi Logistics Backend API",
+        "auth": "JWT Bearer Token Enabled",
+        "database": "PostgreSQL with PostGIS",
+        "message": "Hệ thống sẵn sàng phục vụ các vai trò với phiên đăng nhập an toàn"
+    }
+
 @app.post("/api/v1/upload/image")
 async def upload_image(file: UploadFile = File(...)):
     try:
@@ -1558,6 +1609,160 @@ def delete_product(product_id: int, current_user: dict = Depends(get_current_use
     except Exception as e:
         conn.rollback(); conn.close()
         raise HTTPException(status_code=400, detail=str(e))
+
+
+# ==================== IMPORT KHÁCH HÀNG TỪ EXCEL ====================
+# File mẫu: "cấu trúc khách hàng.xlsx" (8 cột):
+#   A MÃ KH CHI TIẾT | B Mảng | C Tên KH | D Điểm giao | E Điểm đi
+#   F Sản phẩm | G Group ID | H Tên nhóm Zalo thực tế
+# Quy tắc dữ liệu: tìm tiêu đề "MÃ KH CHI TIẾT" động (bỏ qua các dòng ghi chú đầu file)
+IMPORT_EXCEL_HEADERS = ["MÃ KH CHI TIẾT", "Mảng", "Tên KH", "Điểm giao", "Điểm đi", "Sản phẩm", "Group ID", "Tên nhóm Zalo thực tế"]
+
+
+def _import_excel_normalize_header(value) -> str:
+    """Chuẩn hóa tiêu đề cột: bỏ dấu, bỏ khoảng trắng thừa để đối chiếu linh hoạt."""
+    if value is None:
+        return ""
+    text = unicodedata.normalize("NFD", str(value))
+    text = "".join(c for c in text if unicodedata.category(c) != "Mn")
+    return " ".join(text.lower().split())
+
+
+def _import_excel_find_header_row(ws):
+    """Tìm dòng tiêu đề trong 15 dòng đầu (tác giả file ghi chú quy tắc trước, tiêu đề ở dòng 6).
+    Tiêu đề thật phải có đủ các cột: MÃ KH CHI TIẾT | Mảng | Tên KH | ... (khác dòng ghi chú chỉ có 1 ô)."""
+    for i, row in enumerate(ws.iter_rows(min_row=1, max_row=15, max_col=8, values_only=True), 1):
+        if not row:
+            continue
+        a = _import_excel_normalize_header(row[0])
+        b = _import_excel_normalize_header(row[1] if len(row) > 1 else None)
+        if a.startswith("ma kh chi tiet") and b == "mang":
+            return i
+    return None
+
+
+def _import_excel_parse_date(value):
+    """Excel ghi ngày dạng dd/mm/yyyy (tách từ chuỗi mã, ví dụ BỘ MÃ CHỐT 12/09/2026)."""
+    if value is None:
+        return None
+    return str(value).strip()
+
+
+def _import_excel_upsert_customer(cur, code, name, extra):
+    """Upsert khách hàng theo mã (kích hoạt lại nếu mã từng bị xóa mềm). Trả về ('inserted'|'updated')."""
+    cur.execute("SELECT id, is_active, name FROM customers WHERE LOWER(code) = LOWER(%s)", (code,))
+    dup = cur.fetchone()
+    values = [code, name] + [extra.get(f) for f in CUSTOMER_FIELDS[2:]]
+    if dup and dup["is_active"]:
+        # Đã tồn tại: chỉ cập nhật nếu có thông tin mới (không ghi đè dữ liệu trống)
+        sets, params = [], []
+        for f in ("name", "tax_code", "contact_person", "phone", "email", "address", "note"):
+            v = extra.get(f) if f != "name" else name
+            if v:
+                sets.append(f"{f} = %s")
+                params.append(v)
+        if sets:
+            cur.execute(
+                f"UPDATE customers SET {', '.join(sets)}, updated_at = CURRENT_TIMESTAMP WHERE id = %s",
+                params + [dup["id"]],
+            )
+        return "updated"
+    if dup:
+        cur.execute(
+            f"""UPDATE customers SET {', '.join(f + ' = %s' for f in CUSTOMER_FIELDS)},
+                is_active = TRUE, updated_at = CURRENT_TIMESTAMP WHERE id = %s""",
+            values + [dup["id"]],
+        )
+        return "updated"
+    cur.execute(
+        f"""INSERT INTO customers ({', '.join(CUSTOMER_FIELDS)})
+            VALUES ({', '.join(['%s'] * len(CUSTOMER_FIELDS))})""",
+        values,
+    )
+    return "inserted"
+
+
+def _import_excel_learn_group(cur, group_id, group_name):
+    """Học tên nhóm Zalo thực tế từ file vào bảng nhóm hội thoại (không đụng updated_at đang chạy webhook)."""
+    if not group_id:
+        return False
+    cur.execute("SELECT name FROM zalo_oa_chat_groups WHERE group_id = %s", (group_id,))
+    row = cur.fetchone()
+    if row:
+        if (row["name"] or "").strip() != (group_name or "").strip() and group_name:
+            cur.execute("UPDATE zalo_oa_chat_groups SET name = %s WHERE group_id = %s", (group_name, group_id))
+        return False
+    if not group_name:
+        return False
+    cur.execute(
+        "INSERT INTO zalo_oa_chat_groups (group_id, name, type, member_count) VALUES (%s, %s, %s, %s)",
+        (group_id, group_name, "import", 0),
+    )
+    return True
+
+
+@app.post("/api/v1/customers/import-excel")
+def import_customers_excel(file: UploadFile = File(...), current_user: dict = Depends(require_dispatch_staff)):
+    """Import danh sách khách hàng từ file Excel theo cấu trúc "cấu trúc khách hàng.xlsx"."""
+    try:
+        openpyxl = import_module("openpyxl")
+    except ImportError:
+        raise HTTPException(status_code=503, detail="Máy chủ chưa cài openpyxl. Chạy: pip install openpyxl")
+    raw = file.file.read()
+    if not raw:
+        raise HTTPException(status_code=400, detail="File rỗng")
+    try:
+        wb = openpyxl.load_workbook(BytesIO(raw), data_only=True, read_only=True)
+    except Exception:
+        raise HTTPException(status_code=400, detail="Không đọc được file Excel. Yêu cầu file .xlsx theo mẫu")
+    ws = wb.active
+    header_row = _import_excel_find_header_row(ws)
+    if header_row is None:
+        raise HTTPException(status_code=400, detail='Không tìm thấy dòng tiêu đề "MÃ KH CHI TIẾT" trong 15 dòng đầu')
+    inserted = updated = groups_learned = skipped = 0
+    skipped_details: List[str] = []
+    errors: List[str] = []
+    conn = get_db()
+    cur = conn.cursor(cursor_factory=RealDictCursor)
+    try:
+        for row in ws.iter_rows(min_row=header_row + 1, max_col=8, values_only=True):
+            code, mang, ten_kh, diem_giao, diem_di, san_pham, group_id, group_name = [(_clean(v) if v is not None else None) for v in (list(row) + [None] * 8)[:8]]
+            if not code:
+                continue
+            if not ten_kh:
+                skipped += 1
+                if len(skipped_details) < 20:
+                    skipped_details.append(f"Dòng {code}: thiếu Tên KH")
+                continue
+            try:
+                address = " - ".join(x for x in (diem_giao, diem_di, san_pham) if x)
+                extra = {"tax_code": None, "contact_person": None, "phone": None, "email": None, "address": address, "note": mang}
+                kind = _import_excel_upsert_customer(cur, code, ten_kh, extra)
+                if kind == "inserted":
+                    inserted += 1
+                else:
+                    updated += 1
+                if _import_excel_learn_group(cur, group_id, group_name):
+                    groups_learned += 1
+            except Exception as e:
+                conn.rollback()
+                errors.append(f"{code}: {str(e)[:120]}")
+        conn.commit()
+    except Exception as e:
+        conn.rollback()
+        raise HTTPException(status_code=400, detail=f"Lỗi import: {str(e)[:200]}")
+    finally:
+        cur.close()
+        conn.close()
+    return {
+        "inserted": inserted,
+        "updated": updated,
+        "groups_learned": groups_learned,
+        "skipped": skipped,
+        "skipped_details": skipped_details,
+        "errors": errors,
+        "total": inserted + updated + skipped,
+    }
 
 @app.get("/api/v1/customers")
 def get_customers(current_user: dict = Depends(require_dispatch_staff)):
@@ -2423,6 +2628,42 @@ def _upsert_chat_group_member(gid: str, uid: str):
         conn.close()
 
 
+@app.get("/api/v1/zalo-oa/webhook")
+def zalo_oa_webhook_verify(request: Request):
+    """Zalo kiểm tra URL webhook khi cấu hình: trả challenge nếu có, luôn 200."""
+    challenge = (
+        request.query_params.get("hub.challenge")
+        or request.query_params.get("hub_challenge")
+        or request.query_params.get("challenge")
+        or request.query_params.get("verify_token")
+        or ""
+    )
+    if challenge:
+        return PlainTextResponse(challenge)
+    return {"status": "webhook-ready"}
+
+
+@app.post("/api/v1/zalo-oa/webhook-verify")
+async def zalo_oa_webhook_verify_post(request: Request):
+    """Zalo một số loại gửi POST để xác thực: echo lại challenge trong query hoặc body."""
+    challenge = (
+        request.query_params.get("hub.challenge")
+        or request.query_params.get("hub_challenge")
+        or request.query_params.get("challenge")
+        or ""
+    )
+    if not challenge:
+        try:
+            data = await request.json()
+            if isinstance(data, dict):
+                challenge = str(data.get("challenge") or data.get("hub_challenge") or data.get("hub.challenge") or "")
+        except Exception:
+            challenge = ""
+    if challenge:
+        return PlainTextResponse(challenge)
+    return {"status": "webhook-ready"}
+
+
 @app.post("/api/v1/zalo-oa/webhook")
 def zalo_oa_webhook(payload: dict = Body(default={})):
     """Nhận sự kiện Zalo đẩy về để học group_id của nhóm chat có OA.
@@ -2813,8 +3054,9 @@ def get_vehicles(include_inactive: bool = False, current_user: dict = Depends(ge
     sync_fleet_vehicles()
     conn = get_db()
     cur = conn.cursor()
-    where = ("v.gps_provider IS NOT NULL" if include_inactive
-             else "COALESCE(v.in_fleet, TRUE) = TRUE")
+    # include_inactive=true: trả TOÀN BỘ đội xe (đang hoạt động + tạm ngừng/báo nghỉ),
+    # không lọc theo gps_provider vì xe báo nghỉ thường đã bị gỡ gps_provider (NULL).
+    where = ("TRUE" if include_inactive else "COALESCE(v.in_fleet, TRUE) = TRUE")
     cur.execute(f"""
         SELECT v.*, u.full_name as driver_name, u.username as driver_username, u.phone as driver_phone 
         FROM vehicles v 
@@ -2981,6 +3223,18 @@ def update_vehicle(plate_number: str, v: VehicleUpdate, current_user: dict = Dep
             cur.close()
             conn.close()
             raise HTTPException(status_code=404, detail="Không tìm thấy phương tiện")
+        # Phân quyền: Quản lý/Điều phối/Admin được sửa mọi xe. Tài xế chỉ được đổi
+        # trạng thái của xe mình đang phụ trách (luồng Báo nghỉ/Kích hoạt app Tài xế).
+        _u_roles = [str(r).lower() for r in current_user.get("roles", [])]
+        _is_staff = current_user.get("username") == "admin" or any(
+            r in ("admin", "manager", "dispatcher") for r in _u_roles
+        )
+        if not _is_staff:
+            _my_vehicle = exist.get("default_driver_id") is not None and exist.get("default_driver_id") == current_user.get("id")
+            if not _my_vehicle:
+                cur.close()
+                conn.close()
+                raise HTTPException(status_code=403, detail="Tài xế chỉ được đổi trạng thái phương tiện mình đang phụ trách")
 
         updates = []
         params = []
@@ -3802,6 +4056,44 @@ def get_locations(kind: Optional[str] = None, current_user: dict = Depends(requi
     conn.close()
     return rows
 
+@app.get("/api/v1/locations/by-customer")
+def get_locations_by_customer(
+    customer_code: Optional[str] = None,
+    kind: Optional[str] = None,
+    current_user: dict = Depends(require_dispatch_staff),
+):
+    """Gợi ý điểm nhận / giao theo khách hàng: trả về các điểm liên kết trực tiếp
+    với khách hàng (customer_ids) hoặc điểm dùng chung (không liên kết khách hàng nào)."""
+    conn = get_db()
+    cur = conn.cursor()
+    try:
+        params: list = []
+        sql = "SELECT * FROM locations WHERE is_active = TRUE"
+        if customer_code and str(customer_code).strip():
+            cur.execute("SELECT id FROM customers WHERE LOWER(code) = LOWER(%s) LIMIT 1", (str(customer_code).strip(),))
+            row = cur.fetchone()
+            if row:
+                sql += " AND (%s = ANY(customer_ids) OR cardinality(customer_ids) = 0)"
+                params.append(int(row["id"]))
+            else:
+                # Mã khách hàng không có trong danh mục: chỉ trả về điểm dùng chung
+                sql += " AND cardinality(customer_ids) = 0"
+        if kind:
+            k = _clean_kind(kind)
+            sql += " AND (kind = %s OR kind = 'BOTH')"
+            params.append(k)
+        sql += " ORDER BY name ASC, id ASC"
+        cur.execute(sql, tuple(params))
+        rows = cur.fetchall()
+        cur.close()
+        conn.close()
+        return rows
+    except HTTPException:
+        conn.rollback(); conn.close(); raise
+    except Exception as e:
+        conn.rollback(); conn.close()
+        raise HTTPException(status_code=400, detail=str(e))
+
 @app.post("/api/v1/locations", status_code=status.HTTP_201_CREATED)
 def create_location(loc: LocationCreate, current_user: dict = Depends(require_dispatch_staff)):
     name = _clean(loc.name)
@@ -3815,10 +4107,11 @@ def create_location(loc: LocationCreate, current_user: dict = Depends(require_di
         cur.execute("SELECT id FROM locations WHERE is_active = TRUE AND LOWER(name) = LOWER(%s)", (name,))
         if cur.fetchone():
             raise HTTPException(status_code=400, detail=f"Điểm '{name}' đã có trong danh mục")
+        cust_ids = sorted({int(i) for i in (loc.customer_ids or []) if int(i) > 0})
         cur.execute(
-            """INSERT INTO locations (name, address, kind, latitude, longitude, radius_m, note, source)
-               VALUES (%s, %s, %s, %s, %s, %s, %s, 'MANUAL') RETURNING *""",
-            (name, _clean(loc.address), kind, loc.latitude, loc.longitude, loc.radius_m or DEFAULT_ORDER_POINT_RADIUS_M, _clean(loc.note)),
+            """INSERT INTO locations (name, address, kind, latitude, longitude, radius_m, note, source, customer_ids)
+               VALUES (%s, %s, %s, %s, %s, %s, %s, 'MANUAL', %s) RETURNING *""",
+            (name, _clean(loc.address), kind, loc.latitude, loc.longitude, loc.radius_m or DEFAULT_ORDER_POINT_RADIUS_M, _clean(loc.note), cust_ids),
         )
         row = cur.fetchone()
         conn.commit()
@@ -3866,6 +4159,8 @@ def update_location(location_id: int, loc: LocationUpdate, current_user: dict = 
             fields.append("radius_m = %s"); params.append(max(50, int(loc.radius_m)))
         if loc.note is not None:
             fields.append("note = %s"); params.append(_clean(loc.note))
+        if loc.customer_ids is not None:
+            fields.append("customer_ids = %s"); params.append(sorted({int(i) for i in loc.customer_ids if int(i) > 0}))
         if fields:
             params.append(location_id)
             cur.execute(
@@ -4275,11 +4570,12 @@ def approve_location_suggestion(suggestion_id: int, body: LocationSuggestionAppr
         cur.execute("SELECT id FROM locations WHERE is_active = TRUE AND LOWER(name) = LOWER(%s)", (name,))
         if cur.fetchone():
             raise HTTPException(status_code=400, detail=f"Điểm '{name}' đã có trong danh mục")
+        cust_ids = sorted({int(i) for i in (body.customer_ids or []) if int(i) > 0})
         cur.execute(
-            """INSERT INTO locations (name, address, kind, latitude, longitude, radius_m, note, source)
-               VALUES (%s, %s, %s, %s, %s, %s, %s, %s) RETURNING *""",
+            """INSERT INTO locations (name, address, kind, latitude, longitude, radius_m, note, source, customer_ids)
+               VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s) RETURNING *""",
             (name, _clean(body.address) or sug["address"], _clean_kind(body.kind),
-             sug["latitude"], sug["longitude"], DEFAULT_ORDER_POINT_RADIUS_M, _clean(body.note), "GPS"),
+             sug["latitude"], sug["longitude"], DEFAULT_ORDER_POINT_RADIUS_M, _clean(body.note), "GPS", cust_ids),
         )
         loc = cur.fetchone()
         cur.execute(
@@ -4469,17 +4765,16 @@ def _vehicle_resting_reason(plate: str) -> str:
 
 
 # 6. Quản lý Đơn hàng (Orders)
-def _vehicle_driver_id(cur, plate: Optional[str]) -> int:
-    """Mỗi xe có một tài khoản tài xế phụ trách: lấy tài xế của đơn theo xe."""
+def _vehicle_driver_id(cur, plate: Optional[str]) -> Optional[int]:
+    """Mỗi xe có một tài khoản tài xế phụ trách: lấy tài xế của đơn theo xe.
+    Xe nhập tự do (chưa có trong Đội xe) thì đơn chưa có tài xế (None)."""
     plate = (plate or "").strip()
     if not plate:
-        raise HTTPException(status_code=400, detail="Vui lòng chọn phương tiện vận chuyển")
+        raise HTTPException(status_code=400, detail="Vui lòng chọn xe vận chuyển")
     cur.execute("SELECT default_driver_id FROM vehicles WHERE plate_number = %s", (plate,))
     row = cur.fetchone()
     if not row:
-        raise HTTPException(status_code=400, detail=f"Không tìm thấy xe {plate}")
-    if not row["default_driver_id"]:
-        raise HTTPException(status_code=400, detail=f"Xe {plate} chưa được gán tài xế phụ trách. Vào Đội xe & Tài xế để gán trước.")
+        return None
     return row["default_driver_id"]
 
 @app.post("/api/v1/orders", status_code=status.HTTP_201_CREATED)
@@ -4491,6 +4786,7 @@ def create_order(o: OrderCreate, current_user: dict = Depends(get_current_user))
     try:
         o.assigned_driver_id = _vehicle_driver_id(cur, o.assigned_vehicle_plate)
         # Xe đang "Tạm ngừng hoạt động" (Báo nghỉ) thì không được nhận đơn hàng mới
+        # (chỉ áp dụng với xe có trong Đội xe; xe nhập tự do sẽ không tra thấy xe)
         if _vehicle_is_resting(cur, o.assigned_vehicle_plate):
             raise HTTPException(status_code=409, detail=_vehicle_resting_reason(o.assigned_vehicle_plate))
         cur.execute(
@@ -4597,6 +4893,7 @@ def update_order(order_id: int, o: OrderUpdate, current_user: dict = Depends(get
             new_plate = o.assigned_vehicle_plate.strip()
             if new_plate != (existing.get("assigned_vehicle_plate") or "").strip():
                 # Xe đang "Tạm ngừng hoạt động" (Báo nghỉ) thì không thể gán đơn hàng cho xe đó
+                # (chỉ áp dụng với xe có trong Đội xe; xe nhập tự do sẽ không tra thấy xe)
                 if _vehicle_is_resting(cur, new_plate):
                     raise HTTPException(status_code=409, detail=_vehicle_resting_reason(new_plate))
                 fields.append("assigned_vehicle_plate = %s")
@@ -4915,6 +5212,37 @@ def milestone_arrive(m: MilestoneArrive, current_user: dict = Depends(get_curren
         conn.rollback()
         conn.close()
         raise HTTPException(status_code=400, detail=str(e))
+
+
+@app.post("/api/v1/trip/pump-done")
+def milestone_pump_done(m: MilestonePumpDone, current_user: dict = Depends(get_current_user)):
+    conn = get_db()
+    cur = conn.cursor()
+    cur.execute(
+        "SELECT * FROM moc_chuyen WHERE order_id = %s ORDER BY id DESC LIMIT 1",
+        (m.order_id,)
+    )
+    rec = cur.fetchone()
+    if not rec or not rec["arrive_time"]:
+        conn.close()
+        raise HTTPException(status_code=400, detail="Chua ghi nhan moc gio DEN cua don hang nay")
+
+    cur.execute("""
+        UPDATE moc_chuyen 
+        SET pump_done_time = CURRENT_TIMESTAMP,
+            pump_done_lat = %s,
+            pump_done_lng = %s,
+            wait_duration_minutes = EXTRACT(EPOCH FROM (CURRENT_TIMESTAMP - arrive_time))/60,
+            wait_reason_code = %s,
+            wait_reason_note = %s
+        WHERE id = %s RETURNING *
+    """, (m.pump_done_lat, m.pump_done_lng, m.wait_reason_code, m.wait_reason_note, rec["id"]))
+    
+    conn.commit()
+    updated = cur.fetchone()
+    cur.close()
+    conn.close()
+    return {"status": "success", "message": "Da ghi nhan moc gio BOM XONG", "record": updated}
 
 # 10. QUẢN LÝ CA TRỰC ĐIỀU PHỐI (DISPATCHER SHIFTS)
 @app.get("/api/v1/shifts/active")
