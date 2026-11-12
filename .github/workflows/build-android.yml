@@ -56,11 +56,11 @@ jobs:
 
       - name: Build App Bundle (.aab)
         working-directory: ./app_tai_xe
-        run: flutter build appbundle --release --build-number=$BUILD_NUMBER
+        run: flutter build appbundle --release --android-skip-build-dependency-validation --build-number=$BUILD_NUMBER
 
       - name: Build APK (cài thử trực tiếp)
         working-directory: ./app_tai_xe
-        run: flutter build apk --release --build-number=$BUILD_NUMBER
+        run: flutter build apk --release --android-skip-build-dependency-validation --build-number=$BUILD_NUMBER
 
       - name: Đổi tên file
         run: |
