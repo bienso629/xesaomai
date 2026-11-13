@@ -912,26 +912,34 @@ class _DriverScheduleScreenState extends State<DriverScheduleScreen> {
               ),
             const SizedBox(height: 12),
 
-            // Trạng thái 2: PHIẾU CÂN (so GPS với Nơi nhận hàng)
-            // Không còn phụ thuộc Bước 1: tài xế có thể chụp phiếu cân bất cứ lúc nào.
+            // Bước 1: PHIẾU CÂN (so GPS với Nơi nhận hàng)
             _buildMilestoneStepRow(
               title: "1. Chụp & Gửi Phiếu Cân",
               timeText: (trip?.weighSlipPhotoUrl != null)
-                  ? "Khối lượng: ${trip!.weighTonnage} Tấn (Đã đồng bộ Zalo OA)"
-                  : "Chụp phiếu cân OCR khối lượng & mã lệnh (tại nơi nhận hàng)",
+                  ? (trip!.weighTonnage != null && trip.weighTonnage! > 0
+                      ? "Khối lượng: ${trip.weighTonnage} Tấn (Đã gửi Điều phối)"
+                      : "Đã chụp & gửi Phiếu cân (kèm GPS)")
+                  : "Chụp phiếu cân khối lượng & mã lệnh (tại nơi nhận hàng)",
               isRecorded: trip?.weighSlipPhotoUrl != null,
-              buttonLabel: "Cân",
+              buttonLabel: trip?.weighSlipPhotoUrl != null ? "Chụp lại" : "Cân",
               isDisabled: stepDisabled,
-              onPressed: () => SlipCaptureScreen.show(
-                context,
-                slipType: 'weigh',
-                orderCode: trip?.orderCode ?? '',
-              ),
+              onPressed: () async {
+                final updated = await SlipCaptureScreen.show(
+                  context,
+                  slipType: 'weigh',
+                  orderId: trip?.orderId,
+                  orderCode: trip?.orderCode ?? '',
+                  vehiclePlate: state.selectedPlate,
+                  orderData: trip?.rawOrder ?? state.activeOrder,
+                );
+                if (updated != null && mounted) {
+                  await _loadDriverData(silent: true);
+                }
+              },
             ),
             const SizedBox(height: 8),
 
-            // Trạng thái 3: ĐẾN ĐIỂM GIAO (so GPS với Điểm giao hàng)
-            // Không còn phụ thuộc Bước 2: hiển thị mọi lúc khi có đơn được gắn.
+            // Bước 2: ĐẾN ĐIỂM GIAO (so GPS với Điểm giao hàng)
             _buildMilestoneStepRow(
               title: "2. Chụp ảnh ĐẾN ĐIỂM GIAO",
               timeText: (trip?.arrivalPhotoUrl != null)
@@ -940,31 +948,78 @@ class _DriverScheduleScreenState extends State<DriverScheduleScreen> {
               isRecorded: trip?.arrivalPhotoUrl != null,
               buttonLabel: trip?.arrivalPhotoUrl != null ? "Chụp lại" : "Đến giao",
               isDisabled: stepDisabled,
-              onPressed: () => SlipCaptureScreen.show(
-                context,
-                slipType: 'arrival',
-                orderId: trip?.orderId,
-                orderCode: trip?.orderCode ?? '',
-              ),
+              onPressed: () async {
+                final updated = await SlipCaptureScreen.show(
+                  context,
+                  slipType: 'arrival',
+                  orderId: trip?.orderId,
+                  orderCode: trip?.orderCode ?? '',
+                  vehiclePlate: state.selectedPlate,
+                  orderData: trip?.rawOrder ?? state.activeOrder,
+                );
+                if (updated != null && mounted) {
+                  await _loadDriverData(silent: true);
+                }
+              },
             ),
             const SizedBox(height: 8),
 
-            // Trạng thái 4: GIAO (Chụp & gửi Phiếu Giao Hàng)
-            // Không còn phụ thuộc Bước 3: cả 4 bước độc lập, tài xế chụp được bước nào chụp bước đó.
+            // Bước 3: GIAO (Chụp & gửi Phiếu Giao Hàng)
             _buildMilestoneStepRow(
               title: "3. Chụp & Gửi Phiếu Giao Hàng",
               timeText: (trip?.deliverySlipPhotoUrl != null)
-                  ? "Đã gửi vào nhóm Zalo khách hàng"
-                  : "Chụp biên bản giao nhận hàng hoàn tất chuyến",
+                  ? "Đã gửi Phiếu giao hàng (Chờ Điều phối xác nhận hoàn thành)"
+                  : "Chụp biên bản giao nhận hàng gửi Điều phối kiểm tra",
               isRecorded: trip?.deliverySlipPhotoUrl != null,
-              buttonLabel: "Giao",
+              buttonLabel: trip?.deliverySlipPhotoUrl != null ? "Chụp lại" : "Giao",
               isDisabled: stepDisabled,
-              onPressed: () => SlipCaptureScreen.show(
-                context,
-                slipType: 'delivery',
-                orderCode: trip?.orderCode ?? '',
-              ),
+              onPressed: () async {
+                final updated = await SlipCaptureScreen.show(
+                  context,
+                  slipType: 'delivery',
+                  orderId: trip?.orderId,
+                  orderCode: trip?.orderCode ?? '',
+                  vehiclePlate: state.selectedPlate,
+                  orderData: trip?.rawOrder ?? state.activeOrder,
+                );
+                if (updated != null && mounted) {
+                  await _loadDriverData(silent: true);
+                }
+              },
             ),
+            if (trip?.deliverySlipPhotoUrl != null) ...[
+              const SizedBox(height: 10),
+              Container(
+                width: double.infinity,
+                padding: const EdgeInsets.all(10),
+                decoration: BoxDecoration(
+                  color: Colors.blue.shade50,
+                  borderRadius: BorderRadius.circular(4),
+                  border: Border.all(color: Colors.blue.shade200),
+                ),
+                child: Row(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Icon(
+                      Icons.fact_check_outlined,
+                      size: 18,
+                      color: Colors.blue.shade800,
+                    ),
+                    const SizedBox(width: 8),
+                    Expanded(
+                      child: Text(
+                        "Đã gửi Phiếu giao hàng lên hệ thống. Đơn hàng sẽ hoàn thành sau khi Điều phối hoặc Quản lý kiểm tra hình chụp và xác nhận. Bạn vẫn có thể bấm 'Chụp lại' nếu ảnh mờ hoặc nhầm phiếu.",
+                        style: TextStyle(
+                          fontSize: 12,
+                          color: Colors.blue.shade900,
+                          height: 1.35,
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ],
           ],
         ),
       ),

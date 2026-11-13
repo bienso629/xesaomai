@@ -2329,89 +2329,135 @@ class _DispatchSupervisorScreenState extends State<DispatchSupervisorScreen> {
                                       // Cột 9: Thao tác (Sửa, Xóa)
                                       if (canManageOrders)
                                         makeCell(
-                                          Row(
-                                            mainAxisSize: MainAxisSize.min,
-                                            children: [
-                                              OutlinedButton.icon(
-                                                style: OutlinedButton.styleFrom(
-                                                  foregroundColor:
-                                                      Colors.blue.shade800,
-                                                  side: BorderSide(
-                                                    color: Colors.blue.shade300,
-                                                  ),
-                                                  padding:
-                                                      const EdgeInsets.symmetric(
-                                                        horizontal: 8,
-                                                      ),
-                                                  minimumSize: const Size(
-                                                    0,
-                                                    32,
-                                                  ),
-                                                  tapTargetSize:
-                                                      MaterialTapTargetSize
-                                                          .shrinkWrap,
-                                                  shape: RoundedRectangleBorder(
-                                                    borderRadius:
-                                                        BorderRadius.circular(
-                                                          4,
+                                          Builder(
+                                            builder: (_) {
+                                              final bool isCompletedOrder =
+                                                  _normalizeOrderStatus(
+                                                    (o['status'] ?? '')
+                                                        .toString(),
+                                                  ) ==
+                                                  'completed';
+                                              return Row(
+                                                mainAxisSize: MainAxisSize.min,
+                                                children: [
+                                                  Tooltip(
+                                                    message: isCompletedOrder
+                                                        ? "Đơn hàng đã hoàn thành, không được phép sửa"
+                                                        : "Chỉnh sửa đơn hàng",
+                                                    child: OutlinedButton.icon(
+                                                      style: OutlinedButton.styleFrom(
+                                                        foregroundColor:
+                                                            Colors.blue.shade800,
+                                                        disabledForegroundColor:
+                                                            Colors.grey.shade400,
+                                                        side: BorderSide(
+                                                          color: isCompletedOrder
+                                                              ? Colors
+                                                                    .grey
+                                                                    .shade300
+                                                              : Colors
+                                                                    .blue
+                                                                    .shade300,
                                                         ),
-                                                  ),
-                                                ),
-                                                icon: const Icon(
-                                                  Icons.edit,
-                                                  size: 13,
-                                                ),
-                                                label: const Text(
-                                                  "Sửa",
-                                                  style: TextStyle(
-                                                    fontSize: 11.5,
-                                                    fontWeight: FontWeight.bold,
-                                                  ),
-                                                ),
-                                                onPressed: () =>
-                                                    _showEditOrderDialog(o),
-                                              ),
-                                              const SizedBox(width: 6),
-                                              OutlinedButton.icon(
-                                                style: OutlinedButton.styleFrom(
-                                                  foregroundColor:
-                                                      Colors.red.shade700,
-                                                  side: BorderSide(
-                                                    color: Colors.red.shade300,
-                                                  ),
-                                                  padding:
-                                                      const EdgeInsets.symmetric(
-                                                        horizontal: 8,
-                                                      ),
-                                                  minimumSize: const Size(
-                                                    0,
-                                                    32,
-                                                  ),
-                                                  tapTargetSize:
-                                                      MaterialTapTargetSize
-                                                          .shrinkWrap,
-                                                  shape: RoundedRectangleBorder(
-                                                    borderRadius:
-                                                        BorderRadius.circular(
-                                                          4,
+                                                        padding:
+                                                            const EdgeInsets.symmetric(
+                                                              horizontal: 8,
+                                                            ),
+                                                        minimumSize: const Size(
+                                                          0,
+                                                          32,
                                                         ),
+                                                        tapTargetSize:
+                                                            MaterialTapTargetSize
+                                                                .shrinkWrap,
+                                                        shape: RoundedRectangleBorder(
+                                                          borderRadius:
+                                                              BorderRadius.circular(
+                                                                4,
+                                                              ),
+                                                        ),
+                                                      ),
+                                                      icon: const Icon(
+                                                        Icons.edit,
+                                                        size: 13,
+                                                      ),
+                                                      label: const Text(
+                                                        "Sửa",
+                                                        style: TextStyle(
+                                                          fontSize: 11.5,
+                                                          fontWeight:
+                                                              FontWeight.bold,
+                                                        ),
+                                                      ),
+                                                      onPressed: isCompletedOrder
+                                                          ? null
+                                                          : () =>
+                                                                _showEditOrderDialog(
+                                                                  o,
+                                                                ),
+                                                    ),
                                                   ),
-                                                ),
-                                                icon: const Icon(
-                                                  Icons.delete_outline,
-                                                  size: 13,
-                                                ),
-                                                label: const Text(
-                                                  "Xóa",
-                                                  style: TextStyle(
-                                                    fontSize: 11.5,
-                                                    fontWeight: FontWeight.bold,
+                                                  const SizedBox(width: 6),
+                                                  Tooltip(
+                                                    message: isCompletedOrder
+                                                        ? "Đơn hàng đã hoàn thành, không được phép xóa"
+                                                        : "Xóa đơn hàng",
+                                                    child: OutlinedButton.icon(
+                                                      style: OutlinedButton.styleFrom(
+                                                        foregroundColor:
+                                                            Colors.red.shade700,
+                                                        disabledForegroundColor:
+                                                            Colors.grey.shade400,
+                                                        side: BorderSide(
+                                                          color: isCompletedOrder
+                                                              ? Colors
+                                                                    .grey
+                                                                    .shade300
+                                                              : Colors
+                                                                    .red
+                                                                    .shade300,
+                                                        ),
+                                                        padding:
+                                                            const EdgeInsets.symmetric(
+                                                              horizontal: 8,
+                                                            ),
+                                                        minimumSize: const Size(
+                                                          0,
+                                                          32,
+                                                        ),
+                                                        tapTargetSize:
+                                                            MaterialTapTargetSize
+                                                                .shrinkWrap,
+                                                        shape: RoundedRectangleBorder(
+                                                          borderRadius:
+                                                              BorderRadius.circular(
+                                                                4,
+                                                              ),
+                                                        ),
+                                                      ),
+                                                      icon: const Icon(
+                                                        Icons.delete_outline,
+                                                        size: 13,
+                                                      ),
+                                                      label: const Text(
+                                                        "Xóa",
+                                                        style: TextStyle(
+                                                          fontSize: 11.5,
+                                                          fontWeight:
+                                                              FontWeight.bold,
+                                                        ),
+                                                      ),
+                                                      onPressed: isCompletedOrder
+                                                          ? null
+                                                          : () =>
+                                                                _confirmDeleteOrder(
+                                                                  o,
+                                                                ),
+                                                    ),
                                                   ),
-                                                ),
-                                                onPressed: () =>
-                                                    _confirmDeleteOrder(o),
-                                              ),
-                                            ],
+                                                ],
+                                              );
+                                            },
                                           ),
                                         ),
                                     ],
@@ -7564,13 +7610,29 @@ class _DispatchSupervisorScreenState extends State<DispatchSupervisorScreen> {
       IconData iconData;
       String groupKey = 'TRIP';
 
+      final hasDeliverySlip =
+          (o['delivery_slip_photo_url'] ?? '').toString().trim().isNotEmpty;
+      final hasArrivalPhoto =
+          (o['arrival_photo_url'] ?? '').toString().trim().isNotEmpty;
+
       switch (status) {
+        case 'in_progress':
         case 'in_transit':
         case 'delivering':
         case 'moving':
-          statusLabel = 'Đang vận chuyển trên đường';
-          badgeColor = Colors.blue.shade700;
-          iconData = Icons.local_shipping_rounded;
+          if (hasDeliverySlip) {
+            statusLabel = 'Đã gửi Phiếu giao • Chờ duyệt hoàn thành';
+            badgeColor = Colors.teal.shade700;
+            iconData = Icons.fact_check_rounded;
+          } else if (hasArrivalPhoto) {
+            statusLabel = 'Đã đến điểm giao hàng';
+            badgeColor = Colors.teal.shade700;
+            iconData = Icons.location_on_rounded;
+          } else {
+            statusLabel = 'Đang vận chuyển trên đường';
+            badgeColor = Colors.blue.shade700;
+            iconData = Icons.local_shipping_rounded;
+          }
           break;
         case 'arrived':
         case 'at_site':
@@ -11735,7 +11797,7 @@ class _DispatchSupervisorScreenState extends State<DispatchSupervisorScreen> {
     );
   }
 
-  // HELPER: Ô MÃ KHÁCH HÀNG (AUTOCOMPLETE - CHỈ CHO PHÉP CHỌN TỪ DANH SÁCH)
+  // HELPER: Ô MÃ KHÁCH HÀNG (AUTOCOMPLETE + CHO PHÉP NHẬP TỰ DO NGOÀI DANH SÁCH)
   Widget _buildCustomerCodeAutocomplete({
     required TextEditingController controller,
     required List<Map<String, dynamic>> customers,
@@ -11746,9 +11808,41 @@ class _DispatchSupervisorScreenState extends State<DispatchSupervisorScreen> {
       final c = norm(code);
       if (c.isEmpty) return null;
       for (final cu in customers) {
-        if (norm((cu['code'] ?? '').toString()) == c) return cu;
+        if (norm((cu['code'] ?? '').toString()) == c ||
+            norm((cu['name'] ?? '').toString()) == c) {
+          return cu;
+        }
       }
       return null;
+    }
+
+    final seenCodes = <String>{};
+    final options = <InlineAutocompleteOption>[];
+    for (final cu in customers) {
+      final code = (cu['code'] ?? '').toString().trim();
+      if (code.isEmpty || !seenCodes.add(norm(code))) continue;
+      options.add(
+        InlineAutocompleteOption(
+          value: code,
+          title: (cu['name'] ?? '').toString(),
+          sub: code,
+          icon: Icons.storefront_outlined,
+        ),
+      );
+    }
+    // Bổ sung các mã khách hàng ngoài danh mục từng được nhập ở các đơn hàng trước
+    for (final o in _orders) {
+      if (o is! Map) continue;
+      final code = (o['customer_code'] ?? '').toString().trim();
+      if (code.isEmpty || !seenCodes.add(norm(code))) continue;
+      options.add(
+        InlineAutocompleteOption(
+          value: code,
+          title: code,
+          sub: 'Mã khách hàng ngoài danh sách',
+          icon: Icons.person_outline,
+        ),
+      );
     }
 
     // Dung autocomplete IN-LINE (khong Overlay) de tranh crash assertion
@@ -11756,18 +11850,9 @@ class _DispatchSupervisorScreenState extends State<DispatchSupervisorScreen> {
     return InlineAutocompleteField(
       controller: controller,
       label: "Mã khách hàng",
-      hintText: "Gõ tên khách hàng để tìm",
+      hintText: "Nhập mã khách hàng hoặc gõ tên để tìm...",
       prefixIcon: Icons.person_outline,
-      options: customers
-          .map(
-            (cu) => InlineAutocompleteOption(
-              value: (cu['code'] ?? '').toString(),
-              title: (cu['name'] ?? '').toString(),
-              sub: (cu['code'] ?? '').toString(),
-              icon: Icons.storefront_outlined,
-            ),
-          )
-          .toList(),
+      options: options,
       maxOptions: 10,
       onOptionSelected: (opt) {
         controller.text = opt.value;
@@ -11798,22 +11883,19 @@ class _DispatchSupervisorScreenState extends State<DispatchSupervisorScreen> {
         valueListenable: controller,
         builder: (context, value, _) {
           final match = findByCode(value.text);
+          if (match == null) return const SizedBox.shrink();
+          final name = (match['name'] ?? '').toString().trim();
+          if (name.isEmpty) return const SizedBox.shrink();
           return Padding(
             padding: const EdgeInsets.only(top: 4),
             child: Text(
-              match != null
-                  ? (match['name'] ?? '').toString()
-                  : "Không có trong danh sách Khách hàng. Vui lòng chọn từ danh sách gợi ý.",
+              name,
               maxLines: 1,
               overflow: TextOverflow.ellipsis,
               style: TextStyle(
                 fontSize: 11,
-                fontWeight: match != null
-                    ? FontWeight.w600
-                    : FontWeight.normal,
-                color: match != null
-                    ? Colors.teal.shade700
-                    : Colors.red.shade700,
+                fontWeight: FontWeight.w600,
+                color: Colors.teal.shade700,
               ),
             ),
           );
@@ -11936,7 +12018,8 @@ class _DispatchSupervisorScreenState extends State<DispatchSupervisorScreen> {
       final c = code.trim().toLowerCase();
       if (c.isEmpty) return null;
       for (final cu in customers) {
-        if ((cu['code'] ?? '').toString().trim().toLowerCase() == c) {
+        if ((cu['code'] ?? '').toString().trim().toLowerCase() == c ||
+            (cu['name'] ?? '').toString().trim().toLowerCase() == c) {
           final rawId = cu['id'];
           return rawId is int ? rawId : int.tryParse(rawId.toString());
         }
@@ -12022,11 +12105,11 @@ class _DispatchSupervisorScreenState extends State<DispatchSupervisorScreen> {
                         if (dialogClosed || !dialogCtx.mounted) return;
                         if (!dialogClosed) {
                           setDialogState(() {
-                            isLoadingCustomerPoints = true;
+                            isLoadingCustomerPoints = matchedCustId != null;
                             selectedCustomerId = matchedCustId;
                           });
                         }
-                        final (pList, dList) = trimmed.isEmpty
+                        final (pList, dList) = matchedCustId == null
                             ? (pickupCatalog, deliveryCatalog)
                             : await _loadLocationsForCustomer(trimmed);
                         if (dialogClosed || !dialogCtx.mounted) return;
@@ -12593,23 +12676,6 @@ class _DispatchSupervisorScreenState extends State<DispatchSupervisorScreen> {
                   return;
                 }
 
-                final customerCodeVal = customerCodeCtrl.text.trim();
-                if (customerCodeVal.isNotEmpty &&
-                    !customers.any(
-                      (cu) =>
-                          (cu['code'] ?? '').toString().trim().toLowerCase() ==
-                          customerCodeVal.toLowerCase(),
-                    )) {
-                  ScaffoldMessenger.of(dialogCtx).showSnackBar(
-                    const SnackBar(
-                      content: Text(
-                        "Vui lòng chọn Mã khách hàng trong danh sách gợi ý",
-                      ),
-                    ),
-                  );
-                  return;
-                }
-
                 final pickupPt = _resolvePointCoords(
                   pickupAddrCtrl.text,
                   pickupCatalog,
@@ -12681,6 +12747,19 @@ class _DispatchSupervisorScreenState extends State<DispatchSupervisorScreen> {
 
   // DIALOG: CHỈNH SỬA ĐƠN HÀNG
   Future<void> _showEditOrderDialog(dynamic orderData) async {
+    final initMap = orderData is Map ? orderData : <String, dynamic>{};
+    if (_normalizeOrderStatus((initMap['status'] ?? '').toString()) ==
+        'completed') {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          backgroundColor: Colors.orange,
+          content: Text(
+            "Đơn hàng đã hoàn thành, không được phép chỉnh sửa!",
+          ),
+        ),
+      );
+      return;
+    }
     final (customers, (pickupCatalog, deliveryCatalog)) = await (
       _loadCustomersForOrder(),
       _loadLocationsForOrder(),
@@ -12767,7 +12846,8 @@ class _DispatchSupervisorScreenState extends State<DispatchSupervisorScreen> {
       final c = code.trim().toLowerCase();
       if (c.isEmpty) return null;
       for (final cu in customers) {
-        if ((cu['code'] ?? '').toString().trim().toLowerCase() == c) {
+        if ((cu['code'] ?? '').toString().trim().toLowerCase() == c ||
+            (cu['name'] ?? '').toString().trim().toLowerCase() == c) {
           final rawId = cu['id'];
           return rawId is int ? rawId : int.tryParse(rawId.toString());
         }
@@ -12776,12 +12856,12 @@ class _DispatchSupervisorScreenState extends State<DispatchSupervisorScreen> {
     }
 
     // Điểm nhận / giao đề xuất theo khách hàng đang chọn (mặc định: toàn danh mục).
-    // Nếu đơn đang sửa đã có Mã khách hàng, tải sẵn danh sách điểm của khách hàng đó.
+    // Nếu đơn đang sửa có Mã khách hàng nằm trong danh mục Khách hàng, tải sẵn danh sách điểm của khách hàng đó.
     final initialCustomerCode = (o['customer_code'] ?? '').toString().trim();
     int? selectedCustomerId = findEditCustomerIdByCode(initialCustomerCode);
     List<Map<String, dynamic>> custPickupCatalog = pickupCatalog;
     List<Map<String, dynamic>> custDeliveryCatalog = deliveryCatalog;
-    if (initialCustomerCode.isNotEmpty) {
+    if (selectedCustomerId != null) {
       final (initP, initD) = await _loadLocationsForCustomer(initialCustomerCode);
       if (!mounted) return;
       custPickupCatalog = initP;
@@ -12874,11 +12954,11 @@ class _DispatchSupervisorScreenState extends State<DispatchSupervisorScreen> {
                         if (dialogClosed || !dialogCtx.mounted) return;
                         if (!dialogClosed) {
                           setDialogState(() {
-                            isLoadingCustomerPoints = true;
+                            isLoadingCustomerPoints = matchedCustId != null;
                             selectedCustomerId = matchedCustId;
                           });
                         }
-                        final (pList, dList) = trimmed.isEmpty
+                        final (pList, dList) = matchedCustId == null
                             ? (pickupCatalog, deliveryCatalog)
                             : await _loadLocationsForCustomer(trimmed);
                         if (dialogClosed || !dialogCtx.mounted) return;
@@ -13206,23 +13286,6 @@ class _DispatchSupervisorScreenState extends State<DispatchSupervisorScreen> {
                   return;
                 }
 
-                final customerCodeVal = customerCodeCtrl.text.trim();
-                if (customerCodeVal.isNotEmpty &&
-                    !customers.any(
-                      (cu) =>
-                          (cu['code'] ?? '').toString().trim().toLowerCase() ==
-                          customerCodeVal.toLowerCase(),
-                    )) {
-                  ScaffoldMessenger.of(dialogCtx).showSnackBar(
-                    const SnackBar(
-                      content: Text(
-                        "Vui lòng chọn Mã khách hàng trong danh sách gợi ý",
-                      ),
-                    ),
-                  );
-                  return;
-                }
-
                 final pickupPt = _resolvePointCoords(
                   pickupAddrCtrl.text,
                   pickupCatalog,
@@ -13315,6 +13378,24 @@ class _DispatchSupervisorScreenState extends State<DispatchSupervisorScreen> {
     dynamic orderData,
     String newStatus,
   ) async {
+    final appState = Provider.of<AppState>(context, listen: false);
+    final canApproveOrUpdate =
+        appState.currentUsername == 'admin' ||
+        appState.userRoles.any(
+          (r) => ['admin', 'manager', 'dispatcher'].contains(r.toLowerCase()),
+        );
+    if (!canApproveOrUpdate) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          backgroundColor: Colors.red.shade700,
+          content: const Text(
+            'Chỉ Điều phối viên và Quản lý mới có quyền cập nhật trạng thái đơn hàng.',
+          ),
+        ),
+      );
+      return;
+    }
+
     final o = orderData is Map
         ? Map<String, dynamic>.from(orderData)
         : <String, dynamic>{};
@@ -13323,6 +13404,243 @@ class _DispatchSupervisorScreenState extends State<DispatchSupervisorScreen> {
         : int.tryParse('${o['id'] ?? ''}');
     if (orderId == null) return;
     final orderCode = (o['order_code'] ?? '').toString();
+
+    if (newStatus == 'completed') {
+      final weighUrl = (o['weigh_slip_photo_url'] ?? '').toString().trim();
+      final arrivalUrl = (o['arrival_photo_url'] ?? '').toString().trim();
+      final delivUrl = (o['delivery_slip_photo_url'] ?? '').toString().trim();
+      final plate = (o['assigned_vehicle_plate'] ?? '').toString().trim();
+      final driverName = (o['driver_name'] ?? '').toString().trim();
+
+      Widget buildDocRow({
+        required String label,
+        required String url,
+        required String ptype,
+        required String latKey,
+        required String lngKey,
+        required String accKey,
+        required String timeKey,
+      }) {
+        final hasPhoto = url.isNotEmpty;
+        return InkWell(
+          borderRadius: BorderRadius.circular(4),
+          onTap: hasPhoto
+              ? () {
+                  OrderAttachmentsSection.showFullImageDialog(
+                    context,
+                    title: '$label — Đơn $orderCode',
+                    rawUrl: url,
+                    gpsLat: _asDouble(o[latKey]),
+                    gpsLng: _asDouble(o[lngKey]),
+                    gpsAccuracy: _asDouble(o[accKey]),
+                    gpsCapturedAt: (o[timeKey] ?? '').toString(),
+                    photoGeoLabel: _geoSummary(o, ptype),
+                  );
+                }
+              : null,
+          child: Container(
+            margin: const EdgeInsets.only(bottom: 6),
+            padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+            decoration: BoxDecoration(
+              color: hasPhoto
+                  ? const Color(0xFFF0FDF4)
+                  : const Color(0xFFFEF2F2),
+              borderRadius: BorderRadius.circular(4),
+              border: Border.all(
+                color: hasPhoto
+                    ? const Color(0xFFBBF7D0)
+                    : const Color(0xFFFECACA),
+              ),
+            ),
+            child: Row(
+              children: [
+                Icon(
+                  hasPhoto
+                      ? Icons.check_circle_rounded
+                      : Icons.warning_amber_rounded,
+                  size: 16,
+                  color: hasPhoto
+                      ? const Color(0xFF15803D)
+                      : const Color(0xFFDC2626),
+                ),
+                const SizedBox(width: 8),
+                Expanded(
+                  child: Text(
+                    label,
+                    style: const TextStyle(
+                      fontSize: 12.5,
+                      fontWeight: FontWeight.w700,
+                      color: Color(0xFF1E293B),
+                    ),
+                  ),
+                ),
+                Text(
+                  hasPhoto ? 'Đã chụp (Bấm để xem)' : 'Chưa chụp',
+                  style: TextStyle(
+                    fontSize: 12,
+                    fontWeight: FontWeight.w600,
+                    color: hasPhoto
+                        ? const Color(0xFF15803D)
+                        : const Color(0xFFDC2626),
+                  ),
+                ),
+              ],
+            ),
+          ),
+        );
+      }
+
+      final confirmed = await showDialog<bool>(
+        context: context,
+        builder: (dialogCtx) => AlertDialog(
+          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(4)),
+          titlePadding: const EdgeInsets.fromLTRB(18, 16, 18, 8),
+          contentPadding: const EdgeInsets.fromLTRB(18, 8, 18, 12),
+          actionsPadding: const EdgeInsets.fromLTRB(18, 4, 18, 14),
+          title: Row(
+            children: [
+              Icon(
+                Icons.fact_check_outlined,
+                color: Colors.teal.shade700,
+                size: 22,
+              ),
+              const SizedBox(width: 8),
+              Expanded(
+                child: Text(
+                  'Xác nhận hoàn thành đơn $orderCode',
+                  style: const TextStyle(
+                    fontSize: 15.5,
+                    fontWeight: FontWeight.w800,
+                    color: Color(0xFF0F172A),
+                  ),
+                ),
+              ),
+            ],
+          ),
+          content: SizedBox(
+            width: 440,
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                if (plate.isNotEmpty || driverName.isNotEmpty)
+                  Padding(
+                    padding: const EdgeInsets.only(bottom: 10),
+                    child: Text(
+                      'Xe: ${plate.isNotEmpty ? plate : "Chưa gán"} • Tài xế: ${driverName.isNotEmpty ? driverName : "Chưa rõ"}',
+                      style: const TextStyle(
+                        fontSize: 12.5,
+                        color: Color(0xFF475569),
+                        fontWeight: FontWeight.w600,
+                      ),
+                    ),
+                  ),
+                const Text(
+                  'Kiểm tra chứng từ tài xế đã gửi trước khi chốt hoàn thành:',
+                  style: TextStyle(
+                    fontSize: 12.5,
+                    fontWeight: FontWeight.w700,
+                    color: Color(0xFF334155),
+                  ),
+                ),
+                const SizedBox(height: 8),
+                buildDocRow(
+                  label: '1. Phiếu cân hàng',
+                  url: weighUrl,
+                  ptype: 'weigh_slip',
+                  latKey: 'weigh_slip_gps_lat',
+                  lngKey: 'weigh_slip_gps_lng',
+                  accKey: 'weigh_slip_gps_accuracy',
+                  timeKey: 'weigh_slip_gps_captured_at',
+                ),
+                buildDocRow(
+                  label: '2. Ảnh đến điểm giao',
+                  url: arrivalUrl,
+                  ptype: 'arrival_photo',
+                  latKey: 'arrival_photo_gps_lat',
+                  lngKey: 'arrival_photo_gps_lng',
+                  accKey: 'arrival_photo_gps_accuracy',
+                  timeKey: 'arrival_photo_gps_captured_at',
+                ),
+                buildDocRow(
+                  label: '3. Phiếu giao hàng',
+                  url: delivUrl,
+                  ptype: 'delivery_slip',
+                  latKey: 'delivery_slip_gps_lat',
+                  lngKey: 'delivery_slip_gps_lng',
+                  accKey: 'delivery_slip_gps_accuracy',
+                  timeKey: 'delivery_slip_gps_captured_at',
+                ),
+                const SizedBox(height: 6),
+                Container(
+                  padding: const EdgeInsets.all(10),
+                  decoration: BoxDecoration(
+                    color: delivUrl.isEmpty
+                        ? const Color(0xFFFFFBEB)
+                        : const Color(0xFFF8FAFC),
+                    borderRadius: BorderRadius.circular(4),
+                    border: Border.all(
+                      color: delivUrl.isEmpty
+                          ? const Color(0xFFFDE68A)
+                          : const Color(0xFFE2E8F0),
+                    ),
+                  ),
+                  child: Text(
+                    delivUrl.isEmpty
+                        ? 'Lưu ý: Đơn hàng này chưa có ảnh Phiếu giao hàng từ tài xế. Sau khi xác nhận Hoàn thành, đơn hàng sẽ khóa chỉnh sửa và tài xế không thể chụp bổ sung.'
+                        : 'Sau khi xác nhận Hoàn thành, đơn hàng sẽ khóa chỉnh sửa và đóng trên lịch trình của tài xế. Nếu ảnh phiếu chưa đúng, hãy bấm Hủy và yêu cầu tài xế chụp lại.',
+                    style: TextStyle(
+                      fontSize: 12,
+                      height: 1.4,
+                      color: delivUrl.isEmpty
+                          ? const Color(0xFF92400E)
+                          : const Color(0xFF475569),
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          ),
+          actions: [
+            SizedBox(
+              height: 36,
+              child: OutlinedButton(
+                style: OutlinedButton.styleFrom(
+                  foregroundColor: const Color(0xFF475569),
+                  side: const BorderSide(color: Color(0xFFCBD5E1)),
+                  shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(4),
+                  ),
+                ),
+                onPressed: () => Navigator.of(dialogCtx).pop(false),
+                child: const Text('Hủy'),
+              ),
+            ),
+            SizedBox(
+              height: 36,
+              child: ElevatedButton.icon(
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: const Color(0xFF047857),
+                  foregroundColor: Colors.white,
+                  elevation: 0,
+                  shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(4),
+                  ),
+                ),
+                onPressed: () => Navigator.of(dialogCtx).pop(true),
+                icon: const Icon(Icons.check_rounded, size: 16),
+                label: const Text(
+                  'Xác nhận hoàn thành',
+                  style: TextStyle(fontWeight: FontWeight.w700),
+                ),
+              ),
+            ),
+          ],
+        ),
+      );
+
+      if (confirmed != true || !mounted) return;
+    }
 
     // Cap nhat giao dien tuc thi
     setState(() {
@@ -13422,21 +13740,34 @@ class _DispatchSupervisorScreenState extends State<DispatchSupervisorScreen> {
         fg = Colors.green.shade800;
     }
 
-    if (!canEdit) {
+    if (!canEdit || current == 'completed') {
       return Container(
-        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+        height: 30,
+        padding: const EdgeInsets.symmetric(horizontal: 10),
+        alignment: Alignment.centerLeft,
         decoration: BoxDecoration(
           color: bg,
           borderRadius: BorderRadius.circular(4),
           border: Border.all(color: border),
         ),
-        child: Text(
-          _orderStatusLabel(current),
-          style: TextStyle(
-            color: fg,
-            fontSize: 11.5,
-            fontWeight: FontWeight.bold,
-          ),
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Container(
+              width: 7,
+              height: 7,
+              decoration: BoxDecoration(color: fg, shape: BoxShape.circle),
+            ),
+            const SizedBox(width: 6),
+            Text(
+              _orderStatusLabel(current),
+              style: TextStyle(
+                color: fg,
+                fontSize: 11.5,
+                fontWeight: FontWeight.bold,
+              ),
+            ),
+          ],
         ),
       );
     }
@@ -13545,9 +13876,9 @@ class _DispatchSupervisorScreenState extends State<DispatchSupervisorScreen> {
         head = 'Tại Điểm giao hàng';
         break;
       case 'NONE':
-        if (ptype == 'delivery_slip') {
+        if (ptype == 'delivery_slip' || ptype == 'arrival_photo') {
           head = 'Ngoài điểm giao hàng';
-        } else if (ptype == 'pump_slip_before') {
+        } else if (ptype == 'pump_slip_before' || ptype == 'weigh_slip') {
           head = 'Ngoài điểm nhận hàng';
         } else {
           head = 'Ngoài điểm nhận/giao';
@@ -13903,6 +14234,15 @@ class _DispatchSupervisorScreenState extends State<DispatchSupervisorScreen> {
   // DIALOG: XÁC NHẬN XÓA ĐƠN HÀNG
   void _confirmDeleteOrder(dynamic orderData) {
     final o = orderData is Map ? orderData : <String, dynamic>{};
+    if (_normalizeOrderStatus((o['status'] ?? '').toString()) == 'completed') {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          backgroundColor: Colors.orange,
+          content: Text("Đơn hàng đã hoàn thành, không được phép xóa!"),
+        ),
+      );
+      return;
+    }
     final orderId = o['id'] as int;
     final orderCode = (o['order_code'] ?? 'N/A').toString();
 
@@ -15908,6 +16248,8 @@ class _VehicleInspectionsModalState extends State<_VehicleInspectionsModal> {
   String _filterPlate = '';
   final TextEditingController _noteCtrl = TextEditingController();
   bool _isSubmitting = false;
+  bool _isReviewDialogOpen = false;
+  Timer? _autoRefreshTimer;
   bool _showTimeSlider = false;
   int _sliderTimeIndex = 0;
 
@@ -15916,30 +16258,68 @@ class _VehicleInspectionsModalState extends State<_VehicleInspectionsModal> {
     super.initState();
     _filterPlate = widget.initialPlate ?? '';
     _loadInspections();
+    _startAutoRefreshTimer();
+  }
+
+  void _startAutoRefreshTimer() {
+    _autoRefreshTimer?.cancel();
+    _autoRefreshTimer = Timer.periodic(const Duration(seconds: 10), (_) {
+      if (mounted && !_isLoading && !_isSubmitting && !_isReviewDialogOpen) {
+        _loadInspections(silent: true);
+      }
+    });
   }
 
   @override
   void dispose() {
+    _autoRefreshTimer?.cancel();
     _noteCtrl.dispose();
     super.dispose();
   }
 
-  Future<void> _loadInspections() async {
-    setState(() => _isLoading = true);
+  Future<void> _loadInspections({bool silent = false}) async {
+    if (!silent) {
+      setState(() => _isLoading = true);
+    }
     final data = await AdminService.fetchInspections(
       plateNumber: _filterPlate.isNotEmpty ? _filterPlate : null,
     );
     if (mounted) {
+      final prevSelectedId = _selectedRecord?['id'];
       setState(() {
         _inspections = data;
-        if (_inspections.isNotEmpty) {
-          _selectedRecord = _inspections.first as Map<String, dynamic>;
-          _noteCtrl.text = _selectedRecord?['flag_reason'] ?? '';
+        if (prevSelectedId != null) {
+          final matched = _inspections.cast<Map<String, dynamic>?>().firstWhere(
+            (item) => item?['id'] == prevSelectedId,
+            orElse: () => null,
+          );
+          if (matched != null) {
+            final oldReason = (_selectedRecord?['flag_reason'] ?? '').toString();
+            _selectedRecord = matched;
+            if (_noteCtrl.text == oldReason) {
+              _noteCtrl.text = (matched['flag_reason'] ?? '').toString();
+            }
+          } else if (!silent) {
+            if (_inspections.isNotEmpty) {
+              _selectedRecord = _inspections.first as Map<String, dynamic>;
+              _noteCtrl.text = _selectedRecord?['flag_reason'] ?? '';
+            } else {
+              _selectedRecord = null;
+              _noteCtrl.clear();
+            }
+          }
         } else {
-          _selectedRecord = null;
-          _noteCtrl.clear();
+          if (_inspections.isNotEmpty) {
+            _selectedRecord = _inspections.first as Map<String, dynamic>;
+            _noteCtrl.text = _selectedRecord?['flag_reason'] ?? '';
+          } else {
+            _selectedRecord = null;
+            _noteCtrl.clear();
+          }
         }
-        _isLoading = false;
+        if (!silent) {
+          _isLoading = false;
+        }
       });
     }
   }
@@ -15947,31 +16327,36 @@ class _VehicleInspectionsModalState extends State<_VehicleInspectionsModal> {
   Future<void> _updateReviewStatus(String status) async {
     if (_selectedRecord == null) return;
     if (status == 'approved') {
-      final result = await AssignOrderOnApproveDialog.show(
-        context,
-        inspectionRecord: Map<String, dynamic>.from(_selectedRecord!),
-        reviewNote: _noteCtrl.text.trim(),
-      );
-      if (result != null && result['approved'] == true && mounted) {
-        final orderCode = result['order_code'];
-        // Xe đang "Tạm ngừng hoạt động" (Báo nghỉ): khi Điều phối Duyệt Nhận Chuyến,
-        // server tự động kích hoạt lại xe để tài xế nhận được chuyến/đơn hàng.
-        final String vehicleStatus = (_selectedRecord!['vehicle_status'] ?? '').toString().trim().toLowerCase();
-        final bool wasResting = vehicleStatus == 'inactive';
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            backgroundColor: Colors.green.shade700,
-            content: Text(
-              wasResting
-                  ? "Đã duyệt nhận chuyến${(orderCode != null && orderCode.toString().isNotEmpty) ? " và gắn đơn hàng $orderCode" : ""}! Xe đang Báo nghỉ đã được TỰ ĐỘNG KÍCH HOẠT LẠI - tài xế nhận được chuyến/đơn hàng bình thường."
-                  : ((orderCode != null && orderCode.toString().isNotEmpty)
-                      ? "Đã duyệt nhận chuyến và gắn đơn hàng $orderCode cho tài xế!"
-                      : "Đã phê duyệt kiểm tra xe! Xe được phép nhận chuyến."),
-            ),
-          ),
+      _isReviewDialogOpen = true;
+      try {
+        final result = await AssignOrderOnApproveDialog.show(
+          context,
+          inspectionRecord: Map<String, dynamic>.from(_selectedRecord!),
+          reviewNote: _noteCtrl.text.trim(),
         );
-        widget.onStatusUpdated();
-        _loadInspections();
+        if (result != null && result['approved'] == true && mounted) {
+          final orderCode = result['order_code'];
+          // Xe đang "Tạm ngừng hoạt động" (Báo nghỉ): khi Điều phối Duyệt Nhận Chuyến,
+          // server tự động kích hoạt lại xe để tài xế nhận được chuyến/đơn hàng.
+          final String vehicleStatus = (_selectedRecord!['vehicle_status'] ?? '').toString().trim().toLowerCase();
+          final bool wasResting = vehicleStatus == 'inactive';
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              backgroundColor: Colors.green.shade700,
+              content: Text(
+                wasResting
+                    ? "Đã duyệt nhận chuyến${(orderCode != null && orderCode.toString().isNotEmpty) ? " và gắn đơn hàng $orderCode" : ""}! Xe đang Báo nghỉ đã được TỰ ĐỘNG KÍCH HOẠT LẠI - tài xế nhận được chuyến/đơn hàng bình thường."
+                    : ((orderCode != null && orderCode.toString().isNotEmpty)
+                        ? "Đã duyệt nhận chuyến và gắn đơn hàng $orderCode cho tài xế!"
+                        : "Đã phê duyệt kiểm tra xe! Xe được phép nhận chuyến."),
+              ),
+            ),
+          );
+          widget.onStatusUpdated();
+          _loadInspections();
+        }
+      } finally {
+        _isReviewDialogOpen = false;
       }
       return;
     }

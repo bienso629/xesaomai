@@ -3,6 +3,7 @@ import 'dart:io';
 
 import 'package:camera/camera.dart';
 import 'package:flutter/material.dart';
+import 'package:geolocator/geolocator.dart';
 import '../widgets/center_loading_overlay.dart';
 import 'package:permission_handler/permission_handler.dart';
 import 'package:provider/provider.dart';
@@ -26,12 +27,14 @@ class SlipCaptureScreen extends StatefulWidget {
     this.orderId,
     this.orderCode,
     this.vehiclePlate,
+    this.orderData,
   });
 
   final String slipType;
   final int? orderId;
   final String? orderCode;
   final String? vehiclePlate;
+  final Map<String, dynamic>? orderData;
 
   static Future<Map<String, dynamic>?> show(
     BuildContext context, {
@@ -39,6 +42,7 @@ class SlipCaptureScreen extends StatefulWidget {
     int? orderId,
     String? orderCode,
     String? vehiclePlate,
+    Map<String, dynamic>? orderData,
   }) {
     return Navigator.of(context).push<Map<String, dynamic>?>(
       MaterialPageRoute(
@@ -48,6 +52,7 @@ class SlipCaptureScreen extends StatefulWidget {
           orderId: orderId,
           orderCode: orderCode,
           vehiclePlate: vehiclePlate,
+          orderData: orderData,
         ),
       ),
     );
@@ -101,11 +106,11 @@ class _SlipCaptureScreenState extends State<SlipCaptureScreen>
       case 'pump_slip_before':
         return "Chụp Ảnh Bơm Hàng - Trước Khi Bơm";
       case 'weigh_slip':
-        return "Chụp Phiếu Cân (Bước 2)";
+        return "Chụp Phiếu Cân (Bước 1)";
       case 'arrival_photo':
-        return "Chụp Ảnh Đến Điểm Giao Hàng (Bước 3)";
+        return "Chụp Ảnh Đến Điểm Giao Hàng (Bước 2)";
       case 'delivery_slip':
-        return "Chụp Phiếu Giao Hàng (Bước 4)";
+        return "Chụp Phiếu Giao Hàng (Bước 3)";
       case 'breakdown':
         return "Chụp Ảnh & Báo Hỏng Xe";
       case 'repair':
@@ -139,15 +144,87 @@ class _SlipCaptureScreenState extends State<SlipCaptureScreen>
   bool _isLocating = false;
   GpsException? _gpsError;
 
+  Map<String, dynamic>? _resolvedOrder;
+  double? _distPickup;
+  double? _distDelivery;
+  bool? _isWithinRadius;
+  String? _radiusSummary;
+
+  void _calculateGeo() {
+    final fix = _gpsFix;
+    final ord = _resolvedOrder;
+    if (fix == null || ord == null) {
+      _distPickup = null;
+      _distDelivery = null;
+      _isWithinRadius = null;
+      _radiusSummary = null;
+      return;
+    }
+
+    final pLat = double.tryParse('${ord['pickup_lat'] ?? ''}');
+    final pLng = double.tryParse('${ord['pickup_lng'] ?? ''}');
+    final pRad = int.tryParse('${ord['pickup_radius_m'] ?? ''}') ?? 2000;
+
+    final dLat = double.tryParse('${ord['delivery_lat'] ?? ''}');
+    final dLng = double.tryParse('${ord['delivery_lng'] ?? ''}');
+    final dRad = int.tryParse('${ord['delivery_radius_m'] ?? ''}') ?? 2000;
+
+    if (pLat != null && pLng != null) {
+      _distPickup = Geolocator.distanceBetween(fix.lat, fix.lng, pLat, pLng);
+    }
+    if (dLat != null && dLng != null) {
+      _distDelivery = Geolocator.distanceBetween(fix.lat, fix.lng, dLat, dLng);
+    }
+
+    if (_normalizedType == 'pump_slip_before') {
+      if (_distPickup != null) {
+        _isWithinRadius = _distPickup! <= pRad;
+        _radiusSummary = _isWithinRadius!
+            ? "Trong bán kính: Cách Nơi nhận ${_distPickup!.round()}m (tối đa ${pRad}m)"
+            : "Vượt bán kính: Cách Nơi nhận ${_distPickup!.round()}m (cho phép ${pRad}m)";
+      }
+    } else if (_normalizedType == 'arrival_photo' || _normalizedType == 'delivery_slip') {
+      if (_distDelivery != null) {
+        _isWithinRadius = _distDelivery! <= dRad;
+        _radiusSummary = _isWithinRadius!
+            ? "Trong bán kính: Cách Điểm giao ${_distDelivery!.round()}m (tối đa ${dRad}m)"
+            : "Vượt bán kính: Cách Điểm giao ${_distDelivery!.round()}m (cho phép ${dRad}m)";
+      }
+    } else if (_normalizedType == 'weigh_slip') {
+      final inPick = _distPickup != null && _distPickup! <= pRad;
+      final inDeli = _distDelivery != null && _distDelivery! <= dRad;
+      _isWithinRadius = inPick || inDeli;
+      if (inPick) {
+        _radiusSummary = "Hợp lệ tại Nơi nhận (Cách ${_distPickup!.round()}m / ${pRad}m)";
+      } else if (inDeli) {
+        _radiusSummary = "Hợp lệ tại Điểm giao (Cách ${_distDelivery!.round()}m / ${dRad}m)";
+      } else {
+        final List<String> parts = [];
+        if (_distPickup != null) parts.add("Nơi nhận: ${_distPickup!.round()}m/${pRad}m");
+        if (_distDelivery != null) parts.add("Điểm giao: ${_distDelivery!.round()}m/${dRad}m");
+        _radiusSummary = "Ngoài bán kính (${parts.join(' - ')})";
+      }
+    }
+  }
+
   Future<void> _captureGpsFix() async {
     setState(() {
       _isLocating = true;
       _gpsError = null;
       _gpsFix = null;
+      _distPickup = null;
+      _distDelivery = null;
+      _isWithinRadius = null;
+      _radiusSummary = null;
     });
     try {
       final fix = await GpsService.getCurrentFix();
-      if (mounted) setState(() => _gpsFix = fix);
+      if (mounted) {
+        setState(() {
+          _gpsFix = fix;
+          _calculateGeo();
+        });
+      }
     } on GpsException catch (e) {
       if (mounted) setState(() => _gpsError = e);
     } finally {
@@ -160,6 +237,16 @@ class _SlipCaptureScreenState extends State<SlipCaptureScreen>
     super.initState();
     WidgetsBinding.instance.addObserver(this);
     _requestPermissionAndInitCamera();
+
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted) return;
+      final state = context.read<AppState>();
+      _resolvedOrder = widget.orderData ?? state.activeOrder ?? state.currentTrip?.rawOrder;
+      if (_gpsFix != null) {
+        setState(() => _calculateGeo());
+      }
+    });
+
     // Yeu cau bat GPS de doi chieu: lay toa do ngay khi vao man hinh chup
     // de tai xe thay trang thai GPS truoc khi bam chup.
     _captureGpsFix();
@@ -294,10 +381,62 @@ class _SlipCaptureScreenState extends State<SlipCaptureScreen>
       return;
     }
 
-    setState(() => _isSubmitting = true);
     final state = context.read<AppState>();
-    final now = DateTime.now();
     final int? targetOrderId = widget.orderId ?? state.currentTrip?.orderId;
+    if (targetOrderId == null) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          backgroundColor: Colors.red.shade700,
+          content: const Text(
+            "Không xác định được đơn hàng cần gửi ảnh. Vui lòng quay lại làm mới lịch trình rồi thử lại.",
+          ),
+        ),
+      );
+      return;
+    }
+
+    if (_isWithinRadius == false) {
+      final proceed = await showDialog<bool>(
+        context: context,
+        builder: (ctx) => AlertDialog(
+          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(4)),
+          title: const Row(
+            children: [
+              Icon(Icons.warning_amber_rounded, color: Colors.orange, size: 24),
+              SizedBox(width: 8),
+              Text("Cảnh báo vị trí chụp", style: TextStyle(fontSize: 15, fontWeight: FontWeight.bold)),
+            ],
+          ),
+          content: Text(
+            "Vị trí GPS hiện tại nằm ngoài bán kính cho phép của đơn hàng:\n\n"
+            "${_radiusSummary ?? ''}\n\n"
+            "Máy chủ có thể từ chối ghi nhận nếu vị trí không hợp lệ. Bạn có muốn tiếp tục gửi không?",
+            style: const TextStyle(fontSize: 13),
+          ),
+          actions: [
+            OutlinedButton(
+              style: OutlinedButton.styleFrom(
+                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(4)),
+              ),
+              onPressed: () => Navigator.of(ctx).pop(false),
+              child: const Text("Kiểm tra lại vị trí"),
+            ),
+            ElevatedButton(
+              style: ElevatedButton.styleFrom(
+                backgroundColor: Colors.orange.shade800,
+                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(4)),
+              ),
+              onPressed: () => Navigator.of(ctx).pop(true),
+              child: const Text("Vẫn gửi ảnh", style: TextStyle(color: Colors.white)),
+            ),
+          ],
+        ),
+      );
+      if (proceed != true) return;
+    }
+
+    setState(() => _isSubmitting = true);
+    final now = DateTime.now();
 
     Map<String, dynamic>? updatedOrder;
     try {
@@ -307,7 +446,7 @@ class _SlipCaptureScreenState extends State<SlipCaptureScreen>
         _tonnageController.text.trim().replaceAll(',', '.'),
       );
 
-      if (targetOrderId != null) {
+      {
         final res = await AdminService.submitOrderAttachment(
           orderId: targetOrderId,
           photoType: _normalizedType,
@@ -340,14 +479,18 @@ class _SlipCaptureScreenState extends State<SlipCaptureScreen>
         updatedOrder = res;
       }
 
-      final remoteUrl = updatedOrder != null
-          ? (updatedOrder['${_normalizedType}_photo_url']?.toString() ?? path)
-          : path;
+      final remoteUrl =
+          updatedOrder['${_normalizedType}_photo_url']?.toString() ?? path;
 
       if (_normalizedType == 'weigh_slip') {
+        final serverTon = updatedOrder['weigh_slip_tonnage'];
+        final double? resolvedTonnage = tonnageVal ??
+            (serverTon is num
+                ? serverTon.toDouble()
+                : double.tryParse('${serverTon ?? ''}'));
         state.recordWeighSlip(
           photoUrl: remoteUrl,
-          tonnage: tonnageVal ?? 0,
+          tonnage: resolvedTonnage,
           weighTime: now,
         );
       } else if (_normalizedType == 'delivery_slip') {
@@ -387,7 +530,7 @@ class _SlipCaptureScreenState extends State<SlipCaptureScreen>
         break;
       case 'delivery_slip':
         successMsg =
-            "Đã chụp và lưu Phiếu Giao Hàng — Hoàn thành đơn ${widget.orderCode ?? ''}!";
+            "Đã gửi Phiếu Giao Hàng cho đơn ${widget.orderCode ?? ''}! Chờ Điều phối kiểm tra và xác nhận hoàn thành.";
         break;
       case 'breakdown':
         successMsg =
@@ -697,10 +840,76 @@ class _SlipCaptureScreenState extends State<SlipCaptureScreen>
     Color bg;
     Widget content;
     if (fix != null) {
-      bg = const Color(0xFF14532D);
-      content = Text(
-        "GPS: ${fix.display}",
-        style: const TextStyle(color: Colors.white, fontSize: 12),
+      if (_isWithinRadius == true) {
+        bg = const Color(0xFF14532D); // Xanh lá đậm (trong bán kính hợp lệ)
+      } else if (_isWithinRadius == false) {
+        bg = const Color(0xFF9A3412); // Cam đỏ đậm (vượt bán kính)
+      } else {
+        bg = const Color(0xFF14532D);
+      }
+      content = Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Row(
+            children: [
+              Expanded(
+                child: Text(
+                  "GPS: ${fix.display}",
+                  style: const TextStyle(
+                    color: Colors.white,
+                    fontSize: 11.5,
+                    fontWeight: FontWeight.w500,
+                  ),
+                ),
+              ),
+              InkWell(
+                onTap: _captureGpsFix,
+                child: const Padding(
+                  padding: EdgeInsets.symmetric(horizontal: 4),
+                  child: Text(
+                    "Lấy lại GPS",
+                    style: TextStyle(
+                      color: Colors.white,
+                      fontSize: 11,
+                      decoration: TextDecoration.underline,
+                    ),
+                  ),
+                ),
+              ),
+            ],
+          ),
+          if (_radiusSummary != null)
+            Padding(
+              padding: const EdgeInsets.only(top: 2),
+              child: Row(
+                children: [
+                  Icon(
+                    _isWithinRadius == true
+                        ? Icons.check_circle
+                        : Icons.warning_amber_rounded,
+                    color: _isWithinRadius == true
+                        ? Colors.greenAccent
+                        : Colors.amberAccent,
+                    size: 13,
+                  ),
+                  const SizedBox(width: 4),
+                  Expanded(
+                    child: Text(
+                      _radiusSummary!,
+                      style: TextStyle(
+                        color: _isWithinRadius == true
+                            ? Colors.greenAccent.shade100
+                            : Colors.amberAccent.shade100,
+                        fontSize: 11,
+                        fontWeight: FontWeight.bold,
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+        ],
       );
     } else if (_isLocating) {
       bg = const Color(0xFF1E3A8A);

@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
 import 'package:flutter/material.dart';
@@ -28,6 +29,8 @@ class _VehicleInspectionReviewScreenState
   final TextEditingController _noteCtrl = TextEditingController();
   bool _isSubmitting = false;
   bool _isAiChecking = false; // Dang goi Proxy AI kiem tra chat luong xe
+  bool _isReviewDialogOpen = false; // Dang mo hop thoai duyet / gan don
+  Timer? _autoRefreshTimer;
   // Lịch sử các lượt chụp 5 ảnh của biển số đang xem (phục vụ slide xem ngày trước / ngày sau)
   List<dynamic> _plateHistory = [];
   int _historyIndex = 0;
@@ -36,17 +39,34 @@ class _VehicleInspectionReviewScreenState
   void initState() {
     super.initState();
     _loadInspections();
+    _startAutoRefreshTimer();
+  }
+
+  void _startAutoRefreshTimer() {
+    _autoRefreshTimer?.cancel();
+    _autoRefreshTimer = Timer.periodic(const Duration(seconds: 10), (_) {
+      if (mounted &&
+          !_isLoading &&
+          !_isSubmitting &&
+          !_isAiChecking &&
+          !_isReviewDialogOpen) {
+        _loadInspections(silent: true);
+      }
+    });
   }
 
   @override
   void dispose() {
+    _autoRefreshTimer?.cancel();
     _searchCtrl.dispose();
     _noteCtrl.dispose();
     super.dispose();
   }
 
-  Future<void> _loadInspections() async {
-    setState(() => _isLoading = true);
+  Future<void> _loadInspections({bool silent = false}) async {
+    if (!silent) {
+      setState(() => _isLoading = true);
+    }
     final String? dateStr = _filterDate != null
         ? "${_filterDate!.year.toString().padLeft(4, '0')}-${_filterDate!.month.toString().padLeft(2, '0')}-${_filterDate!.day.toString().padLeft(2, '0')}"
         : null;
@@ -55,33 +75,78 @@ class _VehicleInspectionReviewScreenState
       plateNumber: _filterPlate.isNotEmpty ? _filterPlate : null,
       date: dateStr,
     );
-    if (mounted) {
-      setState(() {
-        _inspections = data;
-        // Lọc theo trạng thái nếu có
-        final filteredList = _getFilteredInspections();
+    if (!mounted) return;
+
+    final prevSelectedId = _focusIdOf(_selectedRecord);
+    Map<String, dynamic>? newSelected = _selectedRecord;
+    bool shouldReloadPlateHistory = false;
+
+    setState(() {
+      _inspections = data;
+      // Lọc theo trạng thái nếu có
+      final filteredList = _getFilteredInspections();
+
+      if (prevSelectedId != null) {
+        // Tìm xem bản ghi đang chọn có còn trong danh sách không
+        final matched = filteredList.cast<Map<String, dynamic>?>().firstWhere(
+          (item) => _focusIdOf(item) == prevSelectedId,
+          orElse: () => null,
+        );
+        if (matched != null) {
+          final oldReason = (_selectedRecord?['flag_reason'] ?? '').toString();
+          newSelected = matched;
+          _selectedRecord = matched;
+          // Chỉ đồng bộ lại text ghi chú nếu người dùng chưa sửa nội dung khác với bản ghi cũ
+          if (_noteCtrl.text == oldReason) {
+            _noteCtrl.text = (matched['flag_reason'] ?? '').toString();
+          }
+        } else if (!silent) {
+          // Khi người dùng chủ động tải lại hoặc đổi bộ lọc mà bản ghi cũ không còn
+          if (filteredList.isNotEmpty) {
+            newSelected = filteredList.first as Map<String, dynamic>;
+            _selectedRecord = newSelected;
+            _noteCtrl.text = newSelected?['flag_reason'] ?? '';
+            shouldReloadPlateHistory = true;
+          } else {
+            newSelected = null;
+            _selectedRecord = null;
+            _noteCtrl.clear();
+            shouldReloadPlateHistory = true;
+          }
+        }
+      } else {
+        // Trước đó chưa chọn bản ghi nào (ví dụ lúc mới mở danh sách rỗng, giờ tài xế nộp ảnh mới)
         if (filteredList.isNotEmpty) {
-          _selectedRecord = filteredList.first as Map<String, dynamic>;
-          _noteCtrl.text = _selectedRecord?['flag_reason'] ?? '';
+          newSelected = filteredList.first as Map<String, dynamic>;
+          _selectedRecord = newSelected;
+          _noteCtrl.text = newSelected?['flag_reason'] ?? '';
+          shouldReloadPlateHistory = true;
         } else {
+          newSelected = null;
           _selectedRecord = null;
           _noteCtrl.clear();
         }
+      }
+
+      if (!silent) {
         _isLoading = false;
-      });
-    }
+      }
+    });
+
     // Tải lịch sử các lượt chụp của biển số đang chọn để phục vụ slide xem ngày trước / ngày sau
-    final String plateKey = (_selectedRecord?['plate_number'] ?? '').toString();
-    if (plateKey.isNotEmpty) {
-      _loadPlateHistory(
-        plateKey,
-        focusInspectionId: _focusIdOf(_selectedRecord),
-      );
-    } else if (mounted) {
-      setState(() {
-        _plateHistory = [];
-        _historyIndex = 0;
-      });
+    if (shouldReloadPlateHistory) {
+      final String plateKey = (newSelected?['plate_number'] ?? '').toString();
+      if (plateKey.isNotEmpty) {
+        _loadPlateHistory(
+          plateKey,
+          focusInspectionId: _focusIdOf(newSelected),
+        );
+      } else if (mounted) {
+        setState(() {
+          _plateHistory = [];
+          _historyIndex = 0;
+        });
+      }
     }
   }
 
@@ -286,24 +351,29 @@ class _VehicleInspectionReviewScreenState
   Future<void> _updateReviewStatus(String status) async {
     if (_selectedRecord == null) return;
     if (status == 'approved') {
-      final result = await AssignOrderOnApproveDialog.show(
-        context,
-        inspectionRecord: Map<String, dynamic>.from(_selectedRecord!),
-        reviewNote: _noteCtrl.text.trim(),
-      );
-      if (result != null && result['approved'] == true && mounted) {
-        final orderCode = result['order_code'];
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            backgroundColor: Colors.green.shade700,
-            content: Text(
-              (orderCode != null && orderCode.toString().isNotEmpty)
-                  ? "Đã duyệt nhận chuyến và gắn đơn hàng $orderCode cho tài xế!"
-                  : "Đã phê duyệt kiểm tra xe! Xe được phép nhận chuyến.",
-            ),
-          ),
+      _isReviewDialogOpen = true;
+      try {
+        final result = await AssignOrderOnApproveDialog.show(
+          context,
+          inspectionRecord: Map<String, dynamic>.from(_selectedRecord!),
+          reviewNote: _noteCtrl.text.trim(),
         );
-        _loadInspections();
+        if (result != null && result['approved'] == true && mounted) {
+          final orderCode = result['order_code'];
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              backgroundColor: Colors.green.shade700,
+              content: Text(
+                (orderCode != null && orderCode.toString().isNotEmpty)
+                    ? "Đã duyệt nhận chuyến và gắn đơn hàng $orderCode cho tài xế!"
+                    : "Đã phê duyệt kiểm tra xe! Xe được phép nhận chuyến.",
+              ),
+            ),
+          );
+          _loadInspections();
+        }
+      } finally {
+        _isReviewDialogOpen = false;
       }
       return;
     }
@@ -825,40 +895,83 @@ class _VehicleInspectionReviewScreenState
                                         overflow: TextOverflow.ellipsis,
                                       ),
                                     ),
-                                    SizedBox(
-                                      height: 32,
-                                      child: OutlinedButton.icon(
-                                        style: OutlinedButton.styleFrom(
-                                          foregroundColor:
-                                              Colors.blueGrey.shade800,
-                                          backgroundColor: Colors.white,
-                                          side: BorderSide(
-                                            color: Colors.grey.shade300,
+                                    Tooltip(
+                                      message:
+                                          "Hệ thống tự động làm mới danh sách định kỳ mỗi 10 giây",
+                                      child: Container(
+                                        padding: const EdgeInsets.symmetric(
+                                          horizontal: 6,
+                                          vertical: 3,
+                                        ),
+                                        margin: const EdgeInsets.only(right: 6),
+                                        decoration: BoxDecoration(
+                                          color: Colors.teal.shade50,
+                                          borderRadius:
+                                              BorderRadius.circular(4),
+                                          border: Border.all(
+                                            color: Colors.teal.shade200,
                                           ),
-                                          shape: RoundedRectangleBorder(
-                                            borderRadius: BorderRadius.circular(
-                                              4,
+                                        ),
+                                        child: Row(
+                                          mainAxisSize: MainAxisSize.min,
+                                          children: [
+                                            Container(
+                                              width: 6,
+                                              height: 6,
+                                              decoration: BoxDecoration(
+                                                color: Colors.teal.shade600,
+                                                shape: BoxShape.circle,
+                                              ),
+                                            ),
+                                            const SizedBox(width: 4),
+                                            Text(
+                                              "Auto 10s",
+                                              style: TextStyle(
+                                                fontSize: 11,
+                                                color: Colors.teal.shade800,
+                                                fontWeight: FontWeight.w600,
+                                              ),
+                                            ),
+                                          ],
+                                        ),
+                                      ),
+                                    ),
+                                    Tooltip(
+                                      message: "Bấm để tải lại danh sách ngay",
+                                      child: SizedBox(
+                                        height: 32,
+                                        child: OutlinedButton.icon(
+                                          style: OutlinedButton.styleFrom(
+                                            foregroundColor:
+                                                Colors.blueGrey.shade800,
+                                            backgroundColor: Colors.white,
+                                            side: BorderSide(
+                                              color: Colors.grey.shade300,
+                                            ),
+                                            shape: RoundedRectangleBorder(
+                                              borderRadius:
+                                                  BorderRadius.circular(4),
+                                            ),
+                                            padding: const EdgeInsets.symmetric(
+                                              horizontal: 8,
+                                            ),
+                                            minimumSize: Size.zero,
+                                            tapTargetSize:
+                                                MaterialTapTargetSize.shrinkWrap,
+                                          ),
+                                          icon: const Icon(
+                                            Icons.refresh,
+                                            size: 15,
+                                          ),
+                                          label: const Text(
+                                            "Tải lại",
+                                            style: TextStyle(
+                                              fontSize: 12,
+                                              fontWeight: FontWeight.w600,
                                             ),
                                           ),
-                                          padding: const EdgeInsets.symmetric(
-                                            horizontal: 8,
-                                          ),
-                                          minimumSize: Size.zero,
-                                          tapTargetSize:
-                                              MaterialTapTargetSize.shrinkWrap,
+                                          onPressed: _loadInspections,
                                         ),
-                                        icon: const Icon(
-                                          Icons.refresh,
-                                          size: 15,
-                                        ),
-                                        label: const Text(
-                                          "Tải lại",
-                                          style: TextStyle(
-                                            fontSize: 12,
-                                            fontWeight: FontWeight.w600,
-                                          ),
-                                        ),
-                                        onPressed: _loadInspections,
                                       ),
                                     ),
                                   ],

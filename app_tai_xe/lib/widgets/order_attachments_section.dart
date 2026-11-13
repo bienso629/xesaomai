@@ -467,6 +467,7 @@ class OrderAttachmentsSection extends StatelessWidget {
         orderId: orderId,
         orderCode: orderCode,
         vehiclePlate: plate,
+        orderData: order,
       );
       if (res != null && onOrderUpdated != null) {
         onOrderUpdated!(res);
@@ -521,7 +522,7 @@ class OrderAttachmentsSection extends StatelessWidget {
           statusText: arrivalPhoto.isNotEmpty
               ? "Đã chụp${arrivalTime.isNotEmpty ? ' • $arrivalTime' : ''}"
               : "Chưa có ảnh Đến điểm giao",
-          canCapture: isDriver && orderId != null && weighPhoto.isNotEmpty,
+          canCapture: isDriver && orderId != null,
           captureLabel: arrivalPhoto.isNotEmpty
               ? "Chụp lại ảnh Đến điểm giao"
               : "Chụp ảnh Đến điểm giao",
@@ -643,9 +644,9 @@ class OrderAttachmentsSection extends StatelessWidget {
         head = 'Tại Điểm giao hàng';
         break;
       case 'NONE':
-        if (ptype == 'delivery_slip') {
+        if (ptype == 'delivery_slip' || ptype == 'arrival_photo') {
           head = 'Ngoài điểm giao hàng';
-        } else if (ptype == 'pump_slip_before') {
+        } else if (ptype == 'pump_slip_before' || ptype == 'weigh_slip') {
           head = 'Ngoài điểm nhận hàng';
         } else {
           head = 'Ngoài điểm nhận/giao';
@@ -693,9 +694,9 @@ class OrderAttachmentsSection extends StatelessWidget {
       case 'NONE':
         color = const Color(0xFFDC2626);
         icon = Icons.wrong_location_outlined;
-        text = ptype == 'delivery_slip'
+        text = (ptype == 'delivery_slip' || ptype == 'arrival_photo')
             ? 'KHÔNG ở Điểm giao hàng'
-            : (ptype == 'pump_slip_before')
+            : (ptype == 'pump_slip_before' || ptype == 'weigh_slip')
                 ? 'KHÔNG ở Nơi nhận hàng'
                 : 'KHÔNG ở Nơi nhận hàng / Điểm giao hàng';
         break;

@@ -154,8 +154,8 @@ class _DriverOrdersScreenState extends State<DriverOrdersScreen> {
         final code = (o['order_code'] ?? '').toString().toLowerCase();
         final cust = (o['customer_name'] ?? '').toString().toLowerCase();
         final prod = (o['product_name'] ?? '').toString().toLowerCase();
-        final pick = (o['pickup_location'] ?? '').toString().toLowerCase();
-        final deliv = (o['delivery_location'] ?? '').toString().toLowerCase();
+        final pick = (o['pickup_address'] ?? o['pickup_location'] ?? '').toString().toLowerCase();
+        final deliv = (o['delivery_address'] ?? o['delivery_location'] ?? '').toString().toLowerCase();
         final pLower = plate.toLowerCase();
         if (!code.contains(q) &&
             !cust.contains(q) &&
@@ -572,8 +572,12 @@ class _DriverOrdersScreenState extends State<DriverOrdersScreen> {
             .toString();
     final product = (order['product_name'] ?? '---').toString();
     final weight = order['cargo_weight_tons'] ?? 0;
-    final pickup = (order['pickup_location'] ?? '---').toString();
-    final delivery = (order['delivery_location'] ?? '---').toString();
+    final pickup = ((order['pickup_address'] ?? order['pickup_location'])?.toString().trim().isNotEmpty == true)
+        ? (order['pickup_address'] ?? order['pickup_location']).toString().trim()
+        : '---';
+    final delivery = ((order['delivery_address'] ?? order['delivery_location'])?.toString().trim().isNotEmpty == true)
+        ? (order['delivery_address'] ?? order['delivery_location']).toString().trim()
+        : '---';
     final customer = (order['customer_name'] ?? '').toString().trim();
     final timeStr = _formatDate(order['updated_at'] ?? order['created_at']);
 
@@ -731,6 +735,8 @@ class _DriverOrdersScreenState extends State<DriverOrdersScreen> {
   Widget _buildAttachmentBadgesRow(Map<String, dynamic> order) {
     final hasWeigh =
         (order['weigh_slip_photo_url'] ?? '').toString().trim().isNotEmpty;
+    final hasArrival =
+        (order['arrival_photo_url'] ?? '').toString().trim().isNotEmpty;
     final hasDelivery =
         (order['delivery_slip_photo_url'] ?? '').toString().trim().isNotEmpty;
     final hasBreakdown =
@@ -783,6 +789,12 @@ class _DriverOrdersScreenState extends State<DriverOrdersScreen> {
           Icons.scale_outlined,
         ),
         chip(
+          "Đến giao",
+          hasArrival,
+          const Color(0xFF7C3AED),
+          Icons.where_to_vote_outlined,
+        ),
+        chip(
           "Phiếu giao",
           hasDelivery,
           const Color(0xFF15803D),
@@ -811,8 +823,12 @@ class _DriverOrdersScreenState extends State<DriverOrdersScreen> {
     final customer = (order['customer_name'] ?? 'Khách lẻ / Nội bộ').toString();
     final product = (order['product_name'] ?? '---').toString();
     final weight = order['cargo_weight_tons'] ?? 0;
-    final pickup = (order['pickup_location'] ?? '---').toString();
-    final delivery = (order['delivery_location'] ?? '---').toString();
+    final pickup = ((order['pickup_address'] ?? order['pickup_location'])?.toString().trim().isNotEmpty == true)
+        ? (order['pickup_address'] ?? order['pickup_location']).toString().trim()
+        : '---';
+    final delivery = ((order['delivery_address'] ?? order['delivery_location'])?.toString().trim().isNotEmpty == true)
+        ? (order['delivery_address'] ?? order['delivery_location']).toString().trim()
+        : '---';
     final plate =
         (order['assigned_vehicle_plate'] ??
                 order['vehicle_plate'] ??

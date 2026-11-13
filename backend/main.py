@@ -1,5 +1,6 @@
 import base64
 import os
+import re
 import math
 import uuid
 import shutil
@@ -581,8 +582,9 @@ ORDER_PHOTO_PREFIX = {
 
 ORDER_ATTACHMENT_DDL = [
     "ALTER TABLE orders ADD COLUMN IF NOT EXISTS updated_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP",
-    # Mã khách hàng (liên kết mềm với customers.code), không bắt buộc
-    "ALTER TABLE orders ADD COLUMN IF NOT EXISTS customer_code VARCHAR(50)",
+    # Mã khách hàng (liên kết mềm với customers.code, cho phép nhập tự do ngoài danh mục), không bắt buộc
+    "ALTER TABLE orders ADD COLUMN IF NOT EXISTS customer_code VARCHAR(255)",
+    "ALTER TABLE orders ALTER COLUMN customer_code TYPE VARCHAR(255)",
     # Sản phẩm do điều phối nhập tay (bên cạnh Hàng hóa chọn từ danh mục products)
     "ALTER TABLE orders ADD COLUMN IF NOT EXISTS product_detail VARCHAR(255)",
     # Bán kính (mét) cho phép khi đối chiếu GPS ảnh với Nơi nhận hàng / Điểm giao hàng
@@ -673,7 +675,7 @@ def _parse_gps_time(value: Optional[str]):
     except ValueError:
         return None
 
-DEFAULT_ORDER_POINT_RADIUS_M = 100
+DEFAULT_ORDER_POINT_RADIUS_M = 1500
 
 # Loại ảnh -> nhãn hiển thị, dùng khi đối chiếu GPS ảnh với Nơi nhận / Điểm giao
 ORDER_PHOTO_GEO_LABELS = {
@@ -713,7 +715,7 @@ def _attach_photo_geo_check(order):
         if lat is None or lng is None:
             continue
         radius = o.get(f"{key}_radius_m") or DEFAULT_ORDER_POINT_RADIUS_M
-        points[key] = (lat, lng, int(radius))
+        points[key] = (lat, lng, max(int(radius), 1000))
 
     checks = {}
     for ptype, label in ORDER_PHOTO_GEO_LABELS.items():
@@ -725,9 +727,13 @@ def _attach_photo_geo_check(order):
                 "gps_accuracy": _as_float(o.get(f"{ptype}_gps_accuracy"))}
         nearest = None
 
-        # 1&2. Truoc bom / Phieu can -> Nơi nhận hàng; 3&4. Den diem giao / Phieu giao -> Điểm giao hàng
-        if ptype in ("pump_slip_before", "weigh_slip"):
+        # 1. Trước bơm -> Nơi nhận hàng
+        # 2. Phiếu cân -> Nơi nhận hàng HOẶC Điểm giao hàng (phiếu cân xuất hoặc nhập)
+        # 3&4. Đến điểm giao / Phiếu giao -> Điểm giao hàng
+        if ptype in ("pump_slip_before",):
             target_keys = [k for k in ("pickup",) if k in points]
+        elif ptype in ("weigh_slip",):
+            target_keys = [k for k in ("pickup", "delivery") if k in points]
         elif ptype in ("arrival_photo", "delivery_slip"):
             target_keys = [k for k in ("delivery",) if k in points]
         else:
@@ -4070,14 +4076,15 @@ def get_locations_by_customer(
         params: list = []
         sql = "SELECT * FROM locations WHERE is_active = TRUE"
         if customer_code and str(customer_code).strip():
-            cur.execute("SELECT id FROM customers WHERE LOWER(code) = LOWER(%s) LIMIT 1", (str(customer_code).strip(),))
+            code_val = str(customer_code).strip()
+            cur.execute(
+                "SELECT id FROM customers WHERE LOWER(code) = LOWER(%s) OR LOWER(name) = LOWER(%s) LIMIT 1",
+                (code_val, code_val),
+            )
             row = cur.fetchone()
             if row:
                 sql += " AND (%s = ANY(customer_ids) OR cardinality(customer_ids) = 0)"
                 params.append(int(row["id"]))
-            else:
-                # Mã khách hàng không có trong danh mục: chỉ trả về điểm dùng chung
-                sql += " AND cardinality(customer_ids) = 0"
         if kind:
             k = _clean_kind(kind)
             sql += " AND (kind = %s OR kind = 'BOTH')"
@@ -4736,24 +4743,50 @@ def get_reports_summary(current_user: dict = Depends(get_current_user)):
         "avg_pump_time_minutes": 78
     }
 
+def _normalize_plate_str(plate: Optional[str]) -> str:
+    if not plate:
+        return ""
+    return re.sub(r'[^A-Za-z0-9]', '', str(plate)).upper()
+
+def _find_vehicle(cur, plate: Optional[str]) -> Optional[dict]:
+    plate_clean = (plate or "").strip()
+    if not plate_clean:
+        return None
+    # 1. Khớp chính xác
+    cur.execute("SELECT plate_number, default_driver_id, status FROM vehicles WHERE plate_number = %s", (plate_clean,))
+    row = cur.fetchone()
+    if row:
+        return row
+    # 2. Khớp sau khi chuẩn hóa (loại bỏ gạch ngang, chấm, khoảng trắng)
+    norm = _normalize_plate_str(plate_clean)
+    if norm:
+        cur.execute(
+            """
+            SELECT plate_number, default_driver_id, status 
+            FROM vehicles 
+            WHERE REPLACE(REPLACE(REPLACE(UPPER(plate_number), '-', ''), '.', ''), ' ', '') = %s
+            LIMIT 1
+            """,
+            (norm,)
+        )
+        row = cur.fetchone()
+        if row:
+            return row
+    return None
+
 def _vehicle_is_resting(cur, plate: Optional[str]) -> bool:
     """Xe đang 'Tạm ngừng hoạt động' (Báo nghỉ): tài xế không được nhận chuyến/đơn hàng.
     Chỉ thoát trạng thái khi Điều phối kích hoạt lại xe (status != inactive)
     HOẶC tài xế được Duyệt Nhận Chuyến (5 ảnh hôm nay có flag_status = 'approved')."""
-    plate = (plate or "").strip()
-    if not plate:
+    if not plate or not str(plate).strip():
         return False
     try:
-        cur.execute("SELECT status FROM vehicles WHERE plate_number = %s", (plate,))
-        row = cur.fetchone()
-        if not row or row.get("status") != VEHICLE_STATUS_INACTIVE:
+        v = _find_vehicle(cur, plate)
+        if not v or v.get("status") != VEHICLE_STATUS_INACTIVE:
             return False
+        return True
     except Exception:
         return False
-    # Trạng thái nghỉ chỉ phụ thuộc status của xe. Duyệt Nhận Chuyến cũ (trước khi
-    # Báo nghỉ) KHÔNG mở khóa; chỉ khi Điều phối kích hoạt lại xe HOẶC Duyệt Nhận
-    # Chuyến mới (review_inspection sẽ tự kích hoạt lại xe khi duyệt cho xe đang nghỉ).
-    return True
 
 
 def _vehicle_resting_reason(plate: str) -> str:
@@ -4768,23 +4801,33 @@ def _vehicle_resting_reason(plate: str) -> str:
 def _vehicle_driver_id(cur, plate: Optional[str]) -> Optional[int]:
     """Mỗi xe có một tài khoản tài xế phụ trách: lấy tài xế của đơn theo xe.
     Xe nhập tự do (chưa có trong Đội xe) thì đơn chưa có tài xế (None)."""
-    plate = (plate or "").strip()
-    if not plate:
+    plate_clean = (plate or "").strip()
+    if not plate_clean:
         raise HTTPException(status_code=400, detail="Vui lòng chọn xe vận chuyển")
-    cur.execute("SELECT default_driver_id FROM vehicles WHERE plate_number = %s", (plate,))
-    row = cur.fetchone()
-    if not row:
+    v = _find_vehicle(cur, plate_clean)
+    if not v:
         return None
-    return row["default_driver_id"]
+    return v.get("default_driver_id")
 
 @app.post("/api/v1/orders", status_code=status.HTTP_201_CREATED)
 def create_order(o: OrderCreate, current_user: dict = Depends(get_current_user)):
+    roles = [str(r).strip().lower() for r in current_user.get("roles", [])]
+    username = (current_user.get("username") or "").strip().lower()
+    allowed = (username == "admin" or any(r in ("admin", "manager", "dispatcher") for r in roles))
+    if not allowed:
+        raise HTTPException(status_code=403, detail="Chỉ Quản lý và Điều phối viên mới có quyền tạo đơn hàng")
     _validate_order_point(o.pickup_lat, o.pickup_lng, "Nơi nhận hàng")
     _validate_order_point(o.delivery_lat, o.delivery_lng, "Điểm giao hàng")
     conn = get_db()
     cur = conn.cursor()
     try:
-        o.assigned_driver_id = _vehicle_driver_id(cur, o.assigned_vehicle_plate)
+        v_info = _find_vehicle(cur, o.assigned_vehicle_plate)
+        if v_info:
+            o.assigned_vehicle_plate = v_info["plate_number"]
+            o.assigned_driver_id = v_info.get("default_driver_id")
+        else:
+            o.assigned_driver_id = _vehicle_driver_id(cur, o.assigned_vehicle_plate)
+
         # Xe đang "Tạm ngừng hoạt động" (Báo nghỉ) thì không được nhận đơn hàng mới
         # (chỉ áp dụng với xe có trong Đội xe; xe nhập tự do sẽ không tra thấy xe)
         if _vehicle_is_resting(cur, o.assigned_vehicle_plate):
@@ -4832,9 +4875,9 @@ def get_orders(current_user: dict = Depends(get_current_user)):
 
 @app.put("/api/v1/orders/{order_id}")
 def update_order(order_id: int, o: OrderUpdate, current_user: dict = Depends(get_current_user)):
-    roles = current_user.get("roles", [])
-    username = current_user.get("username", "")
-    allowed = (username == "admin" or any(r in ["admin", "manager", "dispatcher"] for r in roles))
+    roles = [str(r).strip().lower() for r in current_user.get("roles", [])]
+    username = (current_user.get("username") or "").strip().lower()
+    allowed = (username == "admin" or any(r in ("admin", "manager", "dispatcher") for r in roles))
     if not allowed:
         raise HTTPException(status_code=403, detail="Chỉ Quản lý và Điều phối viên mới có quyền cập nhật đơn hàng")
     _validate_order_point(o.pickup_lat, o.pickup_lng, "Nơi nhận hàng")
@@ -4847,6 +4890,8 @@ def update_order(order_id: int, o: OrderUpdate, current_user: dict = Depends(get
         existing = cur.fetchone()
         if not existing:
             raise HTTPException(status_code=404, detail="Không tìm thấy đơn hàng")
+        if (existing.get("status") or "").strip().lower() == "completed":
+            raise HTTPException(status_code=400, detail="Đơn hàng đã hoàn thành, không được phép chỉnh sửa")
 
         fields = []
         values = []
@@ -4891,23 +4936,34 @@ def update_order(order_id: int, o: OrderUpdate, current_user: dict = Depends(get
         # Giữ nguyên xe thì giữ nguyên tài xế đang có của đơn; assigned_driver_id gửi lên bị bỏ qua.
         if o.assigned_vehicle_plate is not None:
             new_plate = o.assigned_vehicle_plate.strip()
-            if new_plate != (existing.get("assigned_vehicle_plate") or "").strip():
+            v_info = _find_vehicle(cur, new_plate)
+            resolved_plate = v_info["plate_number"] if v_info else new_plate
+            if resolved_plate != (existing.get("assigned_vehicle_plate") or "").strip():
                 # Xe đang "Tạm ngừng hoạt động" (Báo nghỉ) thì không thể gán đơn hàng cho xe đó
                 # (chỉ áp dụng với xe có trong Đội xe; xe nhập tự do sẽ không tra thấy xe)
-                if _vehicle_is_resting(cur, new_plate):
-                    raise HTTPException(status_code=409, detail=_vehicle_resting_reason(new_plate))
+                if _vehicle_is_resting(cur, resolved_plate):
+                    raise HTTPException(status_code=409, detail=_vehicle_resting_reason(resolved_plate))
                 fields.append("assigned_vehicle_plate = %s")
-                values.append(new_plate)
+                values.append(resolved_plate)
                 fields.append("assigned_driver_id = %s")
-                values.append(_vehicle_driver_id(cur, new_plate))
+                values.append(v_info.get("default_driver_id") if v_info else None)
         if o.cargo_weight_tons is not None:
             fields.append("cargo_weight_tons = %s")
             values.append(o.cargo_weight_tons)
         if o.status is not None:
+            norm_status = o.status.strip().lower()
+            if norm_status == "delivered":
+                norm_status = "completed"
+            if norm_status == "completed" and not allowed:
+                raise HTTPException(
+                    status_code=403,
+                    detail="Chỉ Điều phối viên và Quản lý mới có quyền xác nhận Hoàn thành đơn hàng",
+                )
             fields.append("status = %s")
-            values.append(o.status)
+            values.append(norm_status)
 
         if fields:
+            fields.append("updated_at = CURRENT_TIMESTAMP")
             values.append(order_id)
             cur.execute(f"UPDATE orders SET {', '.join(fields)} WHERE id = %s RETURNING *", tuple(values))
             conn.commit()
@@ -4941,6 +4997,8 @@ def delete_order(order_id: int, current_user: dict = Depends(get_current_user)):
         existing = cur.fetchone()
         if not existing:
             raise HTTPException(status_code=404, detail="Không tìm thấy đơn hàng")
+        if (existing.get("status") or "").strip().lower() == "completed":
+            raise HTTPException(status_code=400, detail="Đơn hàng đã hoàn thành, không được phép xóa")
 
         # Xóa các ràng buộc liên quan nếu có (moc_chuyen, chung_tu_chuyen, cap_dau)
         cur.execute("DELETE FROM moc_chuyen WHERE order_id = %s", (order_id,))
@@ -5398,6 +5456,14 @@ def submit_order_attachment(
         conn.close()
         raise HTTPException(status_code=404, detail="Không tìm thấy đơn hàng")
 
+    if (existing.get("status") or "").strip().lower() == "completed":
+        cur.close()
+        conn.close()
+        raise HTTPException(
+            status_code=400,
+            detail="Đơn hàng đã được Điều phối / Quản lý xác nhận hoàn thành, không thể gửi lại ảnh chứng từ.",
+        )
+
     actor = current_user.get("full_name") or current_user.get("username") or "Người dùng"
     ptype = (payload.photo_type or "").strip().lower()
     if ptype in ("pump_before",):
@@ -5414,7 +5480,7 @@ def submit_order_attachment(
         raise HTTPException(status_code=400, detail=f"Loại hình chụp không hợp lệ: {ptype}")
 
     # DUY NHẤT 4 trạng thái chụp hình của Tài xế. Bán kính GPS lấy theo cấu hình
-    # từng điểm của đơn (pickup_radius_m / delivery_radius_m, mặc định 100m).
+    # từng điểm của đơn (pickup_radius_m / delivery_radius_m, mặc định 1500m).
     DRIVER_ONLY_PHOTOS = ("pump_slip_before", "weigh_slip", "arrival_photo", "delivery_slip")
     if ptype in DRIVER_ONLY_PHOTOS:
         user_roles = [r.lower() for r in current_user.get("roles", [])]
@@ -5429,25 +5495,6 @@ def submit_order_attachment(
         # không còn khóa tuần tự 1 -> 2 -> 3 -> 4. Mỗi ảnh vẫn BẮT BUỘC kèm GPS đối chiếu
         # với mốc tương ứng bên dưới.
 
-        # Chọn mốc đối chiếu GPS: bước 1&2 theo Nơi nhận hàng, bước 3&4 theo Điểm giao hàng
-        if ptype in ("pump_slip_before", "weigh_slip"):
-            target_lat = _as_float(existing.get("pickup_lat"))
-            target_lng = _as_float(existing.get("pickup_lng"))
-            target_radius = existing.get("pickup_radius_m") or DEFAULT_ORDER_POINT_RADIUS_M
-            target_label = "Nơi nhận hàng"
-        else:
-            target_lat = _as_float(existing.get("delivery_lat"))
-            target_lng = _as_float(existing.get("delivery_lng"))
-            target_radius = existing.get("delivery_radius_m") or DEFAULT_ORDER_POINT_RADIUS_M
-            target_label = "Điểm giao hàng"
-        if target_lat is None or target_lng is None:
-            cur.close()
-            conn.close()
-            raise HTTPException(
-                status_code=400,
-                detail=f"Đơn hàng chưa có tọa độ {target_label}. Vui lòng liên hệ Điều phối cập nhật.",
-            )
-
         # Mọi ảnh của tài xế đều bắt buộc có tọa độ GPS lúc chụp
         try:
             _validate_gps(payload.gps_lat, payload.gps_lng)
@@ -5456,16 +5503,81 @@ def submit_order_attachment(
             conn.close()
             raise
 
-        dist_to_target = round(haversine_distance(payload.gps_lat, payload.gps_lng, target_lat, target_lng))
-        max_allowed_radius = int(target_radius)
-        if dist_to_target > max_allowed_radius:
-            cur.close()
-            conn.close()
-            p_label = ORDER_PHOTO_GEO_LABELS.get(ptype, ptype)
-            raise HTTPException(
-                status_code=400,
-                detail=f"Vị trí chụp ảnh ({p_label}) cách {target_label} {dist_to_target}m, vượt quá bán kính cho phép ({max_allowed_radius}m). Vui lòng chụp tại đúng {target_label.lower()}.",
-            )
+        pickup_lat = _as_float(existing.get("pickup_lat"))
+        pickup_lng = _as_float(existing.get("pickup_lng"))
+        pickup_radius = max(int(existing.get("pickup_radius_m") or DEFAULT_ORDER_POINT_RADIUS_M), 1000)
+
+        delivery_lat = _as_float(existing.get("delivery_lat"))
+        delivery_lng = _as_float(existing.get("delivery_lng"))
+        delivery_radius = max(int(existing.get("delivery_radius_m") or DEFAULT_ORDER_POINT_RADIUS_M), 1000)
+
+        p_label = ORDER_PHOTO_GEO_LABELS.get(ptype, ptype)
+
+        if ptype == "pump_slip_before":
+            if pickup_lat is None or pickup_lng is None:
+                cur.close()
+                conn.close()
+                raise HTTPException(
+                    status_code=400,
+                    detail="Đơn hàng chưa có tọa độ Nơi nhận hàng. Vui lòng liên hệ Điều phối cập nhật.",
+                )
+            dist_to_target = round(haversine_distance(payload.gps_lat, payload.gps_lng, pickup_lat, pickup_lng))
+            if dist_to_target > pickup_radius:
+                cur.close()
+                conn.close()
+                raise HTTPException(
+                    status_code=400,
+                    detail=f"Vị trí chụp ảnh ({p_label}) cách Nơi nhận hàng {dist_to_target}m, vượt quá bán kính cho phép ({pickup_radius}m). Vui lòng chụp tại đúng nơi nhận hàng.",
+                )
+
+        elif ptype in ("arrival_photo", "delivery_slip"):
+            if delivery_lat is None or delivery_lng is None:
+                cur.close()
+                conn.close()
+                raise HTTPException(
+                    status_code=400,
+                    detail="Đơn hàng chưa có tọa độ Điểm giao hàng. Vui lòng liên hệ Điều phối cập nhật.",
+                )
+            dist_to_target = round(haversine_distance(payload.gps_lat, payload.gps_lng, delivery_lat, delivery_lng))
+            if dist_to_target > delivery_radius:
+                cur.close()
+                conn.close()
+                raise HTTPException(
+                    status_code=400,
+                    detail=f"Vị trí chụp ảnh ({p_label}) cách Điểm giao hàng {dist_to_target}m, vượt quá bán kính cho phép ({delivery_radius}m). Vui lòng chụp tại đúng điểm giao hàng.",
+                )
+
+        elif ptype == "weigh_slip":
+            # Phiếu cân có thể được chụp tại Nơi nhận hàng (trạm cân xuất) HOẶC Điểm giao hàng (trạm cân nhập)
+            has_pickup = pickup_lat is not None and pickup_lng is not None
+            has_delivery = delivery_lat is not None and delivery_lng is not None
+
+            if not has_pickup and not has_delivery:
+                cur.close()
+                conn.close()
+                raise HTTPException(
+                    status_code=400,
+                    detail="Đơn hàng chưa có tọa độ Nơi nhận hàng hoặc Điểm giao hàng để đối chiếu Phiếu cân. Vui lòng liên hệ Điều phối cập nhật.",
+                )
+
+            dist_pickup = round(haversine_distance(payload.gps_lat, payload.gps_lng, pickup_lat, pickup_lng)) if has_pickup else None
+            dist_delivery = round(haversine_distance(payload.gps_lat, payload.gps_lng, delivery_lat, delivery_lng)) if has_delivery else None
+
+            matched_pickup = has_pickup and (dist_pickup <= pickup_radius)
+            matched_delivery = has_delivery and (dist_delivery <= delivery_radius)
+
+            if not matched_pickup and not matched_delivery:
+                cur.close()
+                conn.close()
+                err_parts = []
+                if has_pickup:
+                    err_parts.append(f"cách Nơi nhận hàng {dist_pickup}m (bán kính cho phép {pickup_radius}m)")
+                if has_delivery:
+                    err_parts.append(f"cách Điểm giao hàng {dist_delivery}m (bán kính cho phép {delivery_radius}m)")
+                raise HTTPException(
+                    status_code=400,
+                    detail=f"Vị trí chụp ảnh (Phiếu cân) {', và '.join(err_parts)}, vượt quá bán kính cho phép. Vui lòng chụp tại Nơi nhận hàng hoặc Điểm giao hàng.",
+                )
     else:
         # Mọi ảnh của tài xế đều bắt buộc có tọa độ GPS lúc chụp
         try:
@@ -5529,6 +5641,7 @@ def submit_order_attachment(
                     arrival_photo_time = CURRENT_TIMESTAMP,
                     arrival_photo_note = COALESCE(%s, arrival_photo_note),
                     {gps_sql}
+                    status = CASE WHEN status IN ('waiting', 'assigned') THEN 'in_progress' ELSE status END,
                     updated_at = CURRENT_TIMESTAMP
                 WHERE id = %s
                 RETURNING *
@@ -5543,7 +5656,7 @@ def submit_order_attachment(
                     delivery_slip_time = CURRENT_TIMESTAMP,
                     delivery_slip_note = COALESCE(%s, delivery_slip_note),
                     {gps_sql}
-                    status = 'completed',
+                    status = CASE WHEN status IN ('waiting', 'assigned') THEN 'in_progress' ELSE status END,
                     updated_at = CURRENT_TIMESTAMP
                 WHERE id = %s
                 RETURNING *
@@ -5593,6 +5706,24 @@ def submit_order_attachment(
             raise HTTPException(status_code=400, detail=f"Loại hình chụp không hợp lệ: {ptype}")
 
         updated = cur.fetchone()
+        try:
+            u_roles = [r.lower() for r in current_user.get("roles", [])]
+            role_code = "driver" if "driver" in u_roles else (u_roles[0] if u_roles else "user")
+            ord_code = (updated or existing).get("order_code") or f"#{order_id}"
+            veh_plate = (updated or existing).get("assigned_vehicle_plate")
+            p_label = ORDER_PHOTO_GEO_LABELS.get(ptype, ptype)
+            log_driver_activity(
+                cur,
+                user_id=current_user.get("id"),
+                username=current_user.get("username"),
+                full_name=actor,
+                role_code=role_code,
+                action=f"ORDER_PHOTO_{ptype.upper()}",
+                action_detail=f"Chụp & gửi ảnh {p_label} cho đơn {ord_code}",
+                plate=veh_plate,
+            )
+        except Exception:
+            pass
         conn.commit()
         cur.close()
         conn.close()

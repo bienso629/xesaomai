@@ -1,5 +1,6 @@
 import 'dart:math';
 import 'package:flutter/foundation.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 import '../models/inspection_model.dart';
 import '../models/trip_model.dart';
 import '../models/breakdown_model.dart';
@@ -61,6 +62,7 @@ class AppState extends ChangeNotifier {
     } else {
       currentRole = UserRole.driver;
     }
+    ensureReadNotificationsLoaded();
     notifyListeners();
   }
 
@@ -79,6 +81,7 @@ class AppState extends ChangeNotifier {
       if (data['roles'] is List && (data['roles'] as List).isNotEmpty) {
         userRoles = List<String>.from((data['roles'] as List).map((e) => e.toString()));
       }
+      await ensureReadNotificationsLoaded();
       notifyListeners();
     } catch (e) {
       debugPrint('fetchMyProfile error: $e');
@@ -161,6 +164,7 @@ class AppState extends ChangeNotifier {
 
   // Chuyến xe hiện tại
   TripMilestone? currentTrip;
+  Map<String, dynamic>? activeOrder;
 
   // Lịch sử vi phạm & tuân thủ
   int uninspectedMoveViolations = 0;
@@ -241,14 +245,17 @@ class AppState extends ChangeNotifier {
   /// Nếu xe chưa được duyệt nhận chuyến hoặc chưa có đơn hàng gắn cho xe -> currentTrip = null.
   void syncAssignedTripFromOrder(Map<String, dynamic>? order) {
     if (!isApprovedByDispatcher || order == null) {
+      activeOrder = null;
       if (currentTrip != null) {
         currentTrip = null;
         notifyListeners();
       }
       return;
     }
+    activeOrder = order;
     final String code = (order['order_code'] ?? '').toString().trim();
     if (code.isEmpty) {
+      activeOrder = null;
       if (currentTrip != null) {
         currentTrip = null;
         notifyListeners();
@@ -272,9 +279,13 @@ class AppState extends ChangeNotifier {
         destinationName: dest,
         destinationLat: dLat,
         destinationLng: dLng,
+        rawOrder: order,
       );
-    } else if (currentTrip!.orderId == null && oid != null) {
-      currentTrip!.orderId = oid;
+    } else {
+      currentTrip!.rawOrder = order;
+      if (currentTrip!.orderId == null && oid != null) {
+        currentTrip!.orderId = oid;
+      }
     }
     final pBefore = (order['pump_slip_before_photo_url'] ?? '').toString().trim();
     if (pBefore.isNotEmpty) currentTrip!.pumpBeforePhotoUrl = pBefore;
@@ -282,7 +293,12 @@ class AppState extends ChangeNotifier {
     if (wPhoto.isNotEmpty) {
       currentTrip!.weighSlipPhotoUrl = wPhoto;
       final wTon = order['weigh_slip_tonnage'];
-      if (wTon is num) currentTrip!.weighTonnage = wTon.toDouble();
+      if (wTon is num) {
+        currentTrip!.weighTonnage = wTon.toDouble();
+      } else {
+        final parsedTon = double.tryParse('${wTon ?? ''}');
+        if (parsedTon != null) currentTrip!.weighTonnage = parsedTon;
+      }
     }
     final aPhoto = (order['arrival_photo_url'] ?? '').toString().trim();
     if (aPhoto.isNotEmpty) {
@@ -475,12 +491,14 @@ class AppState extends ChangeNotifier {
   // Gửi Phiếu Cân (OCR mã, tấn, giờ cân)
   void recordWeighSlip({
     required String photoUrl,
-    required double tonnage,
+    double? tonnage,
     required DateTime weighTime,
   }) {
     if (currentTrip == null) return;
     currentTrip!.weighSlipPhotoUrl = photoUrl;
-    currentTrip!.weighTonnage = tonnage;
+    if (tonnage != null) {
+      currentTrip!.weighTonnage = tonnage;
+    }
     currentTrip!.weighTime = weighTime;
     currentTrip!.weighOrderStatus = "da gui Zalo";
     notifyListeners();
@@ -529,5 +547,124 @@ class AppState extends ChangeNotifier {
     final a = 0.5 - cos((lat2 - lat1) * p) / 2 +
         cos(lat1 * p) * cos(lat2 * p) * (1 - cos((lon2 - lon1) * p)) / 2;
     return 12742 * asin(sqrt(a));
+  }
+
+  // =========================================================================
+  // QUẢN LÝ TRẠNG THÁI ĐÃ ĐỌC / CHƯA ĐỌC THÔNG BÁO REALTIME HEADER
+  // =========================================================================
+  Set<String> readNotificationIds = {};
+  bool _notifStorageLoaded = false;
+  bool _notifInitialSeeded = false;
+  String _loadedNotifUserKey = '';
+
+  String get _currentNotifUserSuffix {
+    final u = (currentUsername ?? '').trim().toLowerCase();
+    if (u.isNotEmpty) return u;
+    if (currentUserId != null && currentUserId! > 0) return 'uid_$currentUserId';
+    return 'default';
+  }
+
+  String get _notifReadIdsKey => 'notif_read_ids_v1_$_currentNotifUserSuffix';
+  String get _notifSeededFlagKey => 'notif_seeded_v1_$_currentNotifUserSuffix';
+
+  bool get isNotifStorageReady =>
+      _notifStorageLoaded && _loadedNotifUserKey == _currentNotifUserSuffix;
+  bool get isNotifInitialSeeded => _notifInitialSeeded;
+
+  Future<void> ensureReadNotificationsLoaded() async {
+    final suffix = _currentNotifUserSuffix;
+    if (_notifStorageLoaded && _loadedNotifUserKey == suffix) return;
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      final savedList = prefs.getStringList(_notifReadIdsKey) ?? const [];
+      final seeded = prefs.getBool(_notifSeededFlagKey) ?? false;
+      readNotificationIds = savedList.toSet();
+      _notifInitialSeeded = seeded;
+      _loadedNotifUserKey = suffix;
+      _notifStorageLoaded = true;
+      notifyListeners();
+    } catch (e) {
+      debugPrint('ensureReadNotificationsLoaded error: $e');
+    }
+  }
+
+  Future<void> _persistReadNotifications() async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      List<String> list = readNotificationIds.toList();
+      if (list.length > 3000) {
+        list = list.sublist(list.length - 3000);
+        readNotificationIds = list.toSet();
+      }
+      await prefs.setStringList(_notifReadIdsKey, list);
+      await prefs.setBool(_notifSeededFlagKey, _notifInitialSeeded);
+    } catch (e) {
+      debugPrint('_persistReadNotifications error: $e');
+    }
+  }
+
+  /// Khởi tạo thông minh cho lần đầu tiên nâng cấp:
+  /// Tự động đánh dấu các bản tin lịch sử từ các ngày trước hôm nay là Đã đọc
+  /// để loại bỏ hoàn toàn tình trạng cộng dồn tin cũ gây hiểu nhầm trên badge chuông.
+  Future<void> seedHistoricalNotificationsIfNeeded(
+      List<Map<String, dynamic>> reports) async {
+    await ensureReadNotificationsLoaded();
+    if (_notifInitialSeeded || reports.isEmpty) return;
+
+    final now = DateTime.now();
+    final startOfToday = DateTime(now.year, now.month, now.day);
+
+    for (final r in reports) {
+      final id = (r['id'] ?? '').toString();
+      final ts = r['timestamp'];
+      if (id.isEmpty) continue;
+      if (ts is DateTime && ts.isBefore(startOfToday)) {
+        readNotificationIds.add(id);
+      }
+    }
+    _notifInitialSeeded = true;
+    notifyListeners();
+    await _persistReadNotifications();
+  }
+
+  bool isNotificationRead(String id) {
+    return readNotificationIds.contains(id);
+  }
+
+  Future<void> markNotificationRead(String id) async {
+    if (id.isEmpty || readNotificationIds.contains(id)) return;
+    readNotificationIds.add(id);
+    _notifInitialSeeded = true;
+    notifyListeners();
+    await _persistReadNotifications();
+  }
+
+  Future<void> toggleNotificationRead(String id) async {
+    if (id.isEmpty) return;
+    if (readNotificationIds.contains(id)) {
+      readNotificationIds.remove(id);
+    } else {
+      readNotificationIds.add(id);
+    }
+    _notifInitialSeeded = true;
+    notifyListeners();
+    await _persistReadNotifications();
+  }
+
+  Future<void> markAllNotificationsRead(Iterable<String> ids) async {
+    bool changed = false;
+    for (final id in ids) {
+      if (id.isNotEmpty && readNotificationIds.add(id)) {
+        changed = true;
+      }
+    }
+    if (!_notifInitialSeeded) {
+      _notifInitialSeeded = true;
+      changed = true;
+    }
+    if (changed) {
+      notifyListeners();
+      await _persistReadNotifications();
+    }
   }
 }

@@ -83,18 +83,73 @@ jobs:
           path: app_tai_xe/build_windows.log
           retention-days: 7
 
-      - name: Package Windows Release into ZIP
-        working-directory: ./app_tai_xe/build/windows/x64/runner/Release
+      - name: Package Windows Release (Portable ZIP & Setup Installer EXE)
         shell: pwsh
+        env:
+          WINDOWS_PFX_BASE64: ${{ secrets.WINDOWS_PFX_BASE64 }}
+          WINDOWS_PFX_PASSWORD: ${{ secrets.WINDOWS_PFX_PASSWORD }}
         run: |
-          Rename-Item -Path "app_tai_xe.exe" -NewName "SaoMai_TaiXe.exe" -ErrorAction SilentlyContinue
-          Compress-Archive -Path * -DestinationPath "$env:GITHUB_WORKSPACE/SaoMai_TaiXe_Windows_x64.zip" -Force
+          $releaseDir = Join-Path $env:GITHUB_WORKSPACE "app_tai_xe\build\windows\x64\runner\Release"
+          $oldExe = Join-Path $releaseDir "app_tai_xe.exe"
+          $newExe = Join-Path $releaseDir "SaoMai_TaiXe.exe"
+          if ((Test-Path $oldExe) -and !(Test-Path $newExe)) {
+            Rename-Item -Path $oldExe -NewName "SaoMai_TaiXe.exe" -Force
+          }
 
-      - name: Upload Windows EXE Artifact
+          $hasCert = ![string]::IsNullOrWhiteSpace($env:WINDOWS_PFX_BASE64) -and ![string]::IsNullOrWhiteSpace($env:WINDOWS_PFX_PASSWORD)
+          $pfxPath = Join-Path $env:RUNNER_TEMP "codesign.pfx"
+          $signtool = $null
+
+          if ($hasCert) {
+            Write-Host "Found WINDOWS_PFX_BASE64 secret. Signing Release EXE and DLL files with Authenticode SHA-256..."
+            [IO.File]::WriteAllBytes($pfxPath, [Convert]::FromBase64String($env:WINDOWS_PFX_BASE64))
+            $signtool = Get-ChildItem -Path "${env:ProgramFiles(x86)}\Windows Kits\10\bin" -Filter "signtool.exe" -Recurse |
+              Where-Object { $_.FullName -match "x64\\signtool\.exe$" } |
+              Sort-Object FullName -Descending |
+              Select-Object -First 1
+            if ($null -eq $signtool) {
+              throw "signtool.exe not found in Windows SDK"
+            }
+            $targets = Get-ChildItem -Path $releaseDir -Include "*.exe","*.dll" -File
+            foreach ($file in $targets) {
+              & $signtool.FullName sign /fd SHA256 /td SHA256 /tr "http://timestamp.digicert.com" /f $pfxPath /p $env:WINDOWS_PFX_PASSWORD $file.FullName
+              if ($LASTEXITCODE -ne 0) { throw "Failed to sign $($file.Name)" }
+            }
+          } else {
+            Write-Host "No WINDOWS_PFX_BASE64 secret configured; skipping Authenticode signing."
+          }
+
+          # 1. Tao goi Portable ZIP
+          Compress-Archive -Path "$releaseDir\*" -DestinationPath "$env:GITHUB_WORKSPACE\SaoMai_TaiXe_Windows_x64.zip" -Force
+
+          # 2. Bien dich bo cai dat Windows Setup (.exe) bang Inno Setup
+          $iscc = "${env:ProgramFiles(x86)}\Inno Setup 6\ISCC.exe"
+          if (!(Test-Path $iscc)) {
+            Write-Host "Installing Inno Setup via Chocolatey..."
+            choco install innosetup -y --no-progress
+          }
+          & $iscc "/O$env:GITHUB_WORKSPACE" "$env:GITHUB_WORKSPACE\app_tai_xe\windows\installer.iss"
+          if ($LASTEXITCODE -ne 0) {
+            throw "Inno Setup failed to compile SaoMai_TaiXe_Setup_x64.exe"
+          }
+
+          # Ky so luon file bo cai dat SaoMai_TaiXe_Setup_x64.exe neu co PFX
+          $setupExe = Join-Path $env:GITHUB_WORKSPACE "SaoMai_TaiXe_Setup_x64.exe"
+          if ($hasCert -and (Test-Path $setupExe)) {
+            & $signtool.FullName sign /fd SHA256 /td SHA256 /tr "http://timestamp.digicert.com" /f $pfxPath /p $env:WINDOWS_PFX_PASSWORD $setupExe
+            if ($LASTEXITCODE -ne 0) { throw "Failed to sign SaoMai_TaiXe_Setup_x64.exe" }
+          }
+          if (Test-Path $pfxPath) {
+            Remove-Item -Path $pfxPath -Force -ErrorAction SilentlyContinue
+          }
+
+      - name: Upload Windows EXE & Installer Artifacts
         uses: actions/upload-artifact@v4
         with:
           name: SaoMai_TaiXe_Windows_x64
-          path: SaoMai_TaiXe_Windows_x64.zip
+          path: |
+            SaoMai_TaiXe_Setup_x64.exe
+            SaoMai_TaiXe_Windows_x64.zip
           retention-days: 30
 
       - name: Create/Update GitHub Release
@@ -103,10 +158,12 @@ jobs:
           tag_name: v1.0.0-latest
           name: "Bản cài đặt Sao Mai Vintrans (Windows .exe)"
           body: |
-            Bản build tự động cho Windows 64-bit.
-            - Tải file `SaoMai_TaiXe_Windows_x64.zip` về máy.
-            - Giải nén toàn bộ thư mục và chạy file `SaoMai_TaiXe.exe` (giữ nguyên các file `.dll` và thư mục `data` đi kèm).
+            Bản phát hành tự động cho Windows 64-bit:
+            - **Cách 1 (Khuyên dùng - Bộ cài đặt tự động)**: Tải file `SaoMai_TaiXe_Setup_x64.exe` về máy và chạy để tự động cài đặt ứng dụng kèm biểu tượng ngoài màn hình Desktop.
+            - **Cách 2 (Bản giải nén chạy liền)**: Tải file `SaoMai_TaiXe_Windows_x64.zip` về máy -> nhấp chuột phải chọn **Properties** -> tích **Unblock** (nếu có) -> giải nén toàn bộ thư mục và mở `SaoMai_TaiXe.exe` (giữ nguyên các file `.dll` và thư mục `data` đi kèm).
+            - **Lưu ý trên Windows 11**: Nếu máy bật **Smart App Control** chặn ứng dụng nội bộ chưa có chứng thư số CA thương mại, mở **Windows Security -> App & browser control -> Smart App Control settings** chuyển sang **Off** theo hướng dẫn quản trị nội bộ.
           files: |
+            SaoMai_TaiXe_Setup_x64.exe
             SaoMai_TaiXe_Windows_x64.zip
           prerelease: false
         env:

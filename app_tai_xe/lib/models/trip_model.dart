@@ -30,6 +30,7 @@ class TripMilestone {
   String? deliverySlipPhotoUrl;
   DateTime? deliveryTime;
   String? deliveryZaloStatus;
+  Map<String, dynamic>? rawOrder;
 
   TripMilestone({
     this.orderId,
@@ -54,6 +55,7 @@ class TripMilestone {
     this.deliverySlipPhotoUrl,
     this.deliveryTime,
     this.deliveryZaloStatus,
+    this.rawOrder,
   });
 
 }
