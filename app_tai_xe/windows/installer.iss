@@ -1,8 +1,8 @@
 [Setup]
 AppId={{8E9A71D4-4C3B-4A61-9B72-5A0E8C12F901}
 AppName=Sao Mai VinTrans
-AppVersion=1.0.0
-AppVerName=Sao Mai VinTrans 1.0.0
+AppVersion=2.4.0
+AppVerName=Sao Mai VinTrans 2.4.0
 AppPublisher=Cong ty CP TM Xi Mang Sao Mai
 DefaultDirName={autopf}\SaoMai_TaiXe
 DefaultGroupName=Sao Mai VinTrans

@@ -156,12 +156,17 @@ jobs:
         uses: softprops/action-gh-release@v2
         with:
           tag_name: v1.0.0-latest
-          name: "Bản cài đặt Sao Mai Vintrans (Windows .exe)"
+          name: "Bản phát hành Sao Mai VinTrans v2.4.0 (Android & Windows)"
           body: |
-            Bản phát hành tự động cho Windows 64-bit:
-            - **Cách 1 (Khuyên dùng - Bộ cài đặt tự động)**: Tải file `SaoMai_TaiXe_Setup_x64.exe` về máy và chạy để tự động cài đặt ứng dụng kèm biểu tượng ngoài màn hình Desktop.
-            - **Cách 2 (Bản giải nén chạy liền)**: Tải file `SaoMai_TaiXe_Windows_x64.zip` về máy -> nhấp chuột phải chọn **Properties** -> tích **Unblock** (nếu có) -> giải nén toàn bộ thư mục và mở `SaoMai_TaiXe.exe` (giữ nguyên các file `.dll` và thư mục `data` đi kèm).
-            - **Lưu ý trên Windows 11**: Nếu máy bật **Smart App Control** chặn ứng dụng nội bộ chưa có chứng thư số CA thương mại, mở **Windows Security -> App & browser control -> Smart App Control settings** chuyển sang **Off** theo hướng dẫn quản trị nội bộ.
+            Bản phát hành chính thức hệ thống Quản lý Vận tải Sao Mai VinTrans (v2.4.0):
+
+            ### 1. Android (Google Play Store & Cài đặt trực tiếp)
+            - **Google Play Console (`.aab`)**: Tải file `SaoMai_TaiXe_Android.aab` (đã ký bằng khóa Upload Keystore chính thức, package `com.taxilogistics.driver.saomai`) để tải lên mục **Production / Internal Testing** trên Google Play Console.
+            - **Cài đặt trực tiếp (`.apk`)**: Tải file `SaoMai_TaiXe_Android.apk` để cài đặt trực tiếp trên thiết bị Android.
+
+            ### 2. Windows 64-bit (Máy tính điều phối / quản lý)
+            - **Bộ cài đặt tự động (Khuyên dùng)**: Tải file `SaoMai_TaiXe_Setup_x64.exe` và chạy để cài đặt ứng dụng kèm biểu tượng ngoài màn hình Desktop.
+            - **Bản giải nén chạy liền (Portable)**: Tải file `SaoMai_TaiXe_Windows_x64.zip` -> giải nén toàn bộ thư mục và mở `SaoMai_TaiXe.exe`.
           files: |
             SaoMai_TaiXe_Setup_x64.exe
             SaoMai_TaiXe_Windows_x64.zip
