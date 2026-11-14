@@ -11,6 +11,8 @@ import 'package:provider/provider.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import '../services/app_state.dart';
 import '../services/admin_service.dart';
+import '../services/address_geocoder_service.dart';
+import '../widgets/map_point_picker_dialog.dart';
 
 import '../services/quanlyxe_service.dart';
 import '../models/quanlyxe_model.dart';
@@ -2342,7 +2344,7 @@ class _DispatchSupervisorScreenState extends State<DispatchSupervisorScreen> {
                                                 children: [
                                                   Tooltip(
                                                     message: isCompletedOrder
-                                                        ? "Đơn hàng đã hoàn thành, không được phép sửa"
+                                                        ? "Đơn hàng đang Hoàn thành. Đổi trạng thái sang Đang vận chuyển hoặc Đã điều phối nếu cần sửa"
                                                         : "Chỉnh sửa đơn hàng",
                                                     child: OutlinedButton.icon(
                                                       style: OutlinedButton.styleFrom(
@@ -2400,7 +2402,7 @@ class _DispatchSupervisorScreenState extends State<DispatchSupervisorScreen> {
                                                   const SizedBox(width: 6),
                                                   Tooltip(
                                                     message: isCompletedOrder
-                                                        ? "Đơn hàng đã hoàn thành, không được phép xóa"
+                                                        ? "Đơn hàng đang Hoàn thành. Đổi trạng thái sang Đang vận chuyển hoặc Đã điều phối nếu cần xóa"
                                                         : "Xóa đơn hàng",
                                                     child: OutlinedButton.icon(
                                                       style: OutlinedButton.styleFrom(
@@ -5764,12 +5766,44 @@ class _DispatchSupervisorScreenState extends State<DispatchSupervisorScreen> {
     final radiusCtrl = TextEditingController(
       text: (station?['allowed_radius_meters'] ?? 500).toString(),
     );
+    Timer? stationGeoDebounce;
+    bool stationGeocoding = false;
+    String stationGeoMsg = '';
 
     showDialog(
       context: context,
       barrierDismissible: false,
       builder: (dialogContext) => StatefulBuilder(
-        builder: (dialogContext, setDialogState) => AlertDialog(
+        builder: (dialogContext, setDialogState) {
+          Future<void> autoFillStationCoords(String rawAddr) async {
+            final q = rawAddr.trim();
+            if (q.length < 3) return;
+            if (dialogContext.mounted) {
+              setDialogState(() {
+                stationGeocoding = true;
+                stationGeoMsg = 'Đang tự động lấy Vĩ độ / Kinh độ...';
+              });
+            }
+            final geo = await AddressGeocoderService.geocodeAddress(q);
+            if (!dialogContext.mounted) return;
+            setDialogState(() {
+              stationGeocoding = false;
+              if (geo != null) {
+                latCtrl.text = geo.latitude.toStringAsFixed(6);
+                lngCtrl.text = geo.longitude.toStringAsFixed(6);
+                stationGeoMsg =
+                    'Đã tự động điền tọa độ (${geo.matchedAddress})';
+              } else {
+                stationGeoMsg =
+                    'Chưa tìm được tọa độ tự động, hãy nhập chi tiết hơn hoặc bấm Bản đồ.';
+              }
+            });
+          }
+
+          return AlertDialog(
+            shape: RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(4),
+            ),
           title: Row(
             children: [
               Container(
@@ -5825,23 +5859,124 @@ class _DispatchSupervisorScreenState extends State<DispatchSupervisorScreen> {
                     ),
                   ),
                   const SizedBox(height: 12),
-                  const Text(
-                    "Địa chỉ *",
-                    style: TextStyle(
-                      fontSize: 12.5,
-                      fontWeight: FontWeight.w600,
-                      color: Colors.blueGrey,
-                    ),
+                  Row(
+                    children: [
+                      const Expanded(
+                        child: Text(
+                          "Địa chỉ *",
+                          style: TextStyle(
+                            fontSize: 12.5,
+                            fontWeight: FontWeight.w600,
+                            color: Colors.blueGrey,
+                          ),
+                        ),
+                      ),
+                      SizedBox(
+                        height: 28,
+                        child: OutlinedButton.icon(
+                          style: OutlinedButton.styleFrom(
+                            foregroundColor: Colors.teal.shade700,
+                            side: BorderSide(color: Colors.teal.shade200),
+                            padding: const EdgeInsets.symmetric(horizontal: 8),
+                            minimumSize: const Size(0, 28),
+                            tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                            shape: RoundedRectangleBorder(
+                              borderRadius: BorderRadius.circular(4),
+                            ),
+                          ),
+                          icon: const Icon(
+                            Icons.auto_fix_high_outlined,
+                            size: 14,
+                          ),
+                          label: Text(
+                            stationGeocoding ? "Đang lấy..." : "Lấy tọa độ",
+                            style: const TextStyle(
+                              fontSize: 11.5,
+                              fontWeight: FontWeight.w600,
+                            ),
+                          ),
+                          onPressed: stationGeocoding
+                              ? null
+                              : () {
+                                  stationGeoDebounce?.cancel();
+                                  final q = addrCtrl.text.trim().isNotEmpty
+                                      ? addrCtrl.text.trim()
+                                      : nameCtrl.text.trim();
+                                  autoFillStationCoords(q);
+                                },
+                        ),
+                      ),
+                      const SizedBox(width: 6),
+                      SizedBox(
+                        height: 28,
+                        child: OutlinedButton.icon(
+                          style: OutlinedButton.styleFrom(
+                            foregroundColor: Colors.blue.shade800,
+                            side: BorderSide(color: Colors.blue.shade200),
+                            padding: const EdgeInsets.symmetric(horizontal: 8),
+                            minimumSize: const Size(0, 28),
+                            tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                            shape: RoundedRectangleBorder(
+                              borderRadius: BorderRadius.circular(4),
+                            ),
+                          ),
+                          icon: const Icon(Icons.map_outlined, size: 14),
+                          label: const Text(
+                            "Bản đồ",
+                            style: TextStyle(
+                              fontSize: 11.5,
+                              fontWeight: FontWeight.w600,
+                            ),
+                          ),
+                          onPressed: () async {
+                            final picked = await showMapPointPicker(
+                              dialogContext,
+                              apiKey: AddressGeocoderService.defaultVietmapKey,
+                              title: "Chọn vị trí cây dầu",
+                              initialLat: double.tryParse(latCtrl.text.trim()),
+                              initialLng: double.tryParse(lngCtrl.text.trim()),
+                              radiusM:
+                                  int.tryParse(radiusCtrl.text.trim()) ?? 500,
+                              initialQuery: addrCtrl.text.trim(),
+                            );
+                            if (picked != null && dialogContext.mounted) {
+                              setDialogState(() {
+                                latCtrl.text = picked.latitude.toStringAsFixed(
+                                  6,
+                                );
+                                lngCtrl.text = picked.longitude.toStringAsFixed(
+                                  6,
+                                );
+                                if (addrCtrl.text.trim().isEmpty &&
+                                    picked.address.trim().isNotEmpty) {
+                                  addrCtrl.text = picked.address.trim();
+                                }
+                                stationGeoMsg = 'Đã chọn tọa độ từ bản đồ';
+                              });
+                            }
+                          },
+                        ),
+                      ),
+                    ],
                   ),
                   const SizedBox(height: 6),
                   TextField(
                     controller: addrCtrl,
+                    onChanged: (val) {
+                      stationGeoDebounce?.cancel();
+                      if (val.trim().length >= 3) {
+                        stationGeoDebounce = Timer(
+                          const Duration(milliseconds: 650),
+                          () => autoFillStationCoords(val),
+                        );
+                      }
+                    },
                     decoration: InputDecoration(
                       hintText:
-                          "VD: 123 Võ Nguyễn Giác, P. Cát Lái, TP. Thủ Đức",
+                          "VD: 123 Võ Chí Công, P. Phú Hữu, TP. Thủ Đức (tự động lấy tọa độ)",
                       isDense: true,
                       border: OutlineInputBorder(
-                        borderRadius: BorderRadius.circular(6),
+                        borderRadius: BorderRadius.circular(4),
                       ),
                       contentPadding: const EdgeInsets.symmetric(
                         horizontal: 10,
@@ -5849,6 +5984,18 @@ class _DispatchSupervisorScreenState extends State<DispatchSupervisorScreen> {
                       ),
                     ),
                   ),
+                  if (stationGeoMsg.isNotEmpty)
+                    Padding(
+                      padding: const EdgeInsets.only(top: 6),
+                      child: Text(
+                        stationGeoMsg,
+                        style: TextStyle(
+                          fontSize: 11.5,
+                          fontWeight: FontWeight.w600,
+                          color: Colors.teal.shade700,
+                        ),
+                      ),
+                    ),
                   const SizedBox(height: 12),
                   Row(
                     children: [
@@ -6081,9 +6228,12 @@ class _DispatchSupervisorScreenState extends State<DispatchSupervisorScreen> {
               },
             ),
           ],
-        ),
+        );
+      },
       ),
-    );
+    ).then((_) {
+      stationGeoDebounce?.cancel();
+    });
   }
 
   // ============ XÁC NHẬN XÓA CÂY DẦU ============
@@ -12754,7 +12904,7 @@ class _DispatchSupervisorScreenState extends State<DispatchSupervisorScreen> {
         const SnackBar(
           backgroundColor: Colors.orange,
           content: Text(
-            "Đơn hàng đã hoàn thành, không được phép chỉnh sửa!",
+            "Đơn hàng đang ở trạng thái Hoàn thành. Hãy đổi trạng thái sang Đang vận chuyển hoặc Đã điều phối nếu cần chỉnh sửa!",
           ),
         ),
       );
@@ -13411,6 +13561,12 @@ class _DispatchSupervisorScreenState extends State<DispatchSupervisorScreen> {
       final delivUrl = (o['delivery_slip_photo_url'] ?? '').toString().trim();
       final plate = (o['assigned_vehicle_plate'] ?? '').toString().trim();
       final driverName = (o['driver_name'] ?? '').toString().trim();
+      final missingDocs = <String>[
+        if (weighUrl.isEmpty) 'Cân',
+        if (arrivalUrl.isEmpty) 'Đến giao',
+        if (delivUrl.isEmpty) 'Giao',
+      ];
+      final hasAllThreePhotos = missingDocs.isEmpty;
 
       Widget buildDocRow({
         required String label,
@@ -13475,7 +13631,7 @@ class _DispatchSupervisorScreenState extends State<DispatchSupervisorScreen> {
                   ),
                 ),
                 Text(
-                  hasPhoto ? 'Đã chụp (Bấm để xem)' : 'Chưa chụp',
+                  hasPhoto ? 'Đã chụp (Bấm để xem)' : 'Chưa chụp (Bắt buộc)',
                   style: TextStyle(
                     fontSize: 12,
                     fontWeight: FontWeight.w600,
@@ -13500,14 +13656,20 @@ class _DispatchSupervisorScreenState extends State<DispatchSupervisorScreen> {
           title: Row(
             children: [
               Icon(
-                Icons.fact_check_outlined,
-                color: Colors.teal.shade700,
+                hasAllThreePhotos
+                    ? Icons.fact_check_outlined
+                    : Icons.error_outline_rounded,
+                color: hasAllThreePhotos
+                    ? Colors.teal.shade700
+                    : const Color(0xFFDC2626),
                 size: 22,
               ),
               const SizedBox(width: 8),
               Expanded(
                 child: Text(
-                  'Xác nhận hoàn thành đơn $orderCode',
+                  hasAllThreePhotos
+                      ? 'Xác nhận hoàn thành đơn $orderCode'
+                      : 'Chưa đủ điều kiện hoàn thành đơn $orderCode',
                   style: const TextStyle(
                     fontSize: 15.5,
                     fontWeight: FontWeight.w800,
@@ -13518,7 +13680,7 @@ class _DispatchSupervisorScreenState extends State<DispatchSupervisorScreen> {
             ],
           ),
           content: SizedBox(
-            width: 440,
+            width: 450,
             child: Column(
               mainAxisSize: MainAxisSize.min,
               crossAxisAlignment: CrossAxisAlignment.start,
@@ -13536,7 +13698,7 @@ class _DispatchSupervisorScreenState extends State<DispatchSupervisorScreen> {
                     ),
                   ),
                 const Text(
-                  'Kiểm tra chứng từ tài xế đã gửi trước khi chốt hoàn thành:',
+                  'Điều kiện bắt buộc (đủ 3 hình chụp của tài xế):',
                   style: TextStyle(
                     fontSize: 12.5,
                     fontWeight: FontWeight.w700,
@@ -13545,7 +13707,7 @@ class _DispatchSupervisorScreenState extends State<DispatchSupervisorScreen> {
                 ),
                 const SizedBox(height: 8),
                 buildDocRow(
-                  label: '1. Phiếu cân hàng',
+                  label: '1. Phiếu cân hàng (Cân)',
                   url: weighUrl,
                   ptype: 'weigh_slip',
                   latKey: 'weigh_slip_gps_lat',
@@ -13554,7 +13716,7 @@ class _DispatchSupervisorScreenState extends State<DispatchSupervisorScreen> {
                   timeKey: 'weigh_slip_gps_captured_at',
                 ),
                 buildDocRow(
-                  label: '2. Ảnh đến điểm giao',
+                  label: '2. Ảnh đến điểm giao (Đến giao)',
                   url: arrivalUrl,
                   ptype: 'arrival_photo',
                   latKey: 'arrival_photo_gps_lat',
@@ -13563,7 +13725,7 @@ class _DispatchSupervisorScreenState extends State<DispatchSupervisorScreen> {
                   timeKey: 'arrival_photo_gps_captured_at',
                 ),
                 buildDocRow(
-                  label: '3. Phiếu giao hàng',
+                  label: '3. Phiếu giao hàng (Giao)',
                   url: delivUrl,
                   ptype: 'delivery_slip',
                   latKey: 'delivery_slip_gps_lat',
@@ -13575,26 +13737,26 @@ class _DispatchSupervisorScreenState extends State<DispatchSupervisorScreen> {
                 Container(
                   padding: const EdgeInsets.all(10),
                   decoration: BoxDecoration(
-                    color: delivUrl.isEmpty
-                        ? const Color(0xFFFFFBEB)
-                        : const Color(0xFFF8FAFC),
+                    color: hasAllThreePhotos
+                        ? const Color(0xFFF8FAFC)
+                        : const Color(0xFFFEF2F2),
                     borderRadius: BorderRadius.circular(4),
                     border: Border.all(
-                      color: delivUrl.isEmpty
-                          ? const Color(0xFFFDE68A)
-                          : const Color(0xFFE2E8F0),
+                      color: hasAllThreePhotos
+                          ? const Color(0xFFE2E8F0)
+                          : const Color(0xFFFECACA),
                     ),
                   ),
                   child: Text(
-                    delivUrl.isEmpty
-                        ? 'Lưu ý: Đơn hàng này chưa có ảnh Phiếu giao hàng từ tài xế. Sau khi xác nhận Hoàn thành, đơn hàng sẽ khóa chỉnh sửa và tài xế không thể chụp bổ sung.'
-                        : 'Sau khi xác nhận Hoàn thành, đơn hàng sẽ khóa chỉnh sửa và đóng trên lịch trình của tài xế. Nếu ảnh phiếu chưa đúng, hãy bấm Hủy và yêu cầu tài xế chụp lại.',
+                    hasAllThreePhotos
+                        ? 'Tài xế đã chụp đủ 3 hình (Cân, Đến giao, Giao). Sau khi xác nhận Hoàn thành, đơn hàng sẽ đóng trên lịch trình của tài xế. Điều phối và Quản lý vẫn có thể đổi lại trạng thái đơn hàng khi cần.'
+                        : 'Chưa thể chuyển đơn hàng sang Hoàn thành vì tài xế chưa chụp đủ 3 hình bắt buộc (hiện còn thiếu: ${missingDocs.join(", ")}). Vui lòng yêu cầu tài xế chụp bổ sung đầy đủ.',
                     style: TextStyle(
                       fontSize: 12,
                       height: 1.4,
-                      color: delivUrl.isEmpty
-                          ? const Color(0xFF92400E)
-                          : const Color(0xFF475569),
+                      color: hasAllThreePhotos
+                          ? const Color(0xFF475569)
+                          : const Color(0xFF991B1B),
                     ),
                   ),
                 ),
@@ -13613,7 +13775,7 @@ class _DispatchSupervisorScreenState extends State<DispatchSupervisorScreen> {
                   ),
                 ),
                 onPressed: () => Navigator.of(dialogCtx).pop(false),
-                child: const Text('Hủy'),
+                child: Text(hasAllThreePhotos ? 'Hủy' : 'Đóng'),
               ),
             ),
             SizedBox(
@@ -13622,12 +13784,16 @@ class _DispatchSupervisorScreenState extends State<DispatchSupervisorScreen> {
                 style: ElevatedButton.styleFrom(
                   backgroundColor: const Color(0xFF047857),
                   foregroundColor: Colors.white,
+                  disabledBackgroundColor: const Color(0xFFE2E8F0),
+                  disabledForegroundColor: const Color(0xFF94A3B8),
                   elevation: 0,
                   shape: RoundedRectangleBorder(
                     borderRadius: BorderRadius.circular(4),
                   ),
                 ),
-                onPressed: () => Navigator.of(dialogCtx).pop(true),
+                onPressed: hasAllThreePhotos
+                    ? () => Navigator.of(dialogCtx).pop(true)
+                    : null,
                 icon: const Icon(Icons.check_rounded, size: 16),
                 label: const Text(
                   'Xác nhận hoàn thành',
@@ -13639,7 +13805,7 @@ class _DispatchSupervisorScreenState extends State<DispatchSupervisorScreen> {
         ),
       );
 
-      if (confirmed != true || !mounted) return;
+      if (confirmed != true || !hasAllThreePhotos || !mounted) return;
     }
 
     // Cap nhat giao dien tuc thi
@@ -13740,7 +13906,7 @@ class _DispatchSupervisorScreenState extends State<DispatchSupervisorScreen> {
         fg = Colors.green.shade800;
     }
 
-    if (!canEdit || current == 'completed') {
+    if (!canEdit) {
       return Container(
         height: 30,
         padding: const EdgeInsets.symmetric(horizontal: 10),
@@ -13771,6 +13937,11 @@ class _DispatchSupervisorScreenState extends State<DispatchSupervisorScreen> {
         ),
       );
     }
+
+    final hasAllThreePhotos =
+        (o['weigh_slip_photo_url'] ?? '').toString().trim().isNotEmpty &&
+        (o['arrival_photo_url'] ?? '').toString().trim().isNotEmpty &&
+        (o['delivery_slip_photo_url'] ?? '').toString().trim().isNotEmpty;
 
     const statuses = <Map<String, dynamic>>[
       {'val': 'waiting', 'label': 'Chờ nhận', 'color': Color(0xFF475569)},
@@ -13806,7 +13977,11 @@ class _DispatchSupervisorScreenState extends State<DispatchSupervisorScreen> {
           items: statuses.map((st) {
             final val = st['val'] as String;
             final label = st['label'] as String;
-            final c = st['color'] as Color;
+            final bool lockedCompletion =
+                val == 'completed' && !hasAllThreePhotos && current != 'completed';
+            final c = lockedCompletion
+                ? const Color(0xFF94A3B8)
+                : (st['color'] as Color);
             return DropdownMenuItem<String>(
               value: val,
               child: Row(
@@ -14238,7 +14413,9 @@ class _DispatchSupervisorScreenState extends State<DispatchSupervisorScreen> {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(
           backgroundColor: Colors.orange,
-          content: Text("Đơn hàng đã hoàn thành, không được phép xóa!"),
+          content: Text(
+            "Đơn hàng đang ở trạng thái Hoàn thành. Hãy đổi trạng thái sang trạng thái khác trước khi xóa!",
+          ),
         ),
       );
       return;

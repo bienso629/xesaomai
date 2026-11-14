@@ -4890,8 +4890,25 @@ def update_order(order_id: int, o: OrderUpdate, current_user: dict = Depends(get
         existing = cur.fetchone()
         if not existing:
             raise HTTPException(status_code=404, detail="Không tìm thấy đơn hàng")
-        if (existing.get("status") or "").strip().lower() == "completed":
-            raise HTTPException(status_code=400, detail="Đơn hàng đã hoàn thành, không được phép chỉnh sửa")
+
+        existing_status = (existing.get("status") or "").strip().lower()
+        if existing_status == "delivered":
+            existing_status = "completed"
+
+        norm_status = None
+        if o.status is not None:
+            norm_status = o.status.strip().lower()
+            if norm_status == "delivered":
+                norm_status = "completed"
+
+        # Đơn đang ở trạng thái Hoàn thành vẫn được phép đổi sang trạng thái khác
+        # (mở lại về Chờ nhận / Đã điều phối / Đang vận chuyển / Đã hủy).
+        # Chỉ chặn khi giữ nguyên trạng thái Hoàn thành mà cố chỉnh sửa thông tin đơn.
+        if existing_status == "completed" and (norm_status is None or norm_status == "completed"):
+            raise HTTPException(
+                status_code=400,
+                detail="Đơn hàng đang ở trạng thái Hoàn thành. Hãy đổi trạng thái đơn sang Đang vận chuyển hoặc Đã điều phối nếu cần chỉnh sửa thông tin.",
+            )
 
         fields = []
         values = []
@@ -4950,15 +4967,28 @@ def update_order(order_id: int, o: OrderUpdate, current_user: dict = Depends(get
         if o.cargo_weight_tons is not None:
             fields.append("cargo_weight_tons = %s")
             values.append(o.cargo_weight_tons)
-        if o.status is not None:
-            norm_status = o.status.strip().lower()
-            if norm_status == "delivered":
-                norm_status = "completed"
-            if norm_status == "completed" and not allowed:
-                raise HTTPException(
-                    status_code=403,
-                    detail="Chỉ Điều phối viên và Quản lý mới có quyền xác nhận Hoàn thành đơn hàng",
-                )
+        if norm_status is not None:
+            if norm_status == "completed":
+                if not allowed:
+                    raise HTTPException(
+                        status_code=403,
+                        detail="Chỉ Điều phối viên và Quản lý mới có quyền xác nhận Hoàn thành đơn hàng",
+                    )
+                missing_docs = []
+                if not (existing.get("weigh_slip_photo_url") or "").strip():
+                    missing_docs.append("Cân")
+                if not (existing.get("arrival_photo_url") or "").strip():
+                    missing_docs.append("Đến giao")
+                if not (existing.get("delivery_slip_photo_url") or "").strip():
+                    missing_docs.append("Giao")
+                if missing_docs:
+                    raise HTTPException(
+                        status_code=400,
+                        detail=(
+                            "Chưa đủ điều kiện hoàn thành đơn hàng: Tài xế bắt buộc phải chụp đủ 3 hình "
+                            f"Cân, Đến giao và Giao (hiện còn thiếu: {', '.join(missing_docs)})."
+                        ),
+                    )
             fields.append("status = %s")
             values.append(norm_status)
 
@@ -5456,12 +5486,12 @@ def submit_order_attachment(
         conn.close()
         raise HTTPException(status_code=404, detail="Không tìm thấy đơn hàng")
 
-    if (existing.get("status") or "").strip().lower() == "completed":
+    if (existing.get("status") or "").strip().lower() in ("completed", "delivered"):
         cur.close()
         conn.close()
         raise HTTPException(
             status_code=400,
-            detail="Đơn hàng đã được Điều phối / Quản lý xác nhận hoàn thành, không thể gửi lại ảnh chứng từ.",
+            detail="Đơn hàng đang ở trạng thái Hoàn thành, không thể gửi ảnh chứng từ. Vui lòng liên hệ Điều phối mở lại trạng thái đơn nếu cần chụp bổ sung.",
         )
 
     actor = current_user.get("full_name") or current_user.get("username") or "Người dùng"

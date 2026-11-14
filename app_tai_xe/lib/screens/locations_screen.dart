@@ -2,8 +2,10 @@ import 'dart:async';
 
 import 'package:flutter/material.dart';
 
+import '../services/address_geocoder_service.dart';
 import '../services/admin_service.dart';
 import '../widgets/center_loading_overlay.dart';
+import '../widgets/map_point_picker_dialog.dart';
 
 /// Màn hình Điểm nhận / giao hàng.
 /// Một danh sách duy nhất gồm:
@@ -1542,6 +1544,8 @@ class _LocationsScreenState extends State<LocationsScreen> {
     TextInputType? type,
     String? Function(String?)? validator,
     String? hint,
+    ValueChanged<String>? onChanged,
+    Widget? labelTrailing,
   }) {
     return Padding(
       padding: const EdgeInsets.only(bottom: 10),
@@ -1549,19 +1553,27 @@ class _LocationsScreenState extends State<LocationsScreen> {
         crossAxisAlignment: CrossAxisAlignment.start,
         mainAxisSize: MainAxisSize.min,
         children: [
-          Text(
-            label,
-            style: const TextStyle(
-              fontSize: 12.5,
-              fontWeight: FontWeight.w600,
-              color: Color(0xFF1E293B),
-            ),
+          Row(
+            children: [
+              Expanded(
+                child: Text(
+                  label,
+                  style: const TextStyle(
+                    fontSize: 12.5,
+                    fontWeight: FontWeight.w600,
+                    color: Color(0xFF1E293B),
+                  ),
+                ),
+              ),
+              if (labelTrailing != null) labelTrailing,
+            ],
           ),
           const SizedBox(height: 4),
           TextFormField(
             controller: c,
             maxLines: maxLines,
             keyboardType: type,
+            onChanged: onChanged,
             style: const TextStyle(fontSize: 13),
             decoration: InputDecoration(
               isDense: true,
@@ -1756,6 +1768,16 @@ class _LocationsScreenState extends State<LocationsScreen> {
     // (luu diem, tai du lieu) khong duoc cham vao dialog da pop.
     bool dialogClosed = false;
 
+    // Trang thai tu dong lay Vi do / Kinh do tu Dia chi
+    Timer? geocodeDebounce;
+    int geocodeSeq = 0;
+    bool geocoding = false;
+    String geocodeStatus = '';
+    bool geocodeIsWarning = false;
+    bool manualCoordEdited = false;
+    bool initialCheckTriggered = false;
+    List<AddressSuggestion> addrSuggestions = const [];
+
     String? coordValidator(String? v, double limit) {
       final t = (v ?? '').trim();
       if (t.isEmpty) return null;
@@ -1768,177 +1790,605 @@ class _LocationsScreenState extends State<LocationsScreen> {
       context: context,
       barrierDismissible: false,
       builder: (dialogContext) => StatefulBuilder(
-        builder: (dialogContext, setDialogState) => AlertDialog(
-          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(4)),
-          title: Text(
-            isEdit ? "Sửa điểm nhận / giao" : "Thêm điểm nhận / giao",
-            style: const TextStyle(fontSize: 17, fontWeight: FontWeight.bold),
-          ),
-          content: SizedBox(
-            width: 460,
-            child: Form(
-              key: formKey,
-              child: SingleChildScrollView(
-                child: Column(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    _textField(
-                      nameCtrl,
-                      "Tên điểm *",
-                      Icons.place_outlined,
-                      hint: "VD: Kho Xi Măng Bỉm Sơn",
-                      validator: (v) => (v ?? '').trim().isEmpty
-                          ? "Không được để trống"
-                          : null,
-                    ),
-                    Padding(
-                      padding: const EdgeInsets.only(bottom: 10),
-                      child: _kindDropdown(
-                        kind,
-                        (v) { if (!dialogClosed) setDialogState(() => kind = v); },
+        builder: (dialogContext, setDialogState) {
+          Future<void> lookupCoords(
+            String rawAddress, {
+            String? refId,
+            bool forceUpdate = false,
+            bool showSuggestions = false,
+          }) async {
+            final q = rawAddress.trim();
+            if (q.length < 3) {
+              if (!dialogClosed && dialogContext.mounted) {
+                setDialogState(() {
+                  geocoding = false;
+                  addrSuggestions = const [];
+                });
+              }
+              return;
+            }
+            final mySeq = ++geocodeSeq;
+            if (!dialogClosed && dialogContext.mounted) {
+              setDialogState(() {
+                geocoding = true;
+                geocodeStatus = 'Đang tự động tra cứu Vĩ độ và Kinh độ...';
+                geocodeIsWarning = false;
+              });
+            }
+
+            final focusLat = double.tryParse(latCtrl.text.trim());
+            final focusLng = double.tryParse(lngCtrl.text.trim());
+
+            final futures = await Future.wait<dynamic>([
+              showSuggestions
+                  ? AddressGeocoderService.fetchSuggestions(
+                      q,
+                      focusLat: focusLat,
+                      focusLng: focusLng,
+                    )
+                  : Future.value(const <AddressSuggestion>[]),
+              (forceUpdate || !manualCoordEdited)
+                  ? AddressGeocoderService.geocodeAddress(
+                      q,
+                      vietmapRefId: refId,
+                    )
+                  : Future.value(null),
+            ]);
+
+            if (dialogClosed || !dialogContext.mounted || mySeq != geocodeSeq) {
+              return;
+            }
+
+            final sugs = futures[0] as List<AddressSuggestion>;
+            final geo = futures[1] as GeocodedLocation?;
+
+            setDialogState(() {
+              geocoding = false;
+              if (showSuggestions) {
+                addrSuggestions = sugs;
+              }
+              if (forceUpdate || !manualCoordEdited) {
+                if (geo != null) {
+                  latCtrl.text = geo.latitude.toStringAsFixed(6);
+                  lngCtrl.text = geo.longitude.toStringAsFixed(6);
+                  final matchNote = geo.matchedAddress.isNotEmpty
+                      ? ' (${geo.matchedAddress})'
+                      : '';
+                  geocodeStatus = 'Đã tự động điền tọa độ$matchNote';
+                  geocodeIsWarning = false;
+                } else {
+                  geocodeStatus =
+                      'Chưa tìm được tọa độ tự động từ địa chỉ này. Hãy nhập chi tiết hơn hoặc bấm "Bản đồ".';
+                  geocodeIsWarning = true;
+                }
+              } else {
+                geocodeStatus = '';
+              }
+            });
+          }
+
+          // Neu mo diem da co san dia chi nhung dang thieu toa do -> tu dong lay ngay
+          if (!initialCheckTriggered) {
+            initialCheckTriggered = true;
+            if (addrCtrl.text.trim().length >= 3 &&
+                latCtrl.text.trim().isEmpty &&
+                lngCtrl.text.trim().isEmpty) {
+              WidgetsBinding.instance.addPostFrameCallback((_) {
+                if (!dialogClosed && dialogContext.mounted) {
+                  lookupCoords(addrCtrl.text, forceUpdate: true);
+                }
+              });
+            }
+          }
+
+          Widget compactActionBtn({
+            required IconData icon,
+            required String label,
+            required VoidCallback? onTap,
+            required Color color,
+          }) {
+            return SizedBox(
+              height: 28,
+              child: OutlinedButton.icon(
+                style: OutlinedButton.styleFrom(
+                  foregroundColor: color,
+                  side: BorderSide(color: color.withValues(alpha: 0.45)),
+                  padding: const EdgeInsets.symmetric(horizontal: 8),
+                  minimumSize: const Size(0, 28),
+                  tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                  shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(4),
+                  ),
+                ),
+                icon: Icon(icon, size: 14),
+                label: Text(
+                  label,
+                  style: const TextStyle(
+                    fontSize: 11.5,
+                    fontWeight: FontWeight.w600,
+                  ),
+                ),
+                onPressed: onTap,
+              ),
+            );
+          }
+
+          return AlertDialog(
+            shape: RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(4),
+            ),
+            title: Text(
+              isEdit ? "Sửa điểm nhận / giao" : "Thêm điểm nhận / giao",
+              style: const TextStyle(fontSize: 17, fontWeight: FontWeight.bold),
+            ),
+            content: SizedBox(
+              width: 480,
+              child: Form(
+                key: formKey,
+                child: SingleChildScrollView(
+                  child: Column(
+                    mainAxisSize: MainAxisSize.min,
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      _textField(
+                        nameCtrl,
+                        "Tên điểm *",
+                        Icons.place_outlined,
+                        hint: "VD: Kho Xi Măng Bỉm Sơn",
+                        onChanged: (val) {
+                          // Neu nguoi dung nhap Ten diem ma Dia chi va Toa do dang trong -> tu dong goi y toa do
+                          if (addrCtrl.text.trim().isEmpty &&
+                              !manualCoordEdited) {
+                            geocodeDebounce?.cancel();
+                            geocodeDebounce = Timer(
+                              const Duration(milliseconds: 700),
+                              () => lookupCoords(val, showSuggestions: false),
+                            );
+                          }
+                        },
+                        validator: (v) => (v ?? '').trim().isEmpty
+                            ? "Không được để trống"
+                            : null,
                       ),
-                    ),
-                    _textField(
-                      addrCtrl,
-                      "Địa chỉ",
-                      Icons.location_on_outlined,
-                      maxLines: 2,
-                      hint: "Nhập địa chỉ chi tiết",
-                    ),
-                    Row(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Expanded(
-                          child: _textField(
-                            latCtrl,
-                            "Vĩ độ",
-                            Icons.my_location,
-                            hint: "VD: 10.896916",
-                            type: const TextInputType.numberWithOptions(
-                              decimal: true,
-                              signed: true,
+                      Padding(
+                        padding: const EdgeInsets.only(bottom: 10),
+                        child: _kindDropdown(kind, (v) {
+                          if (!dialogClosed) setDialogState(() => kind = v);
+                        }),
+                      ),
+                      _textField(
+                        addrCtrl,
+                        "Địa chỉ",
+                        Icons.location_on_outlined,
+                        maxLines: 2,
+                        hint:
+                            "Nhập địa chỉ (tự động điền Vĩ độ & Kinh độ bên dưới)",
+                        labelTrailing: Row(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            compactActionBtn(
+                              icon: Icons.auto_fix_high_outlined,
+                              label: geocoding ? "Đang lấy..." : "Lấy tọa độ",
+                              color: Colors.teal.shade700,
+                              onTap: geocoding
+                                  ? null
+                                  : () {
+                                      geocodeDebounce?.cancel();
+                                      manualCoordEdited = false;
+                                      final q = addrCtrl.text.trim().isNotEmpty
+                                          ? addrCtrl.text.trim()
+                                          : nameCtrl.text.trim();
+                                      if (q.length < 3) {
+                                        _toast(
+                                          "Hãy nhập Địa chỉ hoặc Tên điểm trước khi lấy tọa độ",
+                                          error: true,
+                                        );
+                                        return;
+                                      }
+                                      lookupCoords(
+                                        q,
+                                        forceUpdate: true,
+                                        showSuggestions: false,
+                                      );
+                                    },
                             ),
-                            validator: (v) => coordValidator(v, 90),
+                            const SizedBox(width: 6),
+                            compactActionBtn(
+                              icon: Icons.map_outlined,
+                              label: "Bản đồ",
+                              color: Colors.blue.shade800,
+                              onTap: () async {
+                                final picked = await showMapPointPicker(
+                                  dialogContext,
+                                  apiKey:
+                                      AddressGeocoderService.defaultVietmapKey,
+                                  title: "Chọn vị trí điểm nhận / giao",
+                                  initialLat: double.tryParse(
+                                    latCtrl.text.trim(),
+                                  ),
+                                  initialLng: double.tryParse(
+                                    lngCtrl.text.trim(),
+                                  ),
+                                  radiusM:
+                                      int.tryParse(radiusCtrl.text.trim()) ??
+                                      100,
+                                  initialQuery: addrCtrl.text.trim().isNotEmpty
+                                      ? addrCtrl.text.trim()
+                                      : nameCtrl.text.trim(),
+                                );
+                                if (picked == null ||
+                                    dialogClosed ||
+                                    !dialogContext.mounted) {
+                                  return;
+                                }
+                                setDialogState(() {
+                                  manualCoordEdited = true;
+                                  addrSuggestions = const [];
+                                  latCtrl.text = picked.latitude
+                                      .toStringAsFixed(6);
+                                  lngCtrl.text = picked.longitude
+                                      .toStringAsFixed(6);
+                                  if (addrCtrl.text.trim().isEmpty &&
+                                      picked.address.trim().isNotEmpty) {
+                                    addrCtrl.text = picked.address.trim();
+                                  }
+                                  geocodeStatus =
+                                      'Đã chọn tọa độ trực tiếp từ bản đồ';
+                                  geocodeIsWarning = false;
+                                });
+                              },
+                            ),
+                          ],
+                        ),
+                        onChanged: (val) {
+                          geocodeDebounce?.cancel();
+                          // Neu nguoi dung chu dong sua Dia chi -> cho phep tu dong cap nhat lai toa do
+                          manualCoordEdited = false;
+                          if (val.trim().length < 3) {
+                            setDialogState(() {
+                              addrSuggestions = const [];
+                              geocodeStatus = '';
+                            });
+                            return;
+                          }
+                          geocodeDebounce = Timer(
+                            const Duration(milliseconds: 650),
+                            () => lookupCoords(
+                              val,
+                              forceUpdate: true,
+                              showSuggestions: true,
+                            ),
+                          );
+                        },
+                      ),
+                      if (addrSuggestions.isNotEmpty)
+                        Container(
+                          margin: const EdgeInsets.only(bottom: 10),
+                          decoration: BoxDecoration(
+                            color: const Color(0xFFF8FAFC),
+                            borderRadius: BorderRadius.circular(4),
+                            border: Border.all(color: Colors.blue.shade200),
+                          ),
+                          child: Column(
+                            mainAxisSize: MainAxisSize.min,
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Padding(
+                                padding: const EdgeInsets.fromLTRB(10, 6, 8, 4),
+                                child: Row(
+                                  children: [
+                                    Icon(
+                                      Icons.travel_explore,
+                                      size: 14,
+                                      color: Colors.blue.shade700,
+                                    ),
+                                    const SizedBox(width: 6),
+                                    Expanded(
+                                      child: Text(
+                                        "Gợi ý địa chỉ khớp (bấm để chọn & điền tọa độ):",
+                                        style: TextStyle(
+                                          fontSize: 11,
+                                          fontWeight: FontWeight.w700,
+                                          color: Colors.blue.shade800,
+                                        ),
+                                      ),
+                                    ),
+                                    InkWell(
+                                      onTap: () {
+                                        if (!dialogClosed) {
+                                          setDialogState(
+                                            () => addrSuggestions = const [],
+                                          );
+                                        }
+                                      },
+                                      child: Padding(
+                                        padding: const EdgeInsets.all(2),
+                                        child: Icon(
+                                          Icons.close,
+                                          size: 14,
+                                          color: Colors.grey.shade600,
+                                        ),
+                                      ),
+                                    ),
+                                  ],
+                                ),
+                              ),
+                              Divider(height: 1, color: Colors.blue.shade100),
+                              for (final sug in addrSuggestions)
+                                InkWell(
+                                  onTap: () {
+                                    geocodeDebounce?.cancel();
+                                    manualCoordEdited = false;
+                                    addrCtrl.text = sug.display;
+                                    if (nameCtrl.text.trim().isEmpty) {
+                                      nameCtrl.text = sug.name;
+                                    }
+                                    setDialogState(
+                                      () => addrSuggestions = const [],
+                                    );
+                                    lookupCoords(
+                                      sug.display,
+                                      refId: sug.refId,
+                                      forceUpdate: true,
+                                      showSuggestions: false,
+                                    );
+                                  },
+                                  child: Padding(
+                                    padding: const EdgeInsets.symmetric(
+                                      horizontal: 10,
+                                      vertical: 6,
+                                    ),
+                                    child: Row(
+                                      children: [
+                                        Icon(
+                                          Icons.place_outlined,
+                                          size: 15,
+                                          color: Colors.teal.shade700,
+                                        ),
+                                        const SizedBox(width: 6),
+                                        Expanded(
+                                          child: Text(
+                                            sug.display,
+                                            maxLines: 1,
+                                            overflow: TextOverflow.ellipsis,
+                                            style: const TextStyle(
+                                              fontSize: 12,
+                                              color: Color(0xFF1E293B),
+                                            ),
+                                          ),
+                                        ),
+                                      ],
+                                    ),
+                                  ),
+                                ),
+                            ],
                           ),
                         ),
-                        const SizedBox(width: 10),
-                        Expanded(
-                          child: _textField(
-                            lngCtrl,
-                            "Kinh độ",
-                            Icons.my_location,
-                            hint: "VD: 107.242164",
-                            type: const TextInputType.numberWithOptions(
-                              decimal: true,
-                              signed: true,
-                            ),
-                            validator: (v) => coordValidator(v, 180),
+                      if (geocoding || geocodeStatus.isNotEmpty)
+                        Padding(
+                          padding: const EdgeInsets.only(bottom: 8),
+                          child: Row(
+                            children: [
+                              if (geocoding)
+                                const SizedBox(
+                                  width: 12,
+                                  height: 12,
+                                  child: CircularProgressIndicator(
+                                    strokeWidth: 1.8,
+                                  ),
+                                )
+                              else
+                                Icon(
+                                  geocodeIsWarning
+                                      ? Icons.info_outline
+                                      : Icons.check_circle_outline,
+                                  size: 14,
+                                  color: geocodeIsWarning
+                                      ? Colors.orange.shade800
+                                      : Colors.green.shade700,
+                                ),
+                              const SizedBox(width: 6),
+                              Expanded(
+                                child: Text(
+                                  geocodeStatus,
+                                  style: TextStyle(
+                                    fontSize: 11.5,
+                                    fontWeight: FontWeight.w600,
+                                    color: geocoding
+                                        ? Colors.blue.shade700
+                                        : (geocodeIsWarning
+                                              ? Colors.orange.shade800
+                                              : Colors.green.shade700),
+                                  ),
+                                ),
+                              ),
+                            ],
                           ),
                         ),
-                      ],
-                    ),
-                    _textField(
-                      radiusCtrl,
-                      "Bán kính nhận diện (m)",
-                      Icons.radar,
-                      hint: "VD: 100",
-                      type: TextInputType.number,
-                      validator: (v) {
-                        final t = (v ?? '').trim();
-                        if (t.isEmpty) return null;
-                        final n = int.tryParse(t);
-                        return (n == null || n < 10 || n > 5000)
-                            ? "Từ 10 đến 5000"
-                            : null;
-                      },
-                    ),
-                    _textField(
-                      noteCtrl,
-                      "Ghi chú",
-                      Icons.notes_outlined,
-                      maxLines: 2,
-                    ),
-                    const SizedBox(height: 12),
-                    // Khách hàng liên kết (chọn nhiều): điểm không gán KH = dùng chung
-                    _buildCustomerMultiSelect(
-                      selectedCustomerIds: selectedCustomerIds,
-                      searchCtrl: custSearchCtrl,
-                      onChanged: () { if (!dialogClosed) setDialogState(() {}); },
-                    ),
-                  ],
+                      Row(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Expanded(
+                            child: _textField(
+                              latCtrl,
+                              "Vĩ độ",
+                              Icons.my_location,
+                              hint: "VD: 10.896916",
+                              type: const TextInputType.numberWithOptions(
+                                decimal: true,
+                                signed: true,
+                              ),
+                              onChanged: (val) {
+                                manualCoordEdited = true;
+                                // Ho tro dan cap "lat, lng" tu Google Maps thang vao o Vi do
+                                final parsed =
+                                    AddressGeocoderService.tryParseRawCoordinates(
+                                      val,
+                                    );
+                                if (parsed != null) {
+                                  latCtrl.text = parsed.latitude
+                                      .toStringAsFixed(6);
+                                  lngCtrl.text = parsed.longitude
+                                      .toStringAsFixed(6);
+                                  setDialogState(() {
+                                    geocodeStatus =
+                                        'Đã tách cặp Vĩ độ / Kinh độ';
+                                    geocodeIsWarning = false;
+                                  });
+                                }
+                              },
+                              validator: (v) => coordValidator(v, 90),
+                            ),
+                          ),
+                          const SizedBox(width: 10),
+                          Expanded(
+                            child: _textField(
+                              lngCtrl,
+                              "Kinh độ",
+                              Icons.my_location,
+                              hint: "VD: 107.242164",
+                              type: const TextInputType.numberWithOptions(
+                                decimal: true,
+                                signed: true,
+                              ),
+                              onChanged: (_) {
+                                manualCoordEdited = true;
+                              },
+                              validator: (v) => coordValidator(v, 180),
+                            ),
+                          ),
+                        ],
+                      ),
+                      _textField(
+                        radiusCtrl,
+                        "Bán kính nhận diện (m)",
+                        Icons.radar,
+                        hint: "VD: 100",
+                        type: TextInputType.number,
+                        validator: (v) {
+                          final t = (v ?? '').trim();
+                          if (t.isEmpty) return null;
+                          final n = int.tryParse(t);
+                          return (n == null || n < 10 || n > 5000)
+                              ? "Từ 10 đến 5000"
+                              : null;
+                        },
+                      ),
+                      _textField(
+                        noteCtrl,
+                        "Ghi chú",
+                        Icons.notes_outlined,
+                        maxLines: 2,
+                      ),
+                      const SizedBox(height: 12),
+                      // Khách hàng liên kết (chọn nhiều): điểm không gán KH = dùng chung
+                      _buildCustomerMultiSelect(
+                        selectedCustomerIds: selectedCustomerIds,
+                        searchCtrl: custSearchCtrl,
+                        onChanged: () {
+                          if (!dialogClosed) setDialogState(() {});
+                        },
+                      ),
+                    ],
+                  ),
                 ),
               ),
             ),
-          ),
-          actions: [
-            TextButton(
-              onPressed: saving
+            actions: [
+              TextButton(
+                onPressed: saving
                     ? null
                     : () {
                         dialogClosed = true;
+                        geocodeDebounce?.cancel();
                         FocusManager.instance.primaryFocus?.unfocus();
                         Navigator.pop(dialogContext);
                       },
-              child: const Text("Hủy bỏ"),
-            ),
-            ElevatedButton(
-              style: ElevatedButton.styleFrom(
-                backgroundColor: Colors.blue.shade800,
-                foregroundColor: Colors.white,
-                minimumSize: const Size(64, 36),
-                shape: RoundedRectangleBorder(
-                  borderRadius: BorderRadius.circular(4),
-                ),
+                child: const Text("Hủy bỏ"),
               ),
-              onPressed: saving
-                  ? null
-                  : () async {
-                      if (!formKey.currentState!.validate()) return;
-                      final lat = double.tryParse(latCtrl.text.trim());
-                      final lng = double.tryParse(lngCtrl.text.trim());
-                      if ((lat == null) != (lng == null)) {
-                        _toast(
-                          "Phải nhập đủ cả vĩ độ và kinh độ, hoặc để trống cả hai",
-                          error: true,
+              ElevatedButton(
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: Colors.blue.shade800,
+                  foregroundColor: Colors.white,
+                  minimumSize: const Size(64, 36),
+                  shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(4),
+                  ),
+                ),
+                onPressed: saving
+                    ? null
+                    : () async {
+                        if (!formKey.currentState!.validate()) return;
+                        geocodeDebounce?.cancel();
+                        double? lat = double.tryParse(latCtrl.text.trim());
+                        double? lng = double.tryParse(lngCtrl.text.trim());
+                        if ((lat == null) != (lng == null)) {
+                          _toast(
+                            "Phải nhập đủ cả vĩ độ và kinh độ, hoặc để trống cả hai",
+                            error: true,
+                          );
+                          return;
+                        }
+                        if (!dialogClosed) setDialogState(() => saving = true);
+
+                        // Neu ca 2 o Vi do / Kinh do con trong ma da nhap Dia chi -> tu dong lay truoc khi luu
+                        if (lat == null && lng == null && !manualCoordEdited) {
+                          final fallbackQ = addrCtrl.text.trim().isNotEmpty
+                              ? addrCtrl.text.trim()
+                              : nameCtrl.text.trim();
+                          if (fallbackQ.length >= 3) {
+                            final autoGeo =
+                                await AddressGeocoderService.geocodeAddress(
+                                  fallbackQ,
+                                );
+                            if (autoGeo != null) {
+                              lat = double.parse(
+                                autoGeo.latitude.toStringAsFixed(6),
+                              );
+                              lng = double.parse(
+                                autoGeo.longitude.toStringAsFixed(6),
+                              );
+                            }
+                          }
+                        }
+
+                        final res = await AdminService.saveLocation(
+                          id: isEdit ? int.tryParse('${location['id']}') : null,
+                          data: {
+                            'name': nameCtrl.text.trim(),
+                            'address': addrCtrl.text.trim(),
+                            'kind': kind,
+                            'latitude': lat,
+                            'longitude': lng,
+                            'radius_m': int.tryParse(radiusCtrl.text.trim()),
+                            'note': noteCtrl.text.trim(),
+                            'customer_ids': selectedCustomerIds.toList(),
+                          },
                         );
-                        return;
-                      }
-                      if (!dialogClosed) setDialogState(() => saving = true);
-                      final res = await AdminService.saveLocation(
-                        id: isEdit ? int.tryParse('${location['id']}') : null,
-                        data: {
-                          'name': nameCtrl.text.trim(),
-                          'address': addrCtrl.text.trim(),
-                          'kind': kind,
-                          'latitude': lat,
-                          'longitude': lng,
-                          'radius_m': int.tryParse(radiusCtrl.text.trim()),
-                          'note': noteCtrl.text.trim(),
-                          'customer_ids': selectedCustomerIds.toList(),
-                        },
-                      );
-                      if (dialogClosed || !dialogContext.mounted) return;
-                      if (!dialogClosed) setDialogState(() => saving = false);
-                      if (res['ok'] == true) {
-                        // Go focus va cho frame hien tai ket truoc khi dong
-                        // dialog (tranh loi assertion _dependents.isEmpty).
-                        FocusManager.instance.primaryFocus?.unfocus();
-                        await WidgetsBinding.instance.endOfFrame;
-                        dialogClosed = true;
-                        if (!dialogContext.mounted) return;
-                        Navigator.pop(dialogContext);
-                        _toast(isEdit ? "Đã cập nhật điểm" : "Đã thêm điểm");
-                        _load();
-                      } else {
-                        _toast(res['message'].toString(), error: true);
-                      }
-                    },
-              child: Text(saving ? "Đang lưu..." : "Lưu"),
-            ),
-          ],
-        ),
+                        if (dialogClosed || !dialogContext.mounted) return;
+                        if (!dialogClosed) setDialogState(() => saving = false);
+                        if (res['ok'] == true) {
+                          // Go focus va cho frame hien tai ket truoc khi dong
+                          // dialog (tranh loi assertion _dependents.isEmpty).
+                          FocusManager.instance.primaryFocus?.unfocus();
+                          await WidgetsBinding.instance.endOfFrame;
+                          dialogClosed = true;
+                          if (!dialogContext.mounted) return;
+                          Navigator.pop(dialogContext);
+                          _toast(isEdit ? "Đã cập nhật điểm" : "Đã thêm điểm");
+                          _load();
+                        } else {
+                          _toast(res['message'].toString(), error: true);
+                        }
+                      },
+                child: Text(saving ? "Đang lưu..." : "Lưu"),
+              ),
+            ],
+          );
+        },
       ),
     );
+    geocodeDebounce?.cancel();
     for (final c in [
       nameCtrl,
       addrCtrl,

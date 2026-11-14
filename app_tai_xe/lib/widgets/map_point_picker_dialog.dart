@@ -6,6 +6,7 @@ import 'center_loading_overlay.dart';
 import 'package:flutter_map/flutter_map.dart';
 import 'package:http/http.dart' as http;
 import 'package:latlong2/latlong.dart';
+import '../services/address_geocoder_service.dart';
 
 /// Kết quả chọn điểm trên bản đồ.
 class MapPointPickResult {
@@ -98,7 +99,25 @@ class _MapPointPickerDialogState extends State<_MapPointPickerDialog> {
     if (lat != null && lng != null) {
       _point = LatLng(lat, lng);
       _reverse(_point!);
+    } else if (widget.initialQuery.trim().length >= 3) {
+      _resolveInitialQuery(widget.initialQuery.trim());
     }
+  }
+
+  Future<void> _resolveInitialQuery(String q) async {
+    final geo = await AddressGeocoderService.geocodeAddress(
+      q,
+      apiKey: widget.apiKey,
+    );
+    if (!mounted || geo == null || _point != null) return;
+    final p = LatLng(geo.latitude, geo.longitude);
+    setState(() {
+      _point = p;
+      _address = geo.matchedAddress.isNotEmpty ? geo.matchedAddress : q;
+    });
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted) _mapCtrl.move(p, 16.0);
+    });
   }
 
   @override
@@ -215,15 +234,46 @@ class _MapPointPickerDialogState extends State<_MapPointPickerDialog> {
       });
       _mapCtrl.move(p, 16.5);
     } on _PlaceLimited {
+      final fallback = await AddressGeocoderService.geocodeAddress(
+        display,
+        apiKey: widget.apiKey,
+      );
       if (!mounted) return;
+      if (fallback != null) {
+        final p = LatLng(fallback.latitude, fallback.longitude);
+        setState(() {
+          _point = p;
+          _address = display;
+          _results = [];
+          _searching = false;
+          _searchMessage = null;
+        });
+        _mapCtrl.move(p, 16.5);
+        return;
+      }
       setState(() {
         _searching = false;
         _searchMessage =
-            'Key Vietmap hiện chưa được mở API Place nên chưa lấy được tọa độ từ kết quả tìm kiếm. '
-            'Hãy kéo bản đồ tới "$display" rồi chạm vào đúng vị trí.';
+            'Chưa tìm được tọa độ tự động cho "$display", hãy chạm trực tiếp lên bản đồ.';
       });
     } catch (_) {
+      final fallback = await AddressGeocoderService.geocodeAddress(
+        display,
+        apiKey: widget.apiKey,
+      );
       if (!mounted) return;
+      if (fallback != null) {
+        final p = LatLng(fallback.latitude, fallback.longitude);
+        setState(() {
+          _point = p;
+          _address = display;
+          _results = [];
+          _searching = false;
+          _searchMessage = null;
+        });
+        _mapCtrl.move(p, 16.5);
+        return;
+      }
       setState(() {
         _searching = false;
         _searchMessage = 'Không lấy được tọa độ của địa điểm này, hãy chạm trực tiếp lên bản đồ.';
@@ -238,6 +288,7 @@ class _MapPointPickerDialogState extends State<_MapPointPickerDialog> {
     final p = _point;
     final radius = (widget.radiusM ?? 100).toDouble();
     return AlertDialog(
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(4)),
       titlePadding: const EdgeInsets.fromLTRB(20, 16, 12, 0),
       contentPadding: const EdgeInsets.fromLTRB(20, 12, 20, 0),
       title: Row(
@@ -289,7 +340,7 @@ class _MapPointPickerDialogState extends State<_MapPointPickerDialog> {
               child: Stack(
                 children: [
                   ClipRRect(
-                    borderRadius: BorderRadius.circular(6),
+                    borderRadius: BorderRadius.circular(4),
                     child: FlutterMap(
                       mapController: _mapCtrl,
                       options: MapOptions(
@@ -422,6 +473,14 @@ class _MapPointPickerDialogState extends State<_MapPointPickerDialog> {
           child: const Text('Hủy'),
         ),
         ElevatedButton.icon(
+          style: ElevatedButton.styleFrom(
+            backgroundColor: Colors.blue.shade800,
+            foregroundColor: Colors.white,
+            minimumSize: const Size(64, 36),
+            shape: RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(4),
+            ),
+          ),
           icon: const Icon(Icons.check, size: 18),
           label: const Text('Dùng tọa độ này'),
           onPressed: p == null

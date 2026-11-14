@@ -771,7 +771,7 @@ class _MainNavigationScreenState extends State<MainNavigationScreen> {
                   const Padding(
                     padding: EdgeInsets.only(bottom: 12),
                     child: Text(
-                      "Phiên bản hệ thống: v2.4.0 Dark Sidebar",
+                      "Phiên bản hệ thống: v2.4.0",
                       style: TextStyle(fontSize: 11, color: Colors.white38),
                       textAlign: TextAlign.center,
                     ),
