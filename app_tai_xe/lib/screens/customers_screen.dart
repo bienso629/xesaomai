@@ -29,17 +29,13 @@ class _CustomersScreenState extends State<CustomersScreen> {
   // Bảng dữ liệu: phân trang + sắp xếp
   int _currentPage = 1;
   int _pageSize = 10;
-  String _sourceFilter = 'ALL'; // ALL | ZALO | MANUAL
+  String _sourceFilter = 'ALL'; // ALL | MANUAL | EXCEL
 
-  // Đồng bộ Zalo OA
-  bool _zaloBusy = false;
-  String _zaloProgress = '';
-  Timer? _zaloTimer;
-  int _zaloPolls = 0;
-  bool _zaloWaitingAuth = false;
-
-  // Danh sách nhóm (tag) Zalo OA
+  // Nhóm Zalo OA: kết nối Zalo OA (cấp quyền khi cần) + lấy danh sách nhóm về phần mềm
   bool _groupsBusy = false;
+  String _groupsProgress = '';
+  Timer? _authTimer;
+  int _authPolls = 0;
 
   // Import khách hàng từ Excel
   bool _importBusy = false;
@@ -52,43 +48,50 @@ class _CustomersScreenState extends State<CustomersScreen> {
 
   @override
   void dispose() {
-    _zaloTimer?.cancel();
+    _authTimer?.cancel();
     _searchCtrl.dispose();
     super.dispose();
   }
 
-  // ---------------- ĐỒNG BỘ ZALO OA ----------------
+  // ---------------- NHÓM ZALO OA ----------------
 
-  Future<void> _onZaloSync() async {
-    if (_zaloBusy) return;
+  /// Bấm nút "Nhóm Zalo OA":
+  /// 1. Gọi máy chủ kết nối Zalo OA và lấy danh sách nhóm thực tế của OA.
+  /// 2. Nếu OA chưa được cấp quyền (HTTP 409) thì mở trang cấp quyền Zalo,
+  ///    chờ cấp quyền xong rồi tự lấy lại danh sách nhóm.
+  /// Danh sách khách hàng KHÔNG đồng bộ từ Zalo (chỉ nhập tay hoặc import Excel).
+  Future<void> _onZaloGroups() async {
+    if (_groupsBusy) return;
     setState(() {
-      _zaloBusy = true;
-      _zaloProgress = 'Đang kiểm tra kết nối Zalo OA...';
+      _groupsBusy = true;
+      _groupsProgress = 'Đang kết nối Zalo OA và lấy danh sách nhóm...';
     });
-    final st = await AdminService.fetchZaloOaStatus();
+    await _fetchZaloGroups(allowAuthorize: true);
+  }
+
+  Future<void> _fetchZaloGroups({required bool allowAuthorize}) async {
+    final res = await AdminService.refreshZaloOaChatGroups();
     if (!mounted) return;
-    if (st['ok'] != true) {
-      _zaloStop(st['message'].toString(), error: true);
-      return;
-    }
-    final data = Map<String, dynamic>.from(st['data'] as Map);
-    if (data['configured'] != true) {
-      _zaloStop(
-        'Máy chủ chưa cấu hình ZALO_APP_ID / ZALO_APP_SECRET',
-        error: true,
+    if (res['ok'] == true && res['data'] is Map) {
+      final data = Map<String, dynamic>.from(res['data'] as Map);
+      final stats = (data['stats'] as Map?) ?? {};
+      final groupCount = (stats['groups'] as num?)?.toInt() ?? 0;
+      final linked = (stats['linked_customers'] as num?)?.toInt() ?? 0;
+      final oaName = (data['oa_name'] ?? '').toString();
+      await _load();
+      _groupsStop(
+        'Đã lấy $groupCount nhóm Zalo OA'
+        '${oaName.isNotEmpty ? ' từ "$oaName"' : ''} về phần mềm'
+        ' - $linked khách hàng đang gắn nhóm',
       );
       return;
     }
-    final sync = data['sync'] is Map ? Map<String, dynamic>.from(data['sync']) : {};
-    if (sync['running'] == true) {
-      _zaloPoll(); // Có người khác đang đồng bộ, chỉ theo dõi tiến độ
+    if (res['status'] == 409 && allowAuthorize) {
+      await _zaloAuthorize();
       return;
     }
-    if (data['connected'] == true) {
-      await _zaloStartSync();
-    } else {
-      await _zaloAuthorize();
-    }
+    final msg = (res['message'] ?? '').toString();
+    _groupsStop(msg.isNotEmpty ? msg : 'Không lấy được danh sách nhóm Zalo OA', error: true);
   }
 
   Future<void> _zaloAuthorize() async {
@@ -96,12 +99,11 @@ class _CustomersScreenState extends State<CustomersScreen> {
       context: context,
       builder: (dialogContext) => AlertDialog(
         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(4)),
-        title: const Text("Cấp quyền Zalo OA", style: TextStyle(fontSize: 17)),
+        title: const Text("Kết nối Zalo OA", style: TextStyle(fontSize: 17)),
         content: const Text(
-          "Ứng dụng sẽ mở trang Zalo để chủ (hoặc quản trị viên) Zalo OA đồng ý "
-          "cho phép đọc danh sách người quan tâm OA.\n\n"
-          "Sau khi bấm \"Cho phép\" trên Zalo, quay lại đây, ứng dụng sẽ tự đồng bộ "
-          "danh sách vào Khách hàng.",
+          "Phần mềm chưa được kết nối với Zalo OA.\n\n"
+          "Ứng dụng sẽ mở trang Zalo để chủ (hoặc quản trị viên) Zalo OA bấm \"Cho phép\". "
+          "Sau khi cấp quyền xong, quay lại đây, ứng dụng sẽ tự lấy danh sách nhóm Zalo OA về phần mềm.",
           style: TextStyle(fontSize: 13.5),
         ),
         actions: [
@@ -123,7 +125,7 @@ class _CustomersScreenState extends State<CustomersScreen> {
     );
     if (!mounted) return;
     if (agree != true) {
-      _zaloStop('');
+      _groupsStop('');
       return;
     }
     final res = await AdminService.requestZaloOaAuthorizeUrl();
@@ -132,7 +134,7 @@ class _CustomersScreenState extends State<CustomersScreen> {
         ? (res['data']['authorize_url'] ?? '').toString()
         : '';
     if (url.isEmpty) {
-      _zaloStop(
+      _groupsStop(
         res['ok'] == true ? 'Máy chủ không trả về link cấp quyền' : res['message'].toString(),
         error: true,
       );
@@ -144,151 +146,42 @@ class _CustomersScreenState extends State<CustomersScreen> {
     } catch (_) {}
     if (!mounted) return;
     if (!opened) {
-      _zaloStop('Không mở được trình duyệt để cấp quyền Zalo OA', error: true);
+      _groupsStop('Không mở được trình duyệt để cấp quyền Zalo OA', error: true);
       return;
     }
-    // Chờ chủ OA cấp quyền xong (tối đa ~5 phút), rồi tự đồng bộ
-    setState(() {
-      _zaloWaitingAuth = true;
-      _zaloProgress = 'Đang chờ cấp quyền trên Zalo...';
-    });
-    _zaloPoll();
+    // Chờ chủ OA cấp quyền (tối đa ~5 phút), xong thì tự lấy danh sách nhóm
+    setState(() => _groupsProgress = 'Đang chờ cấp quyền trên Zalo...');
+    _authTimer?.cancel();
+    _authPolls = 0;
+    _authTimer = Timer.periodic(const Duration(seconds: 2), (_) => _authTick());
   }
 
-  Future<void> _zaloStartSync() async {
-    setState(() => _zaloProgress = 'Đang bắt đầu đồng bộ...');
-    final res = await AdminService.startZaloOaSync();
-    if (!mounted) return;
-    if (res['ok'] != true) {
-      if (res['status'] == 409) {
-        setState(() => _zaloBusy = false);
-        await _zaloAuthorize(); // Token đã mất hiệu lực, xin cấp quyền lại
-        return;
-      }
-      _zaloStop(res['message'].toString(), error: true);
-      return;
-    }
-    _zaloWaitingAuth = false;
-    _zaloPoll();
-  }
-
-  void _zaloPoll() {
-    _zaloTimer?.cancel();
-    _zaloPolls = 0;
-    setState(() => _zaloBusy = true);
-    _zaloTimer = Timer.periodic(const Duration(seconds: 2), (_) => _zaloTick());
-  }
-
-  Future<void> _zaloTick() async {
-    _zaloPolls++;
+  Future<void> _authTick() async {
+    _authPolls++;
     final st = await AdminService.fetchZaloOaStatus();
-    if (!mounted || _zaloTimer == null) return;
-    if (st['ok'] != true || st['data'] is! Map) {
-      if (_zaloPolls > 5) _zaloStop(st['message'].toString(), error: true);
-      return;
+    if (!mounted || _authTimer == null) return;
+    final connected = st['ok'] == true &&
+        st['data'] is Map &&
+        (st['data'] as Map)['connected'] == true;
+    if (connected) {
+      _authTimer?.cancel();
+      _authTimer = null;
+      setState(() => _groupsProgress = 'Đã kết nối Zalo OA, đang lấy danh sách nhóm...');
+      await _fetchZaloGroups(allowAuthorize: false);
+    } else if (_authPolls >= 150) {
+      _groupsStop('Hết thời gian chờ cấp quyền Zalo OA. Bấm lại nút "Nhóm Zalo OA" để thử lại.', error: true);
     }
-    final data = Map<String, dynamic>.from(st['data'] as Map);
-    final sync = data['sync'] is Map ? Map<String, dynamic>.from(data['sync']) : <String, dynamic>{};
-
-    if (_zaloWaitingAuth) {
-      if (data['connected'] == true) {
-        _zaloTimer?.cancel();
-        _zaloTimer = null;
-        _zaloWaitingAuth = false;
-        await _zaloStartSync();
-      } else if (_zaloPolls >= 150) {
-        _zaloStop('Hết thời gian chờ cấp quyền Zalo OA. Bấm lại nút để thử lại.', error: true);
-      }
-      return;
-    }
-
-    int n(String k) => int.tryParse('${sync[k] ?? 0}') ?? 0;
-    if (sync['running'] == true) {
-      setState(() => _zaloProgress = n('total') > 0
-          ? 'Đang đồng bộ Zalo OA: ${n('processed')}/${n('total')}'
-          : 'Đang lấy danh sách người dùng Zalo OA...');
-      return;
-    }
-    _zaloTimer?.cancel();
-    _zaloTimer = null;
-    if (sync['error'] != null) {
-      _zaloStop(sync['error'].toString(), error: true);
-    } else {
-      _zaloStop(
-        'Đồng bộ xong ${n('total')} liên hệ: thêm mới ${n('created')}, '
-        'cập nhật ${n('updated')}, gắn theo SĐT ${n('linked')}'
-        '${n('failed') > 0 ? ', lỗi ${n('failed')}' : ''}',
-      );
-    }
-    _load();
   }
 
-  void _zaloStop(String message, {bool error = false}) {
-    _zaloTimer?.cancel();
-    _zaloTimer = null;
+  void _groupsStop(String message, {bool error = false}) {
+    _authTimer?.cancel();
+    _authTimer = null;
     if (!mounted) return;
     setState(() {
-      _zaloBusy = false;
-      _zaloWaitingAuth = false;
-      _zaloProgress = '';
+      _groupsBusy = false;
+      _groupsProgress = '';
     });
     if (message.isNotEmpty) _toast(message, error: error);
-  }
-
-  // ---------------- NHÓM ZALO OA (TỰ ĐỘNG) ----------------
-
-  /// Bấm nút "Nhóm Zalo OA": hệ thống tự động làm mới dữ liệu nhóm hội thoại
-  /// (học qua webhook), cập nhật thẳng cột "Nhóm Zalo OA" của khách hàng rồi
-  /// tải lại bảng. Không hiển thị dialog danh sách nhóm.
-  Future<void> _refreshZaloGroups() async {
-    if (_groupsBusy) return;
-    setState(() => _groupsBusy = true);
-    int groupCount = 0;
-    int memberCount = 0;
-    int customerCount = 0;
-    String? err;
-    try {
-      // 1) Gọi backend làm mới dữ liệu nhóm (thống kê tổng nhóm/thành viên)
-      final res = await AdminService.refreshZaloOaChatGroups();
-      if (res['ok'] == true && res['data'] is Map) {
-        final stats = (res['data']['stats'] as Map?) ?? {};
-        groupCount = (stats['groups'] as num?)?.toInt() ?? 0;
-        memberCount = (stats['members'] as num?)?.toInt() ?? 0;
-      } else {
-        err = res['message']?.toString().isNotEmpty == true
-            ? res['message'].toString()
-            : 'Không làm mới được dữ liệu nhóm Zalo OA';
-      }
-      // 2) Tải lại danh sách khách hàng (cột Nhóm Zalo OA đã cập nhật)
-      final rows = await AdminService.fetchCustomers();
-      customerCount = rows
-          .whereType<Map>()
-          .where((c) =>
-              ((c['zalo_chat_groups'] as List? ?? []).isNotEmpty) ||
-              ((c['zalo_oa_groups'] as List? ?? []).isNotEmpty))
-          .length;
-      if (mounted) {
-        setState(() {
-          _customers = rows
-              .whereType<Map>()
-              .map((e) => Map<String, dynamic>.from(e))
-              .toList();
-          _currentPage = 1;
-        });
-      }
-    } catch (e) {
-      err = e.toString();
-    }
-    if (!mounted) return;
-    setState(() => _groupsBusy = false);
-    if (err != null && err.isNotEmpty) {
-      _toast(err, error: true);
-    } else {
-      _toast(
-        'Đã cập nhật $groupCount nhóm Zalo OA ($memberCount thành viên) '
-        '— $customerCount khách hàng có nhóm',
-      );
-    }
   }
 
   /// Import danh sách khách hàng từ file Excel (mẫu "cấu trúc khách hàng.xlsx").
@@ -327,6 +220,8 @@ class _CustomersScreenState extends State<CustomersScreen> {
     final updated = res['updated'] ?? 0;
     final skipped = res['skipped'] ?? 0;
     final groups = res['groupsLearned'] ?? 0;
+    final withGroup = res['withGroup'] ?? 0;
+    final missingGroupCols = (res['missingGroupColumns'] as List?) ?? [];
     final skippedDetails = (res['skippedDetails'] as List?) ?? [];
     final errors = (res['errors'] as List?) ?? [];
     showDialog(
@@ -349,8 +244,26 @@ class _CustomersScreenState extends State<CustomersScreen> {
               _resultRow('Thêm mới', inserted, Colors.green.shade700),
               _resultRow('Cập nhật đã có', updated, Colors.blue.shade800),
               _resultRow('Bỏ qua (thiếu Tên KH)', skipped, Colors.orange.shade800),
-              _resultRow('Nhóm Zalo học được', groups, const Color(0xFF0068FF)),
+              _resultRow('Đã lưu Nhóm Zalo (Group ID + Tên nhóm)', withGroup, Colors.green.shade800),
+              _resultRow('Nhóm Zalo mới thêm vào danh sách nhóm', groups, const Color(0xFF0068FF)),
               const SizedBox(height: 12),
+              if (missingGroupCols.isNotEmpty) ...[
+                Container(
+                  width: double.infinity,
+                  padding: const EdgeInsets.all(8),
+                  decoration: BoxDecoration(
+                    color: Colors.orange.shade50,
+                    borderRadius: BorderRadius.circular(4),
+                    border: Border.all(color: Colors.orange.shade200),
+                  ),
+                  child: Text(
+                    'File không có cột: ${missingGroupCols.join(', ')}. '
+                    'Nhóm Zalo OA của khách hàng chưa được lưu từ file này.',
+                    style: TextStyle(fontSize: 12.5, color: Colors.orange.shade900),
+                  ),
+                ),
+                const SizedBox(height: 8),
+              ],
               if (skippedDetails.isNotEmpty) ...[
                 const Text('Chi tiết bỏ qua:',
                     style: TextStyle(fontWeight: FontWeight.w600)),
@@ -449,13 +362,14 @@ class _CustomersScreenState extends State<CustomersScreen> {
 
   // ---------------- GIAO DIỆN (theo mẫu màn Đội xe & Tài xế) ----------------
 
-  bool _isZalo(Map<String, dynamic> c) => _s(c, 'zalo_user_id').isNotEmpty;
+  /// Khách hàng chỉ có 2 nguồn: nhập tay ('manual') hoặc import từ file Excel ('excel').
+  bool _isExcel(Map<String, dynamic> c) => _s(c, 'source').toLowerCase() == 'excel';
 
   /// Danh sách sau khi lọc nguồn + tìm kiếm, sắp theo tên khách hàng.
   List<Map<String, dynamic>> get _visible {
     final list = _filtered.where((c) {
-      if (_sourceFilter == 'ZALO') return _isZalo(c);
-      if (_sourceFilter == 'MANUAL') return !_isZalo(c);
+      if (_sourceFilter == 'EXCEL') return _isExcel(c);
+      if (_sourceFilter == 'MANUAL') return !_isExcel(c);
       return true;
     }).toList();
     list.sort((a, b) => _s(a, 'name').toLowerCase().compareTo(_s(b, 'name').toLowerCase()));
@@ -530,7 +444,7 @@ class _CustomersScreenState extends State<CustomersScreen> {
 
     return Column(
       children: [
-        // Thanh công cụ 1 hàng: Tìm kiếm + Lọc nguồn + Thêm + Đồng bộ Zalo OA
+        // Thanh công cụ 1 hàng: Tìm kiếm + Lọc nguồn + Import Excel + Thêm + Nhóm Zalo OA
         Container(
           padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
           color: Colors.white,
@@ -593,8 +507,8 @@ class _CustomersScreenState extends State<CustomersScreen> {
                     ),
                     items: const [
                       DropdownMenuItem(value: 'ALL', child: Text("Tất cả nguồn")),
-                      DropdownMenuItem(value: 'ZALO', child: Text("Zalo OA")),
                       DropdownMenuItem(value: 'MANUAL', child: Text("Thủ công")),
+                      DropdownMenuItem(value: 'EXCEL', child: Text("Import Excel")),
                     ],
                     onChanged: (val) {
                       if (val != null) {
@@ -627,23 +541,13 @@ class _CustomersScreenState extends State<CustomersScreen> {
               ),
               const SizedBox(width: 10),
               Tooltip(
-                message: "Tự động lấy danh sách nhóm Zalo OA và cập nhật cột Nhóm Zalo OA cho khách hàng",
+                message: "Kết nối Zalo OA và lấy đúng danh sách nhóm Zalo OA về phần mềm",
                 child: _toolbarButton(
                   icon: Icons.groups_2_outlined,
-                  label: _groupsBusy ? "Đang cập nhật nhóm..." : "Nhóm Zalo OA",
+                  label: _groupsBusy ? "Đang lấy nhóm..." : "Nhóm Zalo OA",
                   color: const Color(0xFF0068FF),
-                  onPressed: _groupsBusy ? null : _refreshZaloGroups,
-                ),
-              ),
-              const SizedBox(width: 10),
-              Tooltip(
-                message: "Xin quyền Zalo OA và đồng bộ danh sách người quan tâm vào Khách hàng",
-                child: _toolbarButton(
-                  icon: Icons.sync,
-                  label: _zaloBusy ? "Đang đồng bộ..." : "Đồng bộ Zalo OA",
-                  color: const Color(0xFF0068FF),
-                  busy: _zaloBusy,
-                  onPressed: _zaloBusy ? null : _onZaloSync,
+                  busy: _groupsBusy,
+                  onPressed: _groupsBusy ? null : _onZaloGroups,
                 ),
               ),
             ],
@@ -653,14 +557,10 @@ class _CustomersScreenState extends State<CustomersScreen> {
         // Bảng danh sách khách hàng
         Expanded(
           child: CenterLoadingOverlay(
-            isLoading: _loading || _zaloBusy || _groupsBusy || _zaloProgress.isNotEmpty,
-            message: _zaloProgress.isNotEmpty
-                ? _zaloProgress
-                : (_zaloBusy
-                    ? 'Đang đồng bộ Zalo OA...'
-                    : (_groupsBusy
-                        ? 'Đang tự động cập nhật nhóm Zalo OA...'
-                        : 'Đang tải danh sách khách hàng...')),
+            isLoading: _loading || _groupsBusy,
+            message: _groupsProgress.isNotEmpty
+                ? _groupsProgress
+                : 'Đang tải danh sách khách hàng...',
             child: _loading
                 ? const SizedBox.expand()
                 : RefreshIndicator(
@@ -761,8 +661,7 @@ class _CustomersScreenState extends State<CustomersScreen> {
                 rows: List.generate(pageItems.length, (idx) {
                   final c = pageItems[idx];
                   final rowColor = idx % 2 == 0 ? Colors.white : Colors.grey.shade50;
-                  final isZalo = _isZalo(c);
-                  final zaloName = _s(c, 'zalo_display_name');
+                  final isExcel = _isExcel(c);
                   final contactName = _s(c, 'contact_person');
                   final phone = _s(c, 'phone');
                   final email = _s(c, 'email');
@@ -836,22 +735,22 @@ class _CustomersScreenState extends State<CustomersScreen> {
                       // Cột 3: Nguồn (nhãn giống "Xe nội bộ")
                       makeCell(
                         Tooltip(
-                          message: isZalo
-                              ? "Zalo${zaloName.isEmpty ? '' : ': $zaloName'} • ID ${_s(c, 'zalo_user_id')}"
-                              : "Tạo thủ công trên phần mềm",
+                          message: isExcel
+                              ? "Import từ file Excel"
+                              : "Nhập tay trên phần mềm",
                           child: Container(
                             padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
                             decoration: BoxDecoration(
-                              color: isZalo ? Colors.blue.shade50 : Colors.orange.shade50,
+                              color: isExcel ? Colors.green.shade50 : Colors.orange.shade50,
                               borderRadius: BorderRadius.circular(4),
                               border: Border.all(
-                                color: isZalo ? Colors.blue.shade200 : Colors.orange.shade200,
+                                color: isExcel ? Colors.green.shade200 : Colors.orange.shade200,
                               ),
                             ),
                             child: Text(
-                              isZalo ? "Zalo OA" : "Thủ công",
+                              isExcel ? "Import Excel" : "Thủ công",
                               style: TextStyle(
-                                color: isZalo ? Colors.blue.shade800 : Colors.orange.shade900,
+                                color: isExcel ? Colors.green.shade800 : Colors.orange.shade900,
                                 fontSize: 11,
                                 fontWeight: FontWeight.bold,
                               ),
@@ -1226,7 +1125,9 @@ class _CustomersScreenState extends State<CustomersScreen> {
     }
 
     Widget groupsCountButton() {
-      final names = chatGroups.map((g) => (g['label'] ?? '').toString()).join("\n");
+      final names = chatGroups
+          .map((g) => "${(g['label'] ?? '').toString()}  (Group ID: ${(g['group_id'] ?? '').toString()})")
+          .join("\n");
       return Tooltip(
         message: "${chatGroups.length} nhóm Zalo OA:\n$names\nBấm để xem khách hàng trong nhóm",
         child: InkWell(
@@ -1244,12 +1145,19 @@ class _CustomersScreenState extends State<CustomersScreen> {
               children: [
                 Icon(Icons.forum_outlined, size: 13, color: Colors.green.shade800),
                 const SizedBox(width: 4),
-                Text(
-                  "${chatGroups.length}",
-                  style: TextStyle(
-                    color: Colors.green.shade900,
-                    fontSize: 11.5,
-                    fontWeight: FontWeight.bold,
+                ConstrainedBox(
+                  constraints: const BoxConstraints(maxWidth: 170),
+                  child: Text(
+                    chatGroups.length == 1
+                        ? (chatGroups.first['label'] ?? '').toString()
+                        : "${chatGroups.length} nhóm",
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: TextStyle(
+                      color: Colors.green.shade900,
+                      fontSize: 11.5,
+                      fontWeight: FontWeight.bold,
+                    ),
                   ),
                 ),
               ],
@@ -1475,6 +1383,8 @@ class _CustomerFormDialogState extends State<_CustomerFormDialog> {
     ('email', 'Email', Icons.email_outlined, TextInputType.emailAddress),
     ('address', 'Địa chỉ', Icons.location_on_outlined, TextInputType.streetAddress),
     ('note', 'Ghi chú', Icons.notes_outlined, TextInputType.multiline),
+    ('zalo_group_id', 'Group ID nhóm Zalo OA', Icons.tag_outlined, TextInputType.text),
+    ('zalo_group_name', 'Tên nhóm Zalo thực tế', Icons.forum_outlined, TextInputType.text),
   ];
 
   late final Map<String, TextEditingController> _ctrls;

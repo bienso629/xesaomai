@@ -384,7 +384,7 @@ class AppState extends ChangeNotifier {
         // dù đã được Duyệt Nhận Chuyến. Chỉ mở lại khi Điều phối kích hoạt lại xe
         // hoặc Duyệt Nhận Chuyến mới (server tự kích hoạt lại xe khi duyệt).
         final String vehicleStatus = (latest?['vehicle_status'] ?? '').toString().trim().toLowerCase();
-        if (vehicleStatus == 'inactive') {
+        if (vehicleStatus == 'inactive' || vehicleStatus == 'stopped') {
           approved = false;
         }
       }

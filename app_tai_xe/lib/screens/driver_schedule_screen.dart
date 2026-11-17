@@ -1,5 +1,10 @@
 import 'dart:async';
+import 'dart:io';
+import 'dart:math' as math;
+import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
+import 'package:image_picker/image_picker.dart';
+import '../config/api_config.dart';
 import '../widgets/center_loading_overlay.dart';
 import 'package:flutter_map/flutter_map.dart';
 import 'package:latlong2/latlong.dart';
@@ -28,6 +33,9 @@ class _DriverScheduleScreenState extends State<DriverScheduleScreen> {
   bool _isResting = false;
   bool _isSendingRest = false;
   List<dynamic> _myOrders = [];
+  List<dynamic> _gasStations = [];
+  Map<String, dynamic>? _activeFuelRequest;
+  Map<String, dynamic>? _latestFuelRequest;
   Timer? _gpsRefreshTimer;
   LatLng? _lastCenteredPos;
 
@@ -62,12 +70,14 @@ class _DriverScheduleScreenState extends State<DriverScheduleScreen> {
       final results = await Future.wait([
         AdminService.fetchVehicles(),
         AdminService.fetchOrders(),
+        AdminService.fetchGasStations(),
       ]);
 
       if (!mounted) return;
 
       final allVehicles = results[0];
       final allOrders = results[1];
+      final allGasStations = results[2];
       final myUserId = state.currentUserId;
       final myUsername = (state.currentUsername ?? '').trim().toLowerCase();
 
@@ -142,9 +152,31 @@ class _DriverScheduleScreenState extends State<DriverScheduleScreen> {
       final bool isResting = selectedVehicle != null &&
           (selectedVehicle['status'] ?? '').toString().trim().toLowerCase() == 'inactive';
 
+      Map<String, dynamic>? activeFuelReq;
+      Map<String, dynamic>? latestFuelReq;
+      if (selected.trim().isNotEmpty) {
+        final fuelInfo = await AdminService.fetchActiveFuelRequest(selected);
+        if (fuelInfo != null) {
+          if (fuelInfo['active_request'] is Map) {
+            activeFuelReq = Map<String, dynamic>.from(
+              fuelInfo['active_request'] as Map,
+            );
+          }
+          if (fuelInfo['latest_request'] is Map) {
+            latestFuelReq = Map<String, dynamic>.from(
+              fuelInfo['latest_request'] as Map,
+            );
+          }
+        }
+      }
+      if (!mounted) return;
+
       setState(() {
         _myAssignedVehicles = assignedVehicles;
         _myOrders = driverOrders;
+        _gasStations = allGasStations;
+        _activeFuelRequest = activeFuelReq;
+        _latestFuelRequest = latestFuelReq;
         _isResting = isResting;
         _isLoadingData = false;
       });
@@ -205,6 +237,10 @@ class _DriverScheduleScreenState extends State<DriverScheduleScreen> {
 
               // 3. Mục Kiểm tra xe đầu ngày (5 ảnh) & Báo hỏng
               _buildDailyInspectionStatusCard(context, state),
+              const SizedBox(height: 12),
+
+              // 3b. Nghiệp vụ Đổ dầu, Mở Mã QR Cây dầu 1 lần & Nghiệm thu (Task T2)
+              _buildFuelRequestAndQrCard(context, state),
               const SizedBox(height: 12),
 
               // 4. Lịch trình chuyến hàng & 4 bước chụp hình (Trước bơm / Phiếu cân / Đến điểm giao / Phiếu giao)
@@ -1206,4 +1242,1548 @@ class _DriverScheduleScreenState extends State<DriverScheduleScreen> {
     );
   }
 
+  // ============ NGHIỆP VỤ ĐỔ DẦU, MỞ MÃ QR 1 LẦN & NGHIỆM THU (TASK T2) ============
+
+  String _resolveFullImageUrl(String rawUrl) {
+    final trimmed = rawUrl.trim();
+    if (trimmed.isEmpty) return '';
+    if (trimmed.startsWith('http://') || trimmed.startsWith('https://')) {
+      return trimmed;
+    }
+    if (trimmed.startsWith('/')) {
+      return '${ApiConfig.host}$trimmed';
+    }
+    return '${ApiConfig.host}/$trimmed';
+  }
+
+  Future<String?> _captureOrPickFuelPhoto({required bool preferCamera}) async {
+    try {
+      if (preferCamera && (Platform.isAndroid || Platform.isIOS)) {
+        final picker = ImagePicker();
+        final XFile? photo = await picker.pickImage(
+          source: ImageSource.camera,
+          imageQuality: 82,
+          maxWidth: 1600,
+        );
+        if (photo != null) {
+          final bytes = await photo.readAsBytes();
+          final res = await AdminService.uploadImageBytes(bytes, photo.name);
+          if (res['success'] == true && (res['url'] ?? '').toString().isNotEmpty) {
+            return res['url'].toString();
+          }
+        }
+        return null;
+      }
+
+      final result = await FilePicker.platform.pickFiles(
+        type: FileType.image,
+        allowMultiple: false,
+        withData: true,
+      );
+      if (result == null || result.files.isEmpty) return null;
+      final file = result.files.first;
+      Map<String, dynamic>? uploadRes;
+      if (file.bytes != null && file.bytes!.isNotEmpty) {
+        uploadRes = await AdminService.uploadImageBytes(file.bytes!, file.name);
+      } else if (file.path != null && file.path!.isNotEmpty) {
+        uploadRes = await AdminService.uploadImage(file.path!);
+      }
+      if (uploadRes != null &&
+          uploadRes['success'] == true &&
+          (uploadRes['url'] ?? '').toString().isNotEmpty) {
+        return uploadRes['url'].toString();
+      }
+    } catch (_) {}
+    return null;
+  }
+
+  Widget _buildFuelRequestAndQrCard(BuildContext context, AppState state) {
+    final activeReq = _activeFuelRequest;
+    final latestReq = _latestFuelRequest;
+    final String status = (activeReq?['status'] ?? '').toString().toLowerCase();
+    final bool isPending = status == 'pending';
+    final bool isApproved = status == 'approved';
+    final bool qrVisible = activeReq?['qr_visible'] == true;
+    final String qrUrl = _resolveFullImageUrl(
+      (activeReq?['active_qr_image_url'] ?? '').toString(),
+    );
+    final String qrWarning = (activeReq?['qr_warning'] ??
+            'Lưu ý: Mã QR này chỉ có hiệu lực sử dụng cho 01 lần vào cây dầu (theo 01 lần phê duyệt đề xuất).')
+        .toString();
+
+    String badgeText = 'SẴN SÀNG ĐỀ XUẤT';
+    Color badgeBg = Colors.orange.shade50;
+    Color badgeBorder = Colors.orange.shade300;
+    Color badgeTextCol = Colors.orange.shade900;
+
+    if (isPending) {
+      badgeText = 'CHỜ ĐIỀU PHỐI DUYỆT';
+      badgeBg = Colors.blue.shade50;
+      badgeBorder = Colors.blue.shade300;
+      badgeTextCol = Colors.blue.shade900;
+    } else if (isApproved) {
+      badgeText = 'ĐÃ DUYỆT - MỞ MÃ QR 1 LẦN';
+      badgeBg = Colors.green.shade50;
+      badgeBorder = Colors.green.shade400;
+      badgeTextCol = Colors.green.shade900;
+    }
+
+    return Card(
+      elevation: 0,
+      shape: RoundedRectangleBorder(
+        borderRadius: BorderRadius.circular(4),
+        side: BorderSide(
+          color: isApproved
+              ? Colors.green.shade400
+              : (isPending ? Colors.blue.shade300 : Colors.grey.shade300),
+          width: isApproved ? 1.5 : 1,
+        ),
+      ),
+      color: Colors.white,
+      child: Padding(
+        padding: const EdgeInsets.all(14.0),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
+              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+              children: [
+                Expanded(
+                  child: Row(
+                    children: [
+                      Icon(
+                        Icons.local_gas_station,
+                        color: Colors.orange.shade800,
+                        size: 20,
+                      ),
+                      const SizedBox(width: 8),
+                      const Expanded(
+                        child: Text(
+                          'Nghiệp Vụ Đổ Dầu & Mã QR Cây Dầu',
+                          style: TextStyle(
+                            fontWeight: FontWeight.bold,
+                            fontSize: 14,
+                          ),
+                          overflow: TextOverflow.ellipsis,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+                const SizedBox(width: 6),
+                Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+                  decoration: BoxDecoration(
+                    color: badgeBg,
+                    borderRadius: BorderRadius.circular(4),
+                    border: Border.all(color: badgeBorder),
+                  ),
+                  child: Text(
+                    badgeText,
+                    style: TextStyle(
+                      color: badgeTextCol,
+                      fontWeight: FontWeight.bold,
+                      fontSize: 10.5,
+                    ),
+                  ),
+                ),
+              ],
+            ),
+            const SizedBox(height: 10),
+
+            // TRƯỜNG HỢP 1: CHƯA CÓ ĐỀ XUẤT ĐANG MỞ (Tạo mới đề xuất đổ dầu)
+            if (activeReq == null) ...[
+              Text(
+                'Khi cần ghé cây dầu: Bấm "Đề xuất đổ dầu" và bắt buộc chụp ảnh Đồng hồ taplo để gửi Điều phối viên duyệt mở Mã QR Cây dầu theo xe.',
+                style: TextStyle(
+                  fontSize: 12.5,
+                  color: Colors.grey.shade700,
+                  height: 1.4,
+                ),
+              ),
+              if (latestReq != null &&
+                  (latestReq['status'] ?? '').toString() == 'completed') ...[
+                const SizedBox(height: 8),
+                Container(
+                  width: double.infinity,
+                  padding: const EdgeInsets.all(10),
+                  decoration: BoxDecoration(
+                    color: Colors.green.shade50,
+                    borderRadius: BorderRadius.circular(4),
+                    border: Border.all(color: Colors.green.shade200),
+                  ),
+                  child: Row(
+                    children: [
+                      Icon(
+                        Icons.verified_outlined,
+                        color: Colors.green.shade700,
+                        size: 18,
+                      ),
+                      const SizedBox(width: 8),
+                      Expanded(
+                        child: Text(
+                          'Đã hoàn tất nghiệm thu lượt đổ dầu gần nhất tại ${latestReq['resolved_gas_station_name'] ?? latestReq['gas_station_name'] ?? 'cây dầu'} (Đã chụp đủ Taplo + Phiếu nhận dầu, Mã QR đã tự động ẩn).',
+                          style: TextStyle(
+                            fontSize: 12,
+                            color: Colors.green.shade900,
+                            fontWeight: FontWeight.w500,
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ] else if (latestReq != null &&
+                  (latestReq['status'] ?? '').toString() == 'rejected') ...[
+                const SizedBox(height: 8),
+                Container(
+                  width: double.infinity,
+                  padding: const EdgeInsets.all(10),
+                  decoration: BoxDecoration(
+                    color: Colors.red.shade50,
+                    borderRadius: BorderRadius.circular(4),
+                    border: Border.all(color: Colors.red.shade200),
+                  ),
+                  child: Text(
+                    'Đề xuất đổ dầu gần nhất bị từ chối${(latestReq['approved_note'] ?? '').toString().isNotEmpty ? ': ${latestReq['approved_note']}' : '.'}',
+                    style: TextStyle(
+                      fontSize: 12,
+                      color: Colors.red.shade800,
+                      fontWeight: FontWeight.w600,
+                    ),
+                  ),
+                ),
+              ],
+              const SizedBox(height: 12),
+              SizedBox(
+                width: double.infinity,
+                height: 42,
+                child: ElevatedButton.icon(
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: Colors.orange.shade800,
+                    foregroundColor: Colors.white,
+                    elevation: 0,
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(4),
+                    ),
+                  ),
+                  icon: const Icon(Icons.local_gas_station, size: 18),
+                  label: const Text(
+                    'Đề xuất đổ dầu (Chụp Đồng hồ Taplo)',
+                    style: TextStyle(
+                      fontWeight: FontWeight.bold,
+                      fontSize: 13.5,
+                    ),
+                  ),
+                  onPressed: () => _showCreateFuelRequestDialog(state),
+                ),
+              ),
+            ],
+
+            // TRƯỜNG HỢP 2: ĐANG CHỜ ĐIỀU PHỐI VIÊN BẤM DUYỆT (status == 'pending')
+            if (isPending && activeReq != null) ...[
+              Container(
+                width: double.infinity,
+                padding: const EdgeInsets.all(12),
+                decoration: BoxDecoration(
+                  color: Colors.blue.shade50,
+                  borderRadius: BorderRadius.circular(4),
+                  border: Border.all(color: Colors.blue.shade200),
+                ),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Row(
+                      children: [
+                        Icon(
+                          Icons.hourglass_top_rounded,
+                          color: Colors.blue.shade800,
+                          size: 18,
+                        ),
+                        const SizedBox(width: 8),
+                        Expanded(
+                          child: Text(
+                            'Đã gửi đề xuất đổ dầu cho xe ${activeReq['plate_number']} • Đang chờ Điều phối bấm Duyệt (OK)',
+                            style: TextStyle(
+                              fontWeight: FontWeight.bold,
+                              fontSize: 13,
+                              color: Colors.blue.shade900,
+                            ),
+                          ),
+                        ),
+                      ],
+                    ),
+                    const SizedBox(height: 6),
+                    Text(
+                      '• Cây dầu đăng ký: ${activeReq['resolved_gas_station_name'] ?? activeReq['gas_station_name'] ?? 'Theo phân bổ Điều phối'}\n'
+                      '• Chỉ số Km Taplo lúc đề xuất: ${activeReq['before_odo_km'] ?? '--'} km\n'
+                      '• Tài xế chỉ được phép ghé cây dầu sau khi Điều phối viên bấm Duyệt (OK) và hệ thống mở Mã QR.',
+                      style: TextStyle(
+                        fontSize: 12,
+                        color: Colors.blue.shade900,
+                        height: 1.4,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              const SizedBox(height: 10),
+              Row(
+                children: [
+                  Expanded(
+                    child: SizedBox(
+                      height: 36,
+                      child: OutlinedButton.icon(
+                        style: OutlinedButton.styleFrom(
+                          foregroundColor: Colors.blue.shade800,
+                          side: BorderSide(color: Colors.blue.shade300),
+                          shape: RoundedRectangleBorder(
+                            borderRadius: BorderRadius.circular(4),
+                          ),
+                        ),
+                        icon: const Icon(Icons.refresh, size: 16),
+                        label: const Text(
+                          'Kiểm tra trạng thái duyệt',
+                          style: TextStyle(
+                            fontSize: 12,
+                            fontWeight: FontWeight.bold,
+                          ),
+                        ),
+                        onPressed: () => _loadDriverData(silent: false),
+                      ),
+                    ),
+                  ),
+                  const SizedBox(width: 8),
+                  SizedBox(
+                    height: 36,
+                    child: OutlinedButton.icon(
+                      style: OutlinedButton.styleFrom(
+                        foregroundColor: Colors.orange.shade800,
+                        side: BorderSide(color: Colors.orange.shade300),
+                        shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(4),
+                        ),
+                      ),
+                      icon: const Icon(Icons.camera_alt_outlined, size: 16),
+                      label: const Text(
+                        'Chụp lại Taplo',
+                        style: TextStyle(
+                          fontSize: 12,
+                          fontWeight: FontWeight.bold,
+                        ),
+                      ),
+                      onPressed: () => _showCreateFuelRequestDialog(
+                        state,
+                        existingRequest: activeReq,
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+            ],
+
+            // TRƯỜNG HỢP 3: ĐIỀU PHỐI ĐÃ DUYỆT -> MỞ MÃ QR 1 LẦN & CHỜ CHỤP 2 ẢNH NGHIỆM THU ĐÓNG QR
+            if (isApproved && activeReq != null) ...[
+              Container(
+                width: double.infinity,
+                padding: const EdgeInsets.all(12),
+                decoration: BoxDecoration(
+                  color: Colors.green.shade50,
+                  borderRadius: BorderRadius.circular(4),
+                  border: Border.all(color: Colors.green.shade300),
+                ),
+                child: Column(
+                  children: [
+                    Row(
+                      children: [
+                        Icon(
+                          Icons.qr_code_scanner,
+                          color: Colors.green.shade800,
+                          size: 20,
+                        ),
+                        const SizedBox(width: 8),
+                        Expanded(
+                          child: Text(
+                            'Điều phối đã duyệt (${activeReq['approved_by_name'] ?? 'Điều phối'}) • Mở Mã QR Cây dầu: ${activeReq['resolved_gas_station_name'] ?? activeReq['gas_station_name'] ?? ''}',
+                            style: TextStyle(
+                              fontWeight: FontWeight.bold,
+                              fontSize: 13,
+                              color: Colors.green.shade900,
+                            ),
+                          ),
+                        ),
+                      ],
+                    ),
+                    const SizedBox(height: 12),
+                    if (qrVisible && qrUrl.isNotEmpty)
+                      InkWell(
+                        borderRadius: BorderRadius.circular(4),
+                        onTap: () => _showFullScreenFuelQrDialog(
+                          qrUrl: qrUrl,
+                          plateNumber: (activeReq['plate_number'] ?? '').toString(),
+                          stationName:
+                              (activeReq['resolved_gas_station_name'] ??
+                                      activeReq['gas_station_name'] ??
+                                      'Cây dầu')
+                                  .toString(),
+                          warningText: qrWarning,
+                        ),
+                        child: Container(
+                          padding: const EdgeInsets.all(12),
+                          decoration: BoxDecoration(
+                            color: Colors.white,
+                            borderRadius: BorderRadius.circular(4),
+                            border: Border.all(
+                              color: Colors.indigo.shade300,
+                              width: 1.5,
+                            ),
+                          ),
+                          child: Column(
+                            children: [
+                              SizedBox(
+                                width: 220,
+                                height: 220,
+                                child: Image.network(
+                                  qrUrl,
+                                  fit: BoxFit.contain,
+                                  errorBuilder: (_, __, ___) => Center(
+                                    child: Icon(
+                                      Icons.qr_code_2,
+                                      size: 72,
+                                      color: Colors.indigo.shade400,
+                                    ),
+                                  ),
+                                ),
+                              ),
+                              const SizedBox(height: 6),
+                              Text(
+                                'Xe ${activeReq['plate_number']} • Bấm vào ảnh QR để phóng to cho nhân viên cây dầu quét',
+                                style: TextStyle(
+                                  fontSize: 11.5,
+                                  fontWeight: FontWeight.w600,
+                                  color: Colors.indigo.shade800,
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
+                      ),
+                    const SizedBox(height: 10),
+                    // Hộp cảnh báo hiệu lực 1 lần bắt buộc theo Yêu cầu 02
+                    Container(
+                      width: double.infinity,
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 10,
+                        vertical: 8,
+                      ),
+                      decoration: BoxDecoration(
+                        color: Colors.amber.shade100,
+                        borderRadius: BorderRadius.circular(4),
+                        border: Border.all(color: Colors.amber.shade600),
+                      ),
+                      child: Row(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Icon(
+                            Icons.warning_amber_rounded,
+                            color: Colors.red.shade800,
+                            size: 18,
+                          ),
+                          const SizedBox(width: 8),
+                          Expanded(
+                            child: Text(
+                              qrWarning,
+                              style: TextStyle(
+                                fontSize: 12,
+                                fontWeight: FontWeight.bold,
+                                color: Colors.red.shade900,
+                                height: 1.35,
+                              ),
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              const SizedBox(height: 12),
+              // Giai đoạn 3: Chụp 2 ảnh sau khi đổ dầu xong để đóng lượt đổ và tự động ẩn Mã QR
+              Container(
+                width: double.infinity,
+                padding: const EdgeInsets.all(12),
+                decoration: BoxDecoration(
+                  color: const Color(0xFFF8FAFC),
+                  borderRadius: BorderRadius.circular(4),
+                  border: Border.all(color: Colors.teal.shade300),
+                ),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      'Bước nghiệm thu sau khi đổ dầu xong (Đóng lượt đổ & Ẩn Mã QR):',
+                      style: TextStyle(
+                        fontWeight: FontWeight.bold,
+                        fontSize: 13,
+                        color: Colors.teal.shade900,
+                      ),
+                    ),
+                    const SizedBox(height: 4),
+                    Text(
+                      'Bắt buộc chụp đủ 02 ảnh: (1) Ảnh Đồng hồ taplo sau khi đổ và (2) Ảnh Phiếu nhận dầu. Ngay sau khi gửi, Mã QR Cây dầu sẽ tự động ẩn.',
+                      style: TextStyle(
+                        fontSize: 12,
+                        color: Colors.grey.shade700,
+                        height: 1.35,
+                      ),
+                    ),
+                    const SizedBox(height: 10),
+                    SizedBox(
+                      width: double.infinity,
+                      height: 42,
+                      child: ElevatedButton.icon(
+                        style: ElevatedButton.styleFrom(
+                          backgroundColor: Colors.teal.shade700,
+                          foregroundColor: Colors.white,
+                          elevation: 0,
+                          shape: RoundedRectangleBorder(
+                            borderRadius: BorderRadius.circular(4),
+                          ),
+                        ),
+                        icon: const Icon(Icons.task_alt, size: 18),
+                        label: const Text(
+                          'Chụp Taplo + Phiếu nhận dầu (Đóng lượt đổ & Ẩn QR)',
+                          style: TextStyle(
+                            fontWeight: FontWeight.bold,
+                            fontSize: 13,
+                          ),
+                        ),
+                        onPressed: () =>
+                            _showCompleteFuelRequestDialog(activeReq, state),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ],
+          ],
+        ),
+      ),
+    );
+  }
+
+  void _showFullScreenFuelQrDialog({
+    required String qrUrl,
+    required String plateNumber,
+    required String stationName,
+    required String warningText,
+  }) {
+    showDialog(
+      context: context,
+      builder: (ctx) {
+        final Size screenSize = MediaQuery.of(ctx).size;
+        final double targetWidth = math.min(560.0, screenSize.width * 0.94);
+        return Dialog(
+          backgroundColor: Colors.white,
+          surfaceTintColor: Colors.white,
+          constraints: BoxConstraints(
+            minWidth: 300,
+            maxWidth: targetWidth,
+          ),
+          insetPadding: const EdgeInsets.all(16),
+          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(4)),
+          child: Padding(
+            padding: const EdgeInsets.all(16),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Row(
+                  children: [
+                    Icon(Icons.qr_code_2, color: Colors.indigo.shade800, size: 22),
+                    const SizedBox(width: 8),
+                    Expanded(
+                      child: Text(
+                        'Mã QR Cây dầu - Xe $plateNumber ($stationName)',
+                        style: const TextStyle(
+                          fontWeight: FontWeight.bold,
+                          fontSize: 15,
+                        ),
+                      ),
+                    ),
+                    IconButton(
+                      icon: const Icon(Icons.close, size: 20),
+                      onPressed: () => Navigator.pop(ctx),
+                    ),
+                  ],
+                ),
+                const Divider(height: 16),
+                SizedBox(
+                  width: 300,
+                  height: 300,
+                  child: InteractiveViewer(
+                    minScale: 0.8,
+                    maxScale: 4.0,
+                    child: Image.network(qrUrl, fit: BoxFit.contain),
+                  ),
+                ),
+                const SizedBox(height: 12),
+                Container(
+                  width: double.infinity,
+                  padding: const EdgeInsets.all(10),
+                  decoration: BoxDecoration(
+                    color: Colors.amber.shade100,
+                    borderRadius: BorderRadius.circular(4),
+                    border: Border.all(color: Colors.amber.shade600),
+                  ),
+                  child: Text(
+                    warningText,
+                    style: TextStyle(
+                      fontSize: 12,
+                      fontWeight: FontWeight.bold,
+                      color: Colors.red.shade900,
+                    ),
+                  ),
+                ),
+                const SizedBox(height: 12),
+                SizedBox(
+                  width: double.infinity,
+                  height: 36,
+                  child: ElevatedButton(
+                    style: ElevatedButton.styleFrom(
+                      backgroundColor: Colors.blue.shade800,
+                      foregroundColor: Colors.white,
+                      shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(4),
+                      ),
+                    ),
+                    onPressed: () => Navigator.pop(ctx),
+                    child: const Text('Đóng'),
+                  ),
+                ),
+              ],
+            ),
+          ),
+        );
+      },
+    );
+  }
+
+  Future<void> _showCreateFuelRequestDialog(
+    AppState state, {
+    Map<String, dynamic>? existingRequest,
+  }) async {
+    final String plate = state.selectedPlate.trim();
+    if (plate.isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          backgroundColor: Colors.orange,
+          content: Text('Vui lòng chọn phương tiện trước khi tạo đề xuất đổ dầu.'),
+        ),
+      );
+      return;
+    }
+
+    int? selectedStationId = int.tryParse(
+      (existingRequest?['gas_station_id'] ?? '').toString(),
+    );
+    if (selectedStationId == null && _gasStations.isNotEmpty) {
+      for (final gs in _gasStations) {
+        if (gs is Map && gs['qr_plates'] is List) {
+          final plates = (gs['qr_plates'] as List)
+              .map((e) => e.toString().toUpperCase())
+              .toList();
+          if (plates.contains(plate.toUpperCase())) {
+            selectedStationId = int.tryParse((gs['id'] ?? '').toString());
+            break;
+          }
+        }
+      }
+      selectedStationId ??= int.tryParse(
+        (_gasStations.first['id'] ?? '').toString(),
+      );
+    }
+
+    final gps =
+        state.currentGpsStatus ?? state.allFleetVehiclesStatus[state.selectedPlate];
+    final int currentOdo = (gps != null && gps.odoKm > 0)
+        ? gps.odoKm
+        : (state.todayInspection?.confirmedKm.round() ?? 0);
+
+    final odoCtrl = TextEditingController(
+      text: existingRequest?['before_odo_km'] != null
+          ? existingRequest!['before_odo_km'].toString()
+          : (currentOdo > 0 ? '$currentOdo' : ''),
+    );
+    final noteCtrl = TextEditingController(
+      text: (existingRequest?['request_note'] ?? '').toString(),
+    );
+    String taploPhotoUrl =
+        (existingRequest?['before_taplo_photo_url'] ?? '').toString();
+    bool isUploadingPhoto = false;
+    bool isSubmitting = false;
+    String errorText = '';
+
+    await showDialog(
+      context: context,
+      barrierDismissible: false,
+      builder: (ctx) => StatefulBuilder(
+        builder: (ctx, setDialogState) {
+          final Size screenSize = MediaQuery.of(ctx).size;
+          final double targetWidth = math.min(580.0, screenSize.width * 0.95);
+          final previewTaploUrl = _resolveFullImageUrl(taploPhotoUrl);
+
+          Future<void> handleTakeTaplo({required bool useCamera}) async {
+            setDialogState(() {
+              isUploadingPhoto = true;
+              errorText = '';
+            });
+            final uploaded = await _captureOrPickFuelPhoto(
+              preferCamera: useCamera,
+            );
+            setDialogState(() {
+              isUploadingPhoto = false;
+              if (uploaded != null && uploaded.isNotEmpty) {
+                taploPhotoUrl = uploaded;
+              } else {
+                errorText = 'Chưa tải được ảnh Đồng hồ taplo. Vui lòng thử lại.';
+              }
+            });
+          }
+
+          return Dialog(
+            backgroundColor: Colors.white,
+            surfaceTintColor: Colors.white,
+            constraints: BoxConstraints(
+              minWidth: 310,
+              maxWidth: targetWidth,
+            ),
+            insetPadding: const EdgeInsets.all(16),
+            shape: RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(4),
+            ),
+            child: SingleChildScrollView(
+              padding: const EdgeInsets.all(18),
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Row(
+                    children: [
+                      Container(
+                        padding: const EdgeInsets.all(8),
+                        decoration: BoxDecoration(
+                          color: Colors.orange.shade50,
+                          borderRadius: BorderRadius.circular(4),
+                        ),
+                        child: Icon(
+                          Icons.local_gas_station,
+                          color: Colors.orange.shade800,
+                          size: 22,
+                        ),
+                      ),
+                      const SizedBox(width: 10),
+                      Expanded(
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Text(
+                              'Đề xuất đổ dầu - Xe $plate',
+                              style: const TextStyle(
+                                fontSize: 15.5,
+                                fontWeight: FontWeight.bold,
+                              ),
+                            ),
+                            Text(
+                              'Bắt buộc chụp ảnh Đồng hồ taplo trước khi gửi đề xuất',
+                              style: TextStyle(
+                                fontSize: 12,
+                                color: Colors.grey.shade600,
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                      IconButton(
+                        icon: const Icon(Icons.close, size: 20),
+                        onPressed: isSubmitting ? null : () => Navigator.pop(ctx),
+                      ),
+                    ],
+                  ),
+                  const Divider(height: 20),
+                  if (_gasStations.isNotEmpty) ...[
+                    DropdownButtonFormField<int>(
+                      value: selectedStationId,
+                      isExpanded: true,
+                      decoration: InputDecoration(
+                        labelText: 'Chọn Cây dầu dự kiến ghé đổ (*)',
+                        prefixIcon: const Icon(
+                          Icons.local_gas_station_outlined,
+                          size: 18,
+                        ),
+                        border: OutlineInputBorder(
+                          borderRadius: BorderRadius.circular(4),
+                        ),
+                      ),
+                      items: _gasStations
+                          .map((gs) {
+                            final id = int.tryParse((gs['id'] ?? '').toString());
+                            if (id == null) return null;
+                            final name = (gs['name'] ?? 'Cây dầu #$id').toString();
+                            return DropdownMenuItem<int>(
+                              value: id,
+                              child: Text(
+                                name,
+                                overflow: TextOverflow.ellipsis,
+                                style: const TextStyle(fontSize: 13),
+                              ),
+                            );
+                          })
+                          .whereType<DropdownMenuItem<int>>()
+                          .toList(),
+                      onChanged: (val) {
+                        setDialogState(() {
+                          selectedStationId = val;
+                        });
+                      },
+                    ),
+                    const SizedBox(height: 12),
+                  ],
+                  // Khu vực bắt buộc chụp ảnh Đồng hồ taplo
+                  Container(
+                    width: double.infinity,
+                    padding: const EdgeInsets.all(12),
+                    decoration: BoxDecoration(
+                      color: Colors.grey.shade50,
+                      borderRadius: BorderRadius.circular(4),
+                      border: Border.all(
+                        color: taploPhotoUrl.isNotEmpty
+                            ? Colors.green.shade400
+                            : Colors.orange.shade300,
+                      ),
+                    ),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Row(
+                          mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                          children: [
+                            const Expanded(
+                              child: Text(
+                                'Ảnh chụp Đồng hồ Taplo hiện tại (* Bắt buộc)',
+                                style: TextStyle(
+                                  fontWeight: FontWeight.bold,
+                                  fontSize: 13,
+                                ),
+                              ),
+                            ),
+                            if (taploPhotoUrl.isNotEmpty)
+                              Icon(
+                                Icons.check_circle,
+                                color: Colors.green.shade700,
+                                size: 18,
+                              ),
+                          ],
+                        ),
+                        const SizedBox(height: 8),
+                        if (taploPhotoUrl.isNotEmpty) ...[
+                          ClipRRect(
+                            borderRadius: BorderRadius.circular(4),
+                            child: Container(
+                              height: 150,
+                              width: double.infinity,
+                              color: Colors.black12,
+                              child: Image.network(
+                                previewTaploUrl,
+                                fit: BoxFit.cover,
+                                errorBuilder: (_, __, ___) => const Center(
+                                  child: Icon(Icons.image_outlined, size: 40),
+                                ),
+                              ),
+                            ),
+                          ),
+                          const SizedBox(height: 8),
+                        ],
+                        Row(
+                          children: [
+                            if (Platform.isAndroid || Platform.isIOS) ...[
+                              Expanded(
+                                child: SizedBox(
+                                  height: 36,
+                                  child: ElevatedButton.icon(
+                                    style: ElevatedButton.styleFrom(
+                                      backgroundColor: Colors.blue.shade800,
+                                      foregroundColor: Colors.white,
+                                      shape: RoundedRectangleBorder(
+                                        borderRadius: BorderRadius.circular(4),
+                                      ),
+                                    ),
+                                    icon: const Icon(Icons.camera_alt, size: 16),
+                                    label: Text(
+                                      isUploadingPhoto
+                                          ? 'Đang tải...'
+                                          : 'Chụp Camera Taplo',
+                                      style: const TextStyle(fontSize: 12),
+                                    ),
+                                    onPressed: isUploadingPhoto
+                                        ? null
+                                        : () => handleTakeTaplo(useCamera: true),
+                                  ),
+                                ),
+                              ),
+                              const SizedBox(width: 8),
+                            ],
+                            Expanded(
+                              child: SizedBox(
+                                height: 36,
+                                child: OutlinedButton.icon(
+                                  style: OutlinedButton.styleFrom(
+                                    foregroundColor: Colors.indigo.shade800,
+                                    side: BorderSide(
+                                      color: Colors.indigo.shade300,
+                                    ),
+                                    shape: RoundedRectangleBorder(
+                                      borderRadius: BorderRadius.circular(4),
+                                    ),
+                                  ),
+                                  icon: isUploadingPhoto
+                                      ? const SizedBox(
+                                          width: 14,
+                                          height: 14,
+                                          child: CircularProgressIndicator(
+                                            strokeWidth: 2,
+                                          ),
+                                        )
+                                      : const Icon(
+                                          Icons.add_a_photo_outlined,
+                                          size: 16,
+                                        ),
+                                  label: Text(
+                                    taploPhotoUrl.isEmpty
+                                        ? 'Chụp / Tải ảnh Đồng hồ Taplo'
+                                        : 'Chụp / Đổi ảnh Taplo khác',
+                                    style: const TextStyle(
+                                      fontSize: 12,
+                                      fontWeight: FontWeight.bold,
+                                    ),
+                                  ),
+                                  onPressed: isUploadingPhoto
+                                      ? null
+                                      : () => handleTakeTaplo(useCamera: false),
+                                ),
+                              ),
+                            ),
+                          ],
+                        ),
+                      ],
+                    ),
+                  ),
+                  const SizedBox(height: 12),
+                  Row(
+                    children: [
+                      Expanded(
+                        child: TextField(
+                          controller: odoCtrl,
+                          keyboardType: const TextInputType.numberWithOptions(
+                            decimal: true,
+                          ),
+                          decoration: InputDecoration(
+                            labelText: 'Số Km Đồng hồ Taplo (ODO)',
+                            hintText: 'VD: 124650',
+                            prefixIcon: const Icon(Icons.speed, size: 18),
+                            border: OutlineInputBorder(
+                              borderRadius: BorderRadius.circular(4),
+                            ),
+                          ),
+                        ),
+                      ),
+                      const SizedBox(width: 10),
+                      Expanded(
+                        child: TextField(
+                          controller: noteCtrl,
+                          decoration: InputDecoration(
+                            labelText: 'Ghi chú (Tùy chọn)',
+                            hintText: 'VD: Xin đổ dầu chạy chuyến chiều',
+                            prefixIcon: const Icon(Icons.notes, size: 18),
+                            border: OutlineInputBorder(
+                              borderRadius: BorderRadius.circular(4),
+                            ),
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
+                  if (errorText.isNotEmpty) ...[
+                    const SizedBox(height: 10),
+                    Container(
+                      width: double.infinity,
+                      padding: const EdgeInsets.all(8),
+                      decoration: BoxDecoration(
+                        color: Colors.red.shade50,
+                        borderRadius: BorderRadius.circular(4),
+                        border: Border.all(color: Colors.red.shade200),
+                      ),
+                      child: Text(
+                        errorText,
+                        style: TextStyle(
+                          fontSize: 12,
+                          color: Colors.red.shade800,
+                          fontWeight: FontWeight.w600,
+                        ),
+                      ),
+                    ),
+                  ],
+                  const SizedBox(height: 16),
+                  Row(
+                    mainAxisAlignment: MainAxisAlignment.end,
+                    children: [
+                      SizedBox(
+                        height: 36,
+                        child: OutlinedButton(
+                          style: OutlinedButton.styleFrom(
+                            shape: RoundedRectangleBorder(
+                              borderRadius: BorderRadius.circular(4),
+                            ),
+                          ),
+                          onPressed: isSubmitting
+                              ? null
+                              : () => Navigator.pop(ctx),
+                          child: const Text('Hủy'),
+                        ),
+                      ),
+                      const SizedBox(width: 8),
+                      SizedBox(
+                        height: 36,
+                        child: ElevatedButton.icon(
+                          style: ElevatedButton.styleFrom(
+                            backgroundColor: Colors.orange.shade800,
+                            foregroundColor: Colors.white,
+                            elevation: 0,
+                            shape: RoundedRectangleBorder(
+                              borderRadius: BorderRadius.circular(4),
+                            ),
+                          ),
+                          icon: isSubmitting
+                              ? const SizedBox(
+                                  width: 14,
+                                  height: 14,
+                                  child: CircularProgressIndicator(
+                                    strokeWidth: 2,
+                                    color: Colors.white,
+                                  ),
+                                )
+                              : const Icon(Icons.send_outlined, size: 16),
+                          label: Text(
+                            isSubmitting
+                                ? 'Đang gửi...'
+                                : 'Gửi Đề xuất đổ dầu',
+                            style: const TextStyle(
+                              fontWeight: FontWeight.bold,
+                              fontSize: 12.5,
+                            ),
+                          ),
+                          onPressed: (isSubmitting || isUploadingPhoto)
+                              ? null
+                              : () async {
+                                  if (taploPhotoUrl.trim().isEmpty) {
+                                    setDialogState(() {
+                                      errorText =
+                                          'Bắt buộc phải chụp ảnh Đồng hồ taplo trước khi gửi đề xuất đổ dầu!';
+                                    });
+                                    return;
+                                  }
+                                  setDialogState(() {
+                                    isSubmitting = true;
+                                    errorText = '';
+                                  });
+                                  final odoVal = double.tryParse(
+                                    odoCtrl.text.trim().replaceAll(',', '.'),
+                                  );
+                                  final res =
+                                      await AdminService.createFuelRequest(
+                                        plateNumber: plate,
+                                        beforeTaploPhotoUrl: taploPhotoUrl,
+                                        beforeOdoKm: odoVal,
+                                        gasStationId: selectedStationId,
+                                        orderId: state.currentTrip?.orderId,
+                                        orderCode: state.currentTrip?.orderCode,
+                                        requestNote: noteCtrl.text.trim(),
+                                        gpsLat: gps?.latitude,
+                                        gpsLng: gps?.longitude,
+                                      );
+                                  if (!mounted) return;
+                                  if (res['success'] == true) {
+                                    Navigator.pop(ctx);
+                                    await _loadDriverData(silent: false);
+                                    if (!mounted) return;
+                                    ScaffoldMessenger.of(context).showSnackBar(
+                                      SnackBar(
+                                        backgroundColor: Colors.green.shade700,
+                                        content: const Text(
+                                          'Đã gửi Đề xuất đổ dầu kèm ảnh Đồng hồ taplo cho Điều phối duyệt!',
+                                        ),
+                                      ),
+                                    );
+                                  } else {
+                                    setDialogState(() {
+                                      isSubmitting = false;
+                                      errorText = (res['message'] ??
+                                              'Gửi đề xuất thất bại')
+                                          .toString();
+                                    });
+                                  }
+                                },
+                        ),
+                      ),
+                    ],
+                  ),
+                ],
+              ),
+            ),
+          );
+        },
+      ),
+    );
+  }
+
+  Future<void> _showCompleteFuelRequestDialog(
+    Map<String, dynamic> activeReq,
+    AppState state,
+  ) async {
+    final int? reqId = int.tryParse((activeReq['id'] ?? '').toString());
+    if (reqId == null) return;
+    final String plate = (activeReq['plate_number'] ?? state.selectedPlate)
+        .toString();
+
+    final odoCtrl = TextEditingController(
+      text: (activeReq['before_odo_km'] ?? '').toString(),
+    );
+    final litersCtrl = TextEditingController();
+    final noteCtrl = TextEditingController();
+    String afterTaploUrl = '';
+    String receiptPhotoUrl = '';
+    bool isUploadingTaplo = false;
+    bool isUploadingReceipt = false;
+    bool isSubmitting = false;
+    String errorText = '';
+
+    await showDialog(
+      context: context,
+      barrierDismissible: false,
+      builder: (ctx) => StatefulBuilder(
+        builder: (ctx, setDialogState) {
+          final Size screenSize = MediaQuery.of(ctx).size;
+          final double targetWidth = math.min(620.0, screenSize.width * 0.95);
+
+          Future<void> pickPhoto({required bool isTaplo}) async {
+            setDialogState(() {
+              if (isTaplo) {
+                isUploadingTaplo = true;
+              } else {
+                isUploadingReceipt = true;
+              }
+              errorText = '';
+            });
+            final uploaded = await _captureOrPickFuelPhoto(preferCamera: false);
+            setDialogState(() {
+              if (isTaplo) {
+                isUploadingTaplo = false;
+                if (uploaded != null && uploaded.isNotEmpty) {
+                  afterTaploUrl = uploaded;
+                }
+              } else {
+                isUploadingReceipt = false;
+                if (uploaded != null && uploaded.isNotEmpty) {
+                  receiptPhotoUrl = uploaded;
+                }
+              }
+            });
+          }
+
+          return Dialog(
+            backgroundColor: Colors.white,
+            surfaceTintColor: Colors.white,
+            constraints: BoxConstraints(
+              minWidth: 310,
+              maxWidth: targetWidth,
+            ),
+            insetPadding: const EdgeInsets.all(16),
+            shape: RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(4),
+            ),
+            child: SingleChildScrollView(
+              padding: const EdgeInsets.all(18),
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Row(
+                    children: [
+                      Container(
+                        padding: const EdgeInsets.all(8),
+                        decoration: BoxDecoration(
+                          color: Colors.teal.shade50,
+                          borderRadius: BorderRadius.circular(4),
+                        ),
+                        child: Icon(
+                          Icons.task_alt,
+                          color: Colors.teal.shade800,
+                          size: 22,
+                        ),
+                      ),
+                      const SizedBox(width: 10),
+                      Expanded(
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Text(
+                              'Nghiệm thu sau khi đổ dầu - Xe $plate',
+                              style: const TextStyle(
+                                fontSize: 15.5,
+                                fontWeight: FontWeight.bold,
+                              ),
+                            ),
+                            Text(
+                              'Chụp đủ 02 ảnh (Đồng hồ taplo + Phiếu nhận dầu) để đóng lượt đổ và ẩn Mã QR',
+                              style: TextStyle(
+                                fontSize: 12,
+                                color: Colors.grey.shade600,
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                      IconButton(
+                        icon: const Icon(Icons.close, size: 20),
+                        onPressed: isSubmitting ? null : () => Navigator.pop(ctx),
+                      ),
+                    ],
+                  ),
+                  const Divider(height: 20),
+                  // Ảnh 1: Đồng hồ taplo sau khi đổ
+                  Container(
+                    width: double.infinity,
+                    padding: const EdgeInsets.all(10),
+                    decoration: BoxDecoration(
+                      color: Colors.grey.shade50,
+                      borderRadius: BorderRadius.circular(4),
+                      border: Border.all(
+                        color: afterTaploUrl.isNotEmpty
+                            ? Colors.green.shade400
+                            : Colors.grey.shade300,
+                      ),
+                    ),
+                    child: Row(
+                      children: [
+                        Icon(
+                          afterTaploUrl.isNotEmpty
+                              ? Icons.check_circle
+                              : Icons.speed_outlined,
+                          color: afterTaploUrl.isNotEmpty
+                              ? Colors.green.shade700
+                              : Colors.orange.shade800,
+                          size: 20,
+                        ),
+                        const SizedBox(width: 8),
+                        Expanded(
+                          child: Text(
+                            afterTaploUrl.isNotEmpty
+                                ? '1. Đã chụp Ảnh Đồng hồ Taplo (sau khi đổ)'
+                                : '1. Ảnh Đồng hồ Taplo sau khi đổ (* Bắt buộc)',
+                            style: const TextStyle(
+                              fontWeight: FontWeight.bold,
+                              fontSize: 12.5,
+                            ),
+                          ),
+                        ),
+                        SizedBox(
+                          height: 32,
+                          child: OutlinedButton.icon(
+                            style: OutlinedButton.styleFrom(
+                              shape: RoundedRectangleBorder(
+                                borderRadius: BorderRadius.circular(4),
+                              ),
+                            ),
+                            icon: isUploadingTaplo
+                                ? const SizedBox(
+                                    width: 13,
+                                    height: 13,
+                                    child: CircularProgressIndicator(
+                                      strokeWidth: 2,
+                                    ),
+                                  )
+                                : const Icon(Icons.camera_alt_outlined, size: 15),
+                            label: Text(
+                              afterTaploUrl.isEmpty ? 'Chụp Taplo' : 'Chụp lại',
+                              style: const TextStyle(fontSize: 12),
+                            ),
+                            onPressed: isUploadingTaplo
+                                ? null
+                                : () => pickPhoto(isTaplo: true),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                  const SizedBox(height: 10),
+                  // Ảnh 2: Phiếu nhận dầu
+                  Container(
+                    width: double.infinity,
+                    padding: const EdgeInsets.all(10),
+                    decoration: BoxDecoration(
+                      color: Colors.grey.shade50,
+                      borderRadius: BorderRadius.circular(4),
+                      border: Border.all(
+                        color: receiptPhotoUrl.isNotEmpty
+                            ? Colors.green.shade400
+                            : Colors.grey.shade300,
+                      ),
+                    ),
+                    child: Row(
+                      children: [
+                        Icon(
+                          receiptPhotoUrl.isNotEmpty
+                              ? Icons.check_circle
+                              : Icons.receipt_long_outlined,
+                          color: receiptPhotoUrl.isNotEmpty
+                              ? Colors.green.shade700
+                              : Colors.orange.shade800,
+                          size: 20,
+                        ),
+                        const SizedBox(width: 8),
+                        Expanded(
+                          child: Text(
+                            receiptPhotoUrl.isNotEmpty
+                                ? '2. Đã chụp Ảnh Phiếu nhận dầu (Phiếu đổ dầu)'
+                                : '2. Ảnh Phiếu nhận dầu / Phiếu đổ dầu (* Bắt buộc)',
+                            style: const TextStyle(
+                              fontWeight: FontWeight.bold,
+                              fontSize: 12.5,
+                            ),
+                          ),
+                        ),
+                        SizedBox(
+                          height: 32,
+                          child: OutlinedButton.icon(
+                            style: OutlinedButton.styleFrom(
+                              shape: RoundedRectangleBorder(
+                                borderRadius: BorderRadius.circular(4),
+                              ),
+                            ),
+                            icon: isUploadingReceipt
+                                ? const SizedBox(
+                                    width: 13,
+                                    height: 13,
+                                    child: CircularProgressIndicator(
+                                      strokeWidth: 2,
+                                    ),
+                                  )
+                                : const Icon(Icons.camera_alt_outlined, size: 15),
+                            label: Text(
+                              receiptPhotoUrl.isEmpty
+                                  ? 'Chụp Phiếu dầu'
+                                  : 'Chụp lại',
+                              style: const TextStyle(fontSize: 12),
+                            ),
+                            onPressed: isUploadingReceipt
+                                ? null
+                                : () => pickPhoto(isTaplo: false),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                  const SizedBox(height: 12),
+                  Row(
+                    children: [
+                      Expanded(
+                        child: TextField(
+                          controller: odoCtrl,
+                          keyboardType: const TextInputType.numberWithOptions(
+                            decimal: true,
+                          ),
+                          decoration: InputDecoration(
+                            labelText: 'Số Km Taplo sau khi đổ',
+                            prefixIcon: const Icon(Icons.speed, size: 18),
+                            border: OutlineInputBorder(
+                              borderRadius: BorderRadius.circular(4),
+                            ),
+                          ),
+                        ),
+                      ),
+                      const SizedBox(width: 10),
+                      Expanded(
+                        child: TextField(
+                          controller: litersCtrl,
+                          keyboardType: const TextInputType.numberWithOptions(
+                            decimal: true,
+                          ),
+                          decoration: InputDecoration(
+                            labelText: 'Số lít dầu nhận (Tùy chọn)',
+                            prefixIcon: const Icon(
+                              Icons.local_gas_station,
+                              size: 18,
+                            ),
+                            border: OutlineInputBorder(
+                              borderRadius: BorderRadius.circular(4),
+                            ),
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 10),
+                  TextField(
+                    controller: noteCtrl,
+                    decoration: InputDecoration(
+                      labelText: 'Ghi chú nghiệm thu (Tùy chọn)',
+                      prefixIcon: const Icon(Icons.notes, size: 18),
+                      border: OutlineInputBorder(
+                        borderRadius: BorderRadius.circular(4),
+                      ),
+                    ),
+                  ),
+                  if (errorText.isNotEmpty) ...[
+                    const SizedBox(height: 10),
+                    Container(
+                      width: double.infinity,
+                      padding: const EdgeInsets.all(8),
+                      decoration: BoxDecoration(
+                        color: Colors.red.shade50,
+                        borderRadius: BorderRadius.circular(4),
+                        border: Border.all(color: Colors.red.shade200),
+                      ),
+                      child: Text(
+                        errorText,
+                        style: TextStyle(
+                          fontSize: 12,
+                          color: Colors.red.shade800,
+                          fontWeight: FontWeight.w600,
+                        ),
+                      ),
+                    ),
+                  ],
+                  const SizedBox(height: 16),
+                  Row(
+                    mainAxisAlignment: MainAxisAlignment.end,
+                    children: [
+                      SizedBox(
+                        height: 36,
+                        child: OutlinedButton(
+                          style: OutlinedButton.styleFrom(
+                            shape: RoundedRectangleBorder(
+                              borderRadius: BorderRadius.circular(4),
+                            ),
+                          ),
+                          onPressed: isSubmitting
+                              ? null
+                              : () => Navigator.pop(ctx),
+                          child: const Text('Hủy'),
+                        ),
+                      ),
+                      const SizedBox(width: 8),
+                      SizedBox(
+                        height: 36,
+                        child: ElevatedButton.icon(
+                          style: ElevatedButton.styleFrom(
+                            backgroundColor: Colors.teal.shade700,
+                            foregroundColor: Colors.white,
+                            elevation: 0,
+                            shape: RoundedRectangleBorder(
+                              borderRadius: BorderRadius.circular(4),
+                            ),
+                          ),
+                          icon: isSubmitting
+                              ? const SizedBox(
+                                  width: 14,
+                                  height: 14,
+                                  child: CircularProgressIndicator(
+                                    strokeWidth: 2,
+                                    color: Colors.white,
+                                  ),
+                                )
+                              : const Icon(Icons.check_circle_outline, size: 16),
+                          label: Text(
+                            isSubmitting
+                                ? 'Đang gửi...'
+                                : 'Hoàn tất đổ dầu & Ẩn Mã QR',
+                            style: const TextStyle(
+                              fontWeight: FontWeight.bold,
+                              fontSize: 12.5,
+                            ),
+                          ),
+                          onPressed:
+                              (isSubmitting ||
+                                  isUploadingTaplo ||
+                                  isUploadingReceipt)
+                              ? null
+                              : () async {
+                                  if (afterTaploUrl.isEmpty ||
+                                      receiptPhotoUrl.isEmpty) {
+                                    setDialogState(() {
+                                      errorText =
+                                          'Bắt buộc phải chụp đủ 02 ảnh: (1) Ảnh Đồng hồ taplo sau khi đổ và (2) Ảnh Phiếu nhận dầu!';
+                                    });
+                                    return;
+                                  }
+                                  setDialogState(() {
+                                    isSubmitting = true;
+                                    errorText = '';
+                                  });
+                                  final gps =
+                                      state.currentGpsStatus ??
+                                      state.allFleetVehiclesStatus[state
+                                          .selectedPlate];
+                                  final res =
+                                      await AdminService.completeFuelRequest(
+                                        reqId,
+                                        afterTaploPhotoUrl: afterTaploUrl,
+                                        fuelReceiptPhotoUrl: receiptPhotoUrl,
+                                        afterOdoKm: double.tryParse(
+                                          odoCtrl.text
+                                              .trim()
+                                              .replaceAll(',', '.'),
+                                        ),
+                                        litersFilled: double.tryParse(
+                                          litersCtrl.text
+                                              .trim()
+                                              .replaceAll(',', '.'),
+                                        ),
+                                        note: noteCtrl.text.trim(),
+                                        gpsLat: gps?.latitude,
+                                        gpsLng: gps?.longitude,
+                                      );
+                                  if (!mounted) return;
+                                  if (res['success'] == true) {
+                                    Navigator.pop(ctx);
+                                    await _loadDriverData(silent: false);
+                                    if (!mounted) return;
+                                    ScaffoldMessenger.of(context).showSnackBar(
+                                      SnackBar(
+                                        backgroundColor: Colors.green.shade700,
+                                        content: const Text(
+                                          'Đã nghiệm thu hoàn tất lượt đổ dầu! Mã QR Cây dầu đã tự động ẩn.',
+                                        ),
+                                      ),
+                                    );
+                                  } else {
+                                    setDialogState(() {
+                                      isSubmitting = false;
+                                      errorText = (res['message'] ??
+                                              'Không thể gửi nghiệm thu')
+                                          .toString();
+                                    });
+                                  }
+                                },
+                        ),
+                      ),
+                    ],
+                  ),
+                ],
+              ),
+            ),
+          );
+        },
+      ),
+    );
+  }
 }

@@ -206,6 +206,8 @@ class CustomerCreate(BaseModel):
     email: Optional[str] = None
     address: Optional[str] = None
     note: Optional[str] = None
+    zalo_group_id: Optional[str] = None
+    zalo_group_name: Optional[str] = None
 
 class CustomerUpdate(BaseModel):
     code: Optional[str] = None
@@ -216,8 +218,13 @@ class CustomerUpdate(BaseModel):
     email: Optional[str] = None
     address: Optional[str] = None
     note: Optional[str] = None
+    zalo_group_id: Optional[str] = None
+    zalo_group_name: Optional[str] = None
 
-CUSTOMER_FIELDS = ["code", "name", "tax_code", "contact_person", "phone", "email", "address", "note"]
+CUSTOMER_FIELDS = [
+    "code", "name", "tax_code", "contact_person", "phone",
+    "email", "address", "note", "zalo_group_id", "zalo_group_name",
+]
 
 class LocationCreate(BaseModel):
     name: str
@@ -514,6 +521,8 @@ ZALO_OA_DDL = [
     "ALTER TABLE customers ADD COLUMN IF NOT EXISTS zalo_avatar TEXT",
     "ALTER TABLE customers ADD COLUMN IF NOT EXISTS zalo_synced_at TIMESTAMP WITH TIME ZONE",
     "ALTER TABLE customers ADD COLUMN IF NOT EXISTS source VARCHAR(20) DEFAULT 'manual'",
+    "ALTER TABLE customers ADD COLUMN IF NOT EXISTS zalo_group_id VARCHAR(100)",
+    "ALTER TABLE customers ADD COLUMN IF NOT EXISTS zalo_group_name VARCHAR(255)",
     "CREATE UNIQUE INDEX IF NOT EXISTS ux_customers_zalo_user_id ON customers(zalo_user_id) WHERE zalo_user_id IS NOT NULL",
     """CREATE TABLE IF NOT EXISTS zalo_oa_tokens (
         id INT PRIMARY KEY DEFAULT 1,
@@ -546,14 +555,22 @@ ZALO_OA_DDL = [
         PRIMARY KEY (customer_id, tag_name),
         FOREIGN KEY (customer_id) REFERENCES customers(id) ON DELETE CASCADE
     )""",
-    # Nhóm chat GMF mà OA là thành viên (group_id do Zalo đẩy qua webhook)
+    # Nhóm chat GMF mà OA là thành viên (đồng bộ trực tiếp từ API /v3.0/oa/group/getgroupsofoa + webhook)
     """CREATE TABLE IF NOT EXISTS zalo_oa_chat_groups (
         group_id VARCHAR(64) PRIMARY KEY,
         name VARCHAR(255),
         type VARCHAR(32),
         member_count INT,
+        avatar TEXT,
+        group_link TEXT,
+        description TEXT,
+        status VARCHAR(32),
         updated_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
     )""",
+    "ALTER TABLE zalo_oa_chat_groups ADD COLUMN IF NOT EXISTS avatar TEXT",
+    "ALTER TABLE zalo_oa_chat_groups ADD COLUMN IF NOT EXISTS group_link TEXT",
+    "ALTER TABLE zalo_oa_chat_groups ADD COLUMN IF NOT EXISTS description TEXT",
+    "ALTER TABLE zalo_oa_chat_groups ADD COLUMN IF NOT EXISTS status VARCHAR(32)",
     # Thành viên của từng nhóm hội thoại (học qua webhook: sender của event nhóm)
     """CREATE TABLE IF NOT EXISTS zalo_oa_chat_group_members (
         group_id VARCHAR(64) NOT NULL,
@@ -765,8 +782,27 @@ def ensure_customers_table():
         conn = get_db()
         cur = conn.cursor()
         cur.execute(CUSTOMERS_DDL)
+        cur.execute(
+            """SELECT 1 FROM information_schema.columns
+               WHERE table_name = 'customers' AND column_name = 'zalo_group_id'"""
+        )
+        first_zalo_group_col = cur.fetchone() is None
         for ddl in ZALO_OA_DDL:
             cur.execute(ddl)
+        if first_zalo_group_col:
+            # Gắn đúng nguồn 'excel' cho các dòng khách hàng đã được import từ Excel trước đó
+            cur.execute(
+                """UPDATE customers
+                   SET source = 'excel'
+                   WHERE COALESCE(source, 'manual') = 'manual'
+                     AND zalo_user_id IS NULL
+                     AND (LOWER(COALESCE(note, '')) IN ('xi măng', 'tro bay', 'xỉ tro', 'phụ gia')
+                          OR code LIKE '%(%')"""
+            )
+            # Ẩn các bản ghi người quan tâm cá nhân từng đồng bộ từ Zalo OA trước đây
+            cur.execute(
+                "UPDATE customers SET is_active = FALSE WHERE source = 'zalo_oa' AND is_active = TRUE"
+            )
         conn.commit()
         cur.close()
         conn.close()
@@ -875,6 +911,91 @@ def ensure_locations_tables():
     except Exception as e:
         print(f"[locations] Không tạo được bảng locations: {e}")
 
+GAS_STATION_QR_DDL = [
+    """
+    CREATE TABLE IF NOT EXISTS gas_station_vehicle_qr_codes (
+        id SERIAL PRIMARY KEY,
+        gas_station_id INT NOT NULL REFERENCES gas_stations(id) ON DELETE CASCADE,
+        plate_number VARCHAR(50) NOT NULL,
+        qr_image_url TEXT NOT NULL,
+        qr_code_label VARCHAR(150),
+        note TEXT,
+        is_active BOOLEAN DEFAULT TRUE,
+        updated_by VARCHAR(100),
+        created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
+        updated_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
+        UNIQUE (gas_station_id, plate_number)
+    )
+    """,
+    "CREATE INDEX IF NOT EXISTS ix_gas_station_qr_plate ON gas_station_vehicle_qr_codes(plate_number)",
+    "CREATE INDEX IF NOT EXISTS ix_gas_station_qr_station ON gas_station_vehicle_qr_codes(gas_station_id)",
+]
+
+def ensure_gas_station_qr_codes_table():
+    try:
+        conn = get_db()
+        cur = conn.cursor()
+        for ddl in GAS_STATION_QR_DDL:
+            cur.execute(ddl)
+        conn.commit()
+        cur.close()
+        conn.close()
+    except Exception as e:
+        print(f"[gas_station_qr] Không tạo được bảng gas_station_vehicle_qr_codes: {e}")
+
+FUEL_REQUESTS_DDL = [
+    """
+    CREATE TABLE IF NOT EXISTS fuel_requests (
+        id SERIAL PRIMARY KEY,
+        plate_number VARCHAR(50) NOT NULL,
+        driver_id INT REFERENCES users(id) ON DELETE SET NULL,
+        driver_name VARCHAR(150),
+        gas_station_id INT REFERENCES gas_stations(id) ON DELETE SET NULL,
+        gas_station_name VARCHAR(150),
+        order_id INT REFERENCES orders(id) ON DELETE SET NULL,
+        order_code VARCHAR(80),
+        before_taplo_photo_url TEXT NOT NULL,
+        before_odo_km DOUBLE PRECISION,
+        request_note TEXT,
+        request_gps_lat DOUBLE PRECISION,
+        request_gps_lng DOUBLE PRECISION,
+        status VARCHAR(30) DEFAULT 'pending',
+        qr_code_id INT REFERENCES gas_station_vehicle_qr_codes(id) ON DELETE SET NULL,
+        qr_image_url TEXT,
+        qr_code_label VARCHAR(150),
+        approved_by_id INT REFERENCES users(id) ON DELETE SET NULL,
+        approved_by_name VARCHAR(150),
+        approved_note TEXT,
+        approved_at TIMESTAMP WITH TIME ZONE,
+        after_taplo_photo_url TEXT,
+        after_odo_km DOUBLE PRECISION,
+        fuel_receipt_photo_url TEXT,
+        liters_filled DOUBLE PRECISION,
+        completion_note TEXT,
+        completion_gps_lat DOUBLE PRECISION,
+        completion_gps_lng DOUBLE PRECISION,
+        requested_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
+        completed_at TIMESTAMP WITH TIME ZONE,
+        updated_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
+    )
+    """,
+    "CREATE INDEX IF NOT EXISTS ix_fuel_requests_plate ON fuel_requests(plate_number)",
+    "CREATE INDEX IF NOT EXISTS ix_fuel_requests_status ON fuel_requests(status)",
+    "CREATE INDEX IF NOT EXISTS ix_fuel_requests_requested_at ON fuel_requests(requested_at DESC)",
+]
+
+def ensure_fuel_requests_table():
+    try:
+        conn = get_db()
+        cur = conn.cursor()
+        for ddl in FUEL_REQUESTS_DDL:
+            cur.execute(ddl)
+        conn.commit()
+        cur.close()
+        conn.close()
+    except Exception as e:
+        print(f"[fuel_requests] Không tạo được bảng fuel_requests: {e}")
+
 @app.on_event("startup")
 def _startup_ensure_customers():
     ensure_customers_table()
@@ -883,6 +1004,8 @@ def _startup_ensure_customers():
     ensure_locations_tables()
     ensure_driver_activity_logs_table()
     ensure_order_vehicle_free_text()
+    ensure_gas_station_qr_codes_table()
+    ensure_fuel_requests_table()
 
 # ----------------- REALTIME WEBSOCKET & DEVICE TOKEN (PUSH NOTIFICATION) -----------------
 
@@ -1634,17 +1757,51 @@ def _import_excel_normalize_header(value) -> str:
     return " ".join(text.lower().split())
 
 
+# Tên cột (đã bỏ dấu, chữ thường) -> khóa dữ liệu. Thứ tự trong file mẫu: A..H
+IMPORT_EXCEL_COLUMN_ALIASES = {
+    "code": ("ma kh chi tiet", "ma kh", "ma khach hang"),
+    "mang": ("mang",),
+    "ten_kh": ("ten kh", "ten khach hang"),
+    "diem_giao": ("diem giao",),
+    "diem_di": ("diem di", "diem nhan"),
+    "san_pham": ("san pham",),
+    "group_id": ("group id", "groupid", "id nhom", "id nhom zalo", "ma nhom zalo"),
+    "group_name": ("ten nhom zalo thuc te", "ten nhom zalo", "ten nhom"),
+}
+IMPORT_EXCEL_KEYS = ["code", "mang", "ten_kh", "diem_giao", "diem_di", "san_pham", "group_id", "group_name"]
+IMPORT_EXCEL_MAX_COL = 30
+
+
+def _import_excel_header_key(text: str) -> Optional[str]:
+    if not text:
+        return None
+    for key, aliases in IMPORT_EXCEL_COLUMN_ALIASES.items():
+        for a in aliases:
+            # "ma kh chi tiet" có thể kèm hậu tố (vd. "MÃ KH CHI TIẾT — BỘ MÃ CHỐT ...") ở dòng ghi chú,
+            # nên dòng tiêu đề thật phải khớp chính xác tên cột
+            if text == a:
+                return key
+    return None
+
+
 def _import_excel_find_header_row(ws):
-    """Tìm dòng tiêu đề trong 15 dòng đầu (tác giả file ghi chú quy tắc trước, tiêu đề ở dòng 6).
-    Tiêu đề thật phải có đủ các cột: MÃ KH CHI TIẾT | Mảng | Tên KH | ... (khác dòng ghi chú chỉ có 1 ô)."""
-    for i, row in enumerate(ws.iter_rows(min_row=1, max_row=15, max_col=8, values_only=True), 1):
+    """Tìm dòng tiêu đề trong 15 dòng đầu (file mẫu ghi chú quy tắc ở dòng 1-4, tiêu đề ở dòng 6).
+
+    Trả về (số dòng tiêu đề, {khóa dữ liệu: chỉ số cột 0-based}) hoặc (None, None).
+    Cột được nhận theo TÊN tiêu đề, nên file có chèn thêm / đổi thứ tự cột vẫn đọc đúng
+    Group ID và Tên nhóm Zalo thực tế.
+    """
+    for i, row in enumerate(ws.iter_rows(min_row=1, max_row=15, max_col=IMPORT_EXCEL_MAX_COL, values_only=True), 1):
         if not row:
             continue
-        a = _import_excel_normalize_header(row[0])
-        b = _import_excel_normalize_header(row[1] if len(row) > 1 else None)
-        if a.startswith("ma kh chi tiet") and b == "mang":
-            return i
-    return None
+        mapping = {}
+        for idx, cell in enumerate(row):
+            key = _import_excel_header_key(_import_excel_normalize_header(cell))
+            if key and key not in mapping:
+                mapping[key] = idx
+        if "code" in mapping and "ten_kh" in mapping:
+            return i, mapping
+    return None, None
 
 
 def _import_excel_parse_date(value):
@@ -1655,56 +1812,98 @@ def _import_excel_parse_date(value):
 
 
 def _import_excel_upsert_customer(cur, code, name, extra):
-    """Upsert khách hàng theo mã (kích hoạt lại nếu mã từng bị xóa mềm). Trả về ('inserted'|'updated')."""
+    """Upsert khách hàng theo mã từ file Excel (gắn source = 'excel'). Trả về ('inserted'|'updated')."""
     cur.execute("SELECT id, is_active, name FROM customers WHERE LOWER(code) = LOWER(%s)", (code,))
     dup = cur.fetchone()
     values = [code, name] + [extra.get(f) for f in CUSTOMER_FIELDS[2:]]
     if dup and dup["is_active"]:
-        # Đã tồn tại: chỉ cập nhật nếu có thông tin mới (không ghi đè dữ liệu trống)
-        sets, params = [], []
-        for f in ("name", "tax_code", "contact_person", "phone", "email", "address", "note"):
+        # Đã tồn tại: cập nhật source = 'excel' và các trường có dữ liệu mới trong file Excel
+        sets = ["source = 'excel'"]
+        params = []
+        for f in CUSTOMER_FIELDS[1:]:
             v = extra.get(f) if f != "name" else name
             if v:
                 sets.append(f"{f} = %s")
                 params.append(v)
-        if sets:
-            cur.execute(
-                f"UPDATE customers SET {', '.join(sets)}, updated_at = CURRENT_TIMESTAMP WHERE id = %s",
-                params + [dup["id"]],
-            )
+        cur.execute(
+            f"UPDATE customers SET {', '.join(sets)}, updated_at = CURRENT_TIMESTAMP WHERE id = %s",
+            params + [dup["id"]],
+        )
         return "updated"
     if dup:
         cur.execute(
             f"""UPDATE customers SET {', '.join(f + ' = %s' for f in CUSTOMER_FIELDS)},
-                is_active = TRUE, updated_at = CURRENT_TIMESTAMP WHERE id = %s""",
+                source = 'excel', is_active = TRUE, updated_at = CURRENT_TIMESTAMP WHERE id = %s""",
             values + [dup["id"]],
         )
         return "updated"
     cur.execute(
-        f"""INSERT INTO customers ({', '.join(CUSTOMER_FIELDS)})
-            VALUES ({', '.join(['%s'] * len(CUSTOMER_FIELDS))})""",
+        f"""INSERT INTO customers ({', '.join(CUSTOMER_FIELDS)}, source)
+            VALUES ({', '.join(['%s'] * len(CUSTOMER_FIELDS))}, 'excel')""",
         values,
     )
     return "inserted"
 
 
-def _import_excel_learn_group(cur, group_id, group_name):
-    """Học tên nhóm Zalo thực tế từ file vào bảng nhóm hội thoại (không đụng updated_at đang chạy webhook)."""
-    if not group_id:
-        return False
-    cur.execute("SELECT name FROM zalo_oa_chat_groups WHERE group_id = %s", (group_id,))
-    row = cur.fetchone()
-    if row:
-        if (row["name"] or "").strip() != (group_name or "").strip() and group_name:
-            cur.execute("UPDATE zalo_oa_chat_groups SET name = %s WHERE group_id = %s", (group_name, group_id))
-        return False
-    if not group_name:
-        return False
-    cur.execute(
-        "INSERT INTO zalo_oa_chat_groups (group_id, name, type, member_count) VALUES (%s, %s, %s, %s)",
-        (group_id, group_name, "import", 0),
-    )
-    return True
+def _import_excel_cell_text(value) -> Optional[str]:
+    """Đọc ô Excel thành chuỗi: số nguyên lưu dạng số (12345.0) đổi về '12345', tránh mất Group ID."""
+    if value is None:
+        return None
+    if isinstance(value, bool):
+        return _clean(str(value))
+    if isinstance(value, float) and value.is_integer():
+        return str(int(value))
+    if isinstance(value, int):
+        return str(value)
+    return _clean(value)
+
+
+def _import_excel_resolve_and_learn_group(cur, group_id, group_name):
+    """Chuẩn hóa cột G (Group ID) và cột H (Tên nhóm Zalo thực tế) của file Excel.
+
+    - Luôn giữ nguyên giá trị người dùng ghi trong file để lưu vào khách hàng
+      (customers.zalo_group_id / customers.zalo_group_name).
+    - Chỉ có Tên nhóm (thiếu Group ID): tra Group ID theo tên trong danh sách nhóm Zalo OA.
+    - Chỉ có Group ID (thiếu tên): lấy tên nhóm đã có trong danh sách nhóm Zalo OA.
+    - Group ID chưa có trong danh sách nhóm: thêm vào danh sách (type = 'import') để
+      hiển thị và đối chiếu khi bấm "Nhóm Zalo OA".
+    Trả về (group_id, group_name, learned).
+    """
+    gid = _clean(group_id)
+    gname = _clean(group_name)
+    learned = False
+    if gid:
+        gid = gid[:64]  # khớp độ dài cột zalo_oa_chat_groups.group_id
+    if gname:
+        gname = gname[:255]
+
+    if not gid and gname:
+        cur.execute(
+            "SELECT group_id, name FROM zalo_oa_chat_groups WHERE LOWER(TRIM(name)) = LOWER(TRIM(%s)) LIMIT 1",
+            (gname,),
+        )
+        matched = cur.fetchone()
+        if matched:
+            gid = matched["group_id"]
+
+    if gid:
+        cur.execute("SELECT name FROM zalo_oa_chat_groups WHERE group_id = %s", (gid,))
+        row = cur.fetchone()
+        if row:
+            existing_name = (row["name"] or "").strip()
+            if not existing_name and gname:
+                cur.execute("UPDATE zalo_oa_chat_groups SET name = %s WHERE group_id = %s", (gname, gid))
+            elif existing_name and not gname:
+                gname = existing_name
+        else:
+            cur.execute(
+                """INSERT INTO zalo_oa_chat_groups (group_id, name, type, member_count, updated_at)
+                   VALUES (%s, %s, 'import', 0, CURRENT_TIMESTAMP)""",
+                (gid, gname or ""),
+            )
+            learned = True
+
+    return gid, gname, learned
 
 
 @app.post("/api/v1/customers/import-excel")
@@ -1722,17 +1921,28 @@ def import_customers_excel(file: UploadFile = File(...), current_user: dict = De
     except Exception:
         raise HTTPException(status_code=400, detail="Không đọc được file Excel. Yêu cầu file .xlsx theo mẫu")
     ws = wb.active
-    header_row = _import_excel_find_header_row(ws)
+    header_row, col_map = _import_excel_find_header_row(ws)
     if header_row is None:
-        raise HTTPException(status_code=400, detail='Không tìm thấy dòng tiêu đề "MÃ KH CHI TIẾT" trong 15 dòng đầu')
-    inserted = updated = groups_learned = skipped = 0
+        raise HTTPException(
+            status_code=400,
+            detail='Không tìm thấy dòng tiêu đề trong 15 dòng đầu. File cần có các cột "MÃ KH CHI TIẾT" và "Tên KH" '
+                   '(kèm "Group ID", "Tên nhóm Zalo thực tế" nếu muốn gắn nhóm Zalo OA)',
+        )
+    inserted = updated = groups_learned = skipped = with_group = 0
     skipped_details: List[str] = []
     errors: List[str] = []
     conn = get_db()
     cur = conn.cursor(cursor_factory=RealDictCursor)
     try:
-        for row in ws.iter_rows(min_row=header_row + 1, max_col=8, values_only=True):
-            code, mang, ten_kh, diem_giao, diem_di, san_pham, group_id, group_name = [(_clean(v) if v is not None else None) for v in (list(row) + [None] * 8)[:8]]
+        for row in ws.iter_rows(min_row=header_row + 1, max_col=IMPORT_EXCEL_MAX_COL, values_only=True):
+            cells = list(row) + [None] * IMPORT_EXCEL_MAX_COL
+            vals = {
+                k: (_import_excel_cell_text(cells[col_map[k]]) if k in col_map else None)
+                for k in IMPORT_EXCEL_KEYS
+            }
+            code, mang, ten_kh = vals["code"], vals["mang"], vals["ten_kh"]
+            diem_giao, diem_di, san_pham = vals["diem_giao"], vals["diem_di"], vals["san_pham"]
+            group_id, group_name = vals["group_id"], vals["group_name"]
             if not code:
                 continue
             if not ten_kh:
@@ -1740,18 +1950,33 @@ def import_customers_excel(file: UploadFile = File(...), current_user: dict = De
                 if len(skipped_details) < 20:
                     skipped_details.append(f"Dòng {code}: thiếu Tên KH")
                 continue
+            # Savepoint từng dòng: dòng lỗi không làm mất các dòng đã import trước đó
+            cur.execute("SAVEPOINT import_row")
             try:
+                resolved_gid, resolved_gname, learned = _import_excel_resolve_and_learn_group(cur, group_id, group_name)
                 address = " - ".join(x for x in (diem_giao, diem_di, san_pham) if x)
-                extra = {"tax_code": None, "contact_person": None, "phone": None, "email": None, "address": address, "note": mang}
+                extra = {
+                    "tax_code": None,
+                    "contact_person": None,
+                    "phone": None,
+                    "email": None,
+                    "address": address,
+                    "note": mang,
+                    "zalo_group_id": resolved_gid,      # Cột G: Group ID
+                    "zalo_group_name": resolved_gname,  # Cột H: Tên nhóm Zalo thực tế
+                }
                 kind = _import_excel_upsert_customer(cur, code, ten_kh, extra)
+                cur.execute("RELEASE SAVEPOINT import_row")
+                if learned:
+                    groups_learned += 1
+                if resolved_gid or resolved_gname:
+                    with_group += 1
                 if kind == "inserted":
                     inserted += 1
                 else:
                     updated += 1
-                if _import_excel_learn_group(cur, group_id, group_name):
-                    groups_learned += 1
             except Exception as e:
-                conn.rollback()
+                cur.execute("ROLLBACK TO SAVEPOINT import_row")
                 errors.append(f"{code}: {str(e)[:120]}")
         conn.commit()
     except Exception as e:
@@ -1764,6 +1989,11 @@ def import_customers_excel(file: UploadFile = File(...), current_user: dict = De
         "inserted": inserted,
         "updated": updated,
         "groups_learned": groups_learned,
+        "with_group": with_group,
+        "missing_group_columns": [
+            label for key, label in (("group_id", "Group ID"), ("group_name", "Tên nhóm Zalo thực tế"))
+            if key not in col_map
+        ],
         "skipped": skipped,
         "skipped_details": skipped_details,
         "errors": errors,
@@ -1774,67 +2004,48 @@ def import_customers_excel(file: UploadFile = File(...), current_user: dict = De
 def get_customers(current_user: dict = Depends(require_dispatch_staff)):
     conn = get_db()
     cur = conn.cursor()
-    cur.execute("SELECT * FROM customers WHERE is_active = TRUE ORDER BY name ASC, id ASC")
+    # Chỉ lấy khách hàng nhập tay ('manual') hoặc nạp từ Excel ('excel'), bỏ qua các dòng follower Zalo OA cũ
+    cur.execute(
+        """SELECT * FROM customers
+           WHERE is_active = TRUE AND COALESCE(source, 'manual') <> 'zalo_oa'
+           ORDER BY name ASC, id ASC"""
+    )
     rows = cur.fetchall()
-    tag_map = {}
-    try:
-        cur.execute("SELECT customer_id, tag_name FROM zalo_oa_user_groups ORDER BY tag_name ASC")
-        for r in cur.fetchall():
-            tag_map.setdefault(r["customer_id"], []).append(r["tag_name"])
-    except Exception:
-        conn.rollback()  # bảng chưa tạo (server cũ) -> trả rỗng, không lỗi
 
-    # Nhóm hội thoại Zalo mà khách tham gia: nối zalo_user_id của khách với
-    # thành viên nhóm học qua webhook (zalo_oa_chat_group_members).
-    chat_by_uid = {}      # zalo_user_id -> [nhãn nhóm hiển thị]
-    chat_ids_by_uid = {}  # zalo_user_id -> [{group_id, label}]
+    group_meta = {}
     try:
-        cur.execute("SELECT group_id, name FROM zalo_oa_chat_groups")
-        gname = {r["group_id"]: (r["name"] or "").strip() for r in cur.fetchall()}
-        gmembers = {}     # group_id -> [display_name thành viên]
-        gids_by_uid = {}  # zalo_user_id -> [group_id]
-        cur.execute("SELECT group_id, zalo_user_id, display_name FROM zalo_oa_chat_group_members")
-        for r in cur.fetchall():
-            gmembers.setdefault(r["group_id"], []).append(r["display_name"] or "")
-            gids_by_uid.setdefault(r["zalo_user_id"], []).append(r["group_id"])
-        for uid, gids in gids_by_uid.items():
-            labels, detail = [], []
-            for gid in gids:
-                nm = gname.get(gid, "")
-                if not nm:
-                    # Nhóm chưa được đặt tên -> gợi ý từ tên thành viên đã học
-                    mnames = [n for n in gmembers.get(gid, []) if n]
-                    nm = (", ".join(mnames[:3]) + ("..." if len(mnames) > 3 else "")) if mnames else "Nhóm chưa đặt tên"
-                labels.append(nm)
-                mnames = [n for n in gmembers.get(gid, []) if n]
-                detail.append({
-                    "group_id": gid,
-                    "label": nm,
-                    "members": mnames[:30],
-                    "member_count": len(mnames),
-                })
-            chat_by_uid[uid] = labels
-            chat_ids_by_uid[uid] = detail
-    except Exception:
-        conn.rollback()  # bảng chưa tạo (server cũ) -> bỏ qua phần nhóm hội thoại
-
-    gtime_by_gid = {}
-    try:
-        cur.execute("SELECT group_id, updated_at FROM zalo_oa_chat_groups")
-        gtime_by_gid = {r["group_id"]: r["updated_at"] for r in cur.fetchall()}
+        cur.execute(
+            """SELECT group_id, name, member_count, avatar, group_link, status, updated_at
+               FROM zalo_oa_chat_groups"""
+        )
+        for g in cur.fetchall():
+            group_meta[g["group_id"]] = dict(g)
     except Exception:
         conn.rollback()
+
     for r in rows:
-        labels = list(tag_map.get(r["id"], []))
-        uid = (r.get("zalo_user_id") or "").strip()
+        gid = (r.get("zalo_group_id") or "").strip()
+        gname_saved = (r.get("zalo_group_name") or "").strip()
+        chat_groups = []
         latest_group_at = None
-        if uid:
-            for d in chat_ids_by_uid.get(uid, []):
-                t = gtime_by_gid.get(d["group_id"])
-                if t and (latest_group_at is None or str(t) > str(latest_group_at)):
-                    latest_group_at = t
-        r["zalo_oa_groups"] = list(dict.fromkeys(labels))
-        r["zalo_chat_groups"] = chat_ids_by_uid.get(uid, [])
+        if gid:
+            gm = group_meta.get(gid) or {}
+            # Ưu tiên tên nhóm đã lưu cho khách (cột "Tên nhóm Zalo thực tế" khi import Excel)
+            live_name = gname_saved or (gm.get("name") or "").strip() or gid
+            chat_groups.append({
+                "group_id": gid,
+                "label": live_name,
+                "saved_name": gname_saved,
+                "zalo_name": (gm.get("name") or "").strip(),
+                "member_count": int(gm.get("member_count") or 0),
+                "avatar": gm.get("avatar") or "",
+                "group_link": gm.get("group_link") or "",
+                "status": gm.get("status") or "",
+            })
+            if gm.get("updated_at"):
+                latest_group_at = gm["updated_at"].isoformat() if hasattr(gm["updated_at"], "isoformat") else str(gm["updated_at"])
+        r["zalo_oa_groups"] = []
+        r["zalo_chat_groups"] = chat_groups
         r["zalo_group_updated_at"] = latest_group_at
     cur.close()
     conn.close()
@@ -1851,20 +2062,34 @@ def create_customer(customer: CustomerCreate, current_user: dict = Depends(requi
     try:
         cur.execute("SELECT id, is_active FROM customers WHERE LOWER(code) = LOWER(%s)", (code,))
         dup = cur.fetchone()
-        values = [code, name] + [_clean(getattr(customer, f)) for f in CUSTOMER_FIELDS[2:]]
+        gid = _clean(customer.zalo_group_id)
+        gname = _clean(customer.zalo_group_name)
+        if gid and not gname:
+            cur.execute("SELECT name FROM zalo_oa_chat_groups WHERE group_id = %s", (gid,))
+            grow = cur.fetchone()
+            if grow and (grow.get("name") or "").strip():
+                gname = grow["name"].strip()
+        elif not gid:
+            gname = None
+        field_vals = {f: _clean(getattr(customer, f)) for f in CUSTOMER_FIELDS}
+        field_vals["code"] = code
+        field_vals["name"] = name
+        field_vals["zalo_group_id"] = gid
+        field_vals["zalo_group_name"] = gname
+        values = [field_vals[f] for f in CUSTOMER_FIELDS]
         if dup and dup["is_active"]:
             raise HTTPException(status_code=400, detail=f"Mã khách hàng '{code}' đã tồn tại")
         if dup:
             # Mã từng bị xóa mềm: kích hoạt lại với thông tin mới
             cur.execute(
                 f"""UPDATE customers SET {', '.join(f + ' = %s' for f in CUSTOMER_FIELDS)},
-                    is_active = TRUE, updated_at = CURRENT_TIMESTAMP WHERE id = %s RETURNING *""",
+                    source = 'manual', is_active = TRUE, updated_at = CURRENT_TIMESTAMP WHERE id = %s RETURNING *""",
                 values + [dup["id"]]
             )
         else:
             cur.execute(
-                f"""INSERT INTO customers ({', '.join(CUSTOMER_FIELDS)})
-                    VALUES ({', '.join(['%s'] * len(CUSTOMER_FIELDS))}) RETURNING *""",
+                f"""INSERT INTO customers ({', '.join(CUSTOMER_FIELDS)}, source)
+                    VALUES ({', '.join(['%s'] * len(CUSTOMER_FIELDS))}, 'manual') RETURNING *""",
                 values
             )
         created = cur.fetchone()
@@ -1899,6 +2124,23 @@ def update_customer(customer_id: int, customer: CustomerUpdate, current_user: di
                 raise HTTPException(status_code=400, detail="Mã khách hàng và Tên khách hàng không được để trống")
             fields.append(f"{f} = %s")
             params.append(val)
+        if "zalo_group_id = %s" in fields:
+            gid_val = params[fields.index("zalo_group_id = %s")]
+            if not gid_val:
+                if "zalo_group_name = %s" in fields:
+                    params[fields.index("zalo_group_name = %s")] = None
+                else:
+                    fields.append("zalo_group_name = %s")
+                    params.append(None)
+            elif "zalo_group_name = %s" not in fields or not params[fields.index("zalo_group_name = %s")]:
+                cur.execute("SELECT name FROM zalo_oa_chat_groups WHERE group_id = %s", (gid_val,))
+                grow = cur.fetchone()
+                live_gname = grow["name"].strip() if grow and (grow.get("name") or "").strip() else None
+                if "zalo_group_name = %s" in fields:
+                    params[fields.index("zalo_group_name = %s")] = live_gname
+                else:
+                    fields.append("zalo_group_name = %s")
+                    params.append(live_gname)
         if "code = %s" in fields:
             new_code = params[fields.index("code = %s")]
             cur.execute("SELECT id FROM customers WHERE LOWER(code) = LOWER(%s) AND id <> %s", (new_code, customer_id))
@@ -2369,7 +2611,7 @@ def zalo_oa_callback(code: Optional[str] = None, state: Optional[str] = None, oa
         st = cur.fetchone()
         conn.commit()
         if not st:
-            return _zalo_html("Liên kết đã hết hạn", "Hãy bấm lại nút Đồng bộ Zalo OA trong ứng dụng.", False)
+            return _zalo_html("Liên kết đã hết hạn", "Hãy bấm lại nút Nhóm Zalo OA trong ứng dụng để kết nối.", False)
         res = requests.post(
             f"{ZALO_OAUTH_BASE}/v4/oa/access_token",
             headers={"secret_key": ZALO_APP_SECRET},
@@ -2379,7 +2621,7 @@ def zalo_oa_callback(code: Optional[str] = None, state: Optional[str] = None, oa
         )
         _zalo_save_token(cur, res.json(), oa_id=oa_id, authorized_by=st["created_by"])
         conn.commit()
-        return _zalo_html("Đã cấp quyền Zalo OA", "Ứng dụng sẽ tự bắt đầu đồng bộ danh sách khách hàng.", True)
+        return _zalo_html("Đã kết nối Zalo OA", "Kết nối thành công. Ứng dụng sẽ tự động lấy danh sách nhóm Zalo OA về phần mềm.", True)
     except Exception as e:
         conn.rollback()
         return _zalo_html("Cấp quyền thất bại", str(e), False)
@@ -2690,8 +2932,9 @@ def zalo_oa_webhook(payload: dict = Body(default={})):
             cur.execute(
                 """INSERT INTO zalo_oa_chat_groups (group_id, name, type, member_count, updated_at)
                    VALUES (%s, %s, %s, %s, CURRENT_TIMESTAMP)
-                   ON CONFLICT (group_id) DO UPDATE SET name = EXCLUDED.name,
-                     type = EXCLUDED.type, member_count = EXCLUDED.member_count,
+                   ON CONFLICT (group_id) DO UPDATE SET
+                     name = COALESCE(NULLIF(TRIM(EXCLUDED.name), ''), zalo_oa_chat_groups.name),
+                     member_count = COALESCE(EXCLUDED.member_count, zalo_oa_chat_groups.member_count),
                      updated_at = CURRENT_TIMESTAMP""",
                 (gid, name, gtype, members),
             )
@@ -2733,41 +2976,72 @@ def zalo_oa_webhook(payload: dict = Body(default={})):
     return {"received": True, "event": event, "group_id": gid or None}
 
 
-@app.get("/api/v1/zalo-oa/chat-groups")
-def zalo_oa_chat_groups(current_user: dict = Depends(require_dispatch_staff)):
-    """Danh sách nhóm hội thoại mà OA đang tham gia (group_id học qua webhook).
-
-    Mỗi nhóm kèm danh sách thành viên đã học (kèm tên hiển thị); nhóm chưa có
-    tên sẽ được gợi ý tự động từ tên thành viên để dễ nhận diện trên app.
-    """
-    conn = get_db()
-    cur = conn.cursor()
-    cur.execute("SELECT group_id, name, type, member_count, updated_at FROM zalo_oa_chat_groups ORDER BY updated_at DESC")
+def _zalo_query_saved_chat_groups(cur) -> list:
+    """Đọc danh sách nhóm Zalo OA đã lưu trong CSDL kèm thống kê số khách hàng đang gắn."""
+    cur.execute(
+        """SELECT group_id, name, type, member_count, avatar, group_link, description, status, updated_at
+           FROM zalo_oa_chat_groups
+           ORDER BY CASE WHEN COALESCE(TRIM(name), '') = '' THEN 1 ELSE 0 END ASC,
+                    LOWER(COALESCE(NULLIF(TRIM(name), ''), group_id)) ASC"""
+    )
     rows = [dict(r) for r in cur.fetchall()]
-    member_map = {}
+    cust_map = {}
     try:
-        cur.execute("SELECT group_id, zalo_user_id, display_name FROM zalo_oa_chat_group_members ORDER BY updated_at ASC")
-        for r in cur.fetchall():
-            member_map.setdefault(r["group_id"], []).append(
-                {"zalo_user_id": r["zalo_user_id"], "display_name": r["display_name"] or ""})
+        cur.execute(
+            """SELECT zalo_group_id, id, code, name
+               FROM customers
+               WHERE is_active = TRUE
+                 AND COALESCE(source, 'manual') <> 'zalo_oa'
+                 AND zalo_group_id IS NOT NULL
+                 AND TRIM(zalo_group_id) <> ''
+               ORDER BY name ASC"""
+        )
+        for c in cur.fetchall():
+            gid = (c["zalo_group_id"] or "").strip()
+            cust_map.setdefault(gid, []).append({
+                "id": c["id"],
+                "code": c["code"],
+                "name": c["name"],
+            })
     except Exception:
-        conn.rollback()  # bảng chưa tạo (server cũ) -> bỏ qua phần thành viên
+        pass
+
     groups = []
     for r in rows:
-        members = member_map.get(r["group_id"], [])
-        names = [mm["display_name"] for mm in members if mm["display_name"]]
-        auto_name = ""
-        if not (r["name"] or "").strip() and names:
-            auto_name = ", ".join(names[:3]) + ("..." if len(names) > 3 else "")
+        gid = r["group_id"]
+        linked = cust_map.get(gid, [])
         groups.append({
-            "group_id": r["group_id"], "name": r["name"], "type": r["type"],
-            "member_count": r["member_count"],
-            "updated_at": r["updated_at"].isoformat() if r["updated_at"] else None,
-            "members": members, "auto_name": auto_name,
+            "group_id": gid,
+            "name": (r.get("name") or "").strip(),
+            "type": r.get("type") or "oa_group",
+            "member_count": int(r.get("member_count") or 0),
+            "avatar": r.get("avatar") or "",
+            "group_link": r.get("group_link") or "",
+            "description": r.get("description") or "",
+            "status": r.get("status") or "",
+            "customer_count": len(linked),
+            "customers": linked[:30],
+            "updated_at": r["updated_at"].isoformat() if r.get("updated_at") else None,
         })
-    cur.close()
-    conn.close()
-    return {"groups": groups}
+    return groups
+
+
+@app.get("/api/v1/zalo-oa/chat-groups")
+def zalo_oa_chat_groups(current_user: dict = Depends(require_dispatch_staff)):
+    """Trả về danh sách nhóm hội thoại Zalo OA đã lưu trên phần mềm."""
+    conn = get_db()
+    cur = conn.cursor()
+    try:
+        tok_row = _zalo_token_row(cur)
+        groups = _zalo_query_saved_chat_groups(cur)
+        return {
+            "connected": bool(tok_row),
+            "oa_id": tok_row["oa_id"] if tok_row else None,
+            "groups": groups,
+        }
+    finally:
+        cur.close()
+        conn.close()
 
 
 class ZaloGroupRenameIn(BaseModel):
@@ -2776,7 +3050,7 @@ class ZaloGroupRenameIn(BaseModel):
 
 @app.post("/api/v1/zalo-oa/chat-groups/{group_id}/rename")
 def zalo_oa_chat_group_rename(group_id: str, body: ZaloGroupRenameIn, current_user: dict = Depends(require_dispatch_staff)):
-    """Đặt tên hiển thị cho nhóm hội thoại (Zalo không cung cấp tên nhóm qua API)."""
+    """Đặt hoặc chỉnh sửa tên hiển thị cho nhóm hội thoại Zalo OA."""
     name = body.name.strip()
     if not name:
         raise HTTPException(status_code=400, detail="Tên nhóm không được để trống")
@@ -2789,6 +3063,10 @@ def zalo_oa_chat_group_rename(group_id: str, body: ZaloGroupRenameIn, current_us
         )
         if cur.rowcount == 0:
             raise HTTPException(status_code=404, detail="Không tìm thấy nhóm hội thoại")
+        cur.execute(
+            "UPDATE customers SET zalo_group_name = %s WHERE zalo_group_id = %s",
+            (name, group_id),
+        )
         conn.commit()
     except HTTPException:
         conn.rollback()
@@ -2803,55 +3081,217 @@ class ZaloGroupMessageIn(BaseModel):
     text: str = Field(min_length=1, max_length=2000)
 
 
-def _zalo_refresh_chat_groups():
-    """Làm giàu dữ liệu nhóm hội thoại: học thêm thành viên từ lịch sử tin nhắn.
+def _zalo_fetch_oa_chat_groups(token: str) -> list:
+    """Lấy toàn bộ danh sách nhóm hội thoại (GMF) thực tế của Zalo OA qua OpenAPI v3.0."""
+    proof = _zalo_appsecret_proof(token)
+    headers = {"access_token": token, "appsecret_proof": proof}
+    all_groups = []
+    seen_ids = set()
+    offset = 0
+    while True:
+        payload = None
+        for attempt in range(_ZALO_RATE_MAX_RETRIES + 1):
+            try:
+                res = requests.get(
+                    f"{ZALO_OPENAPI_BASE}/v3.0/oa/group/getgroupsofoa",
+                    headers=headers,
+                    params={"count": 50, "offset": offset},
+                    timeout=20,
+                )
+                payload = res.json()
+            except Exception as e:
+                raise RuntimeError(f"Không kết nối được Zalo OpenAPI: {e}")
 
-    Zalo không có API liệt kê nhóm chat của OA, dữ liệu nhóm chỉ có được qua
-    webhook. Endpoint này chạy 2 việc:
-    1. Quét lại webhook-log (nếu có) để bổ sung thành viên/nhóm bị bỏ sót.
-    2. Xóa nhóm "rỗng" quá 30 ngày không có hoạt động (dọn dữ liệu test).
-    Trả về thống kê để app hiển thị số nhóm/số khách cập nhật.
-    """
-    import time as _time
-    conn = get_db()
-    cur = conn.cursor()
-    stats = {"groups": 0, "named": 0, "members": 0}
-    try:
-        # 1) Đếm nhóm đang quản lý
-        cur.execute("SELECT COUNT(*) AS n FROM zalo_oa_chat_groups")
-        row = cur.fetchone()
-        stats["groups"] = int(row["n"]) if row else 0
-        cur.execute("SELECT COUNT(*) AS n FROM zalo_oa_chat_groups WHERE COALESCE(name, '') <> ''")
-        row = cur.fetchone()
-        stats["named"] = int(row["n"]) if row else 0
-        cur.execute("SELECT COUNT(DISTINCT zalo_user_id) AS n FROM zalo_oa_chat_group_members")
-        row = cur.fetchone()
-        stats["members"] = int(row["n"]) if row else 0
-        # 2) Dọn nhóm rỗng (không thành viên) quá 30 ngày
-        cur.execute(
-            """DELETE FROM zalo_oa_chat_groups g
-               WHERE updated_at < CURRENT_TIMESTAMP - INTERVAL '30 days'
-                 AND NOT EXISTS (SELECT 1 FROM zalo_oa_chat_group_members m WHERE m.group_id = g.group_id)"""
-        )
-        stats["cleaned"] = cur.rowcount
-        conn.commit()
-        return stats
-    except Exception:
-        try:
-            conn.rollback()
-        except Exception:
-            pass
-        return stats
-    finally:
-        cur.close()
-        conn.close()
+            err = int(payload.get("error") or 0)
+            if err == -32 and attempt < _ZALO_RATE_MAX_RETRIES:
+                time.sleep(_ZALO_RATE_WAIT)
+                continue
+            break
+
+        err = int((payload or {}).get("error") or 0)
+        if err != 0:
+            msg = (payload or {}).get("message") or f"Mã lỗi {err}"
+            if err in (-216, -124, -201, -14014, 401):
+                raise ZaloAuthRequired(f"Token Zalo OA hết hiệu lực ({msg})")
+            if err in (-32, -205) or "quota" in str(msg).lower() or "rate" in str(msg).lower():
+                raise ZaloRateLimited(msg)
+            raise RuntimeError(f"Zalo trả lỗi khi lấy danh sách nhóm: {msg} (mã {err})")
+
+        data = (payload or {}).get("data") or {}
+        batch = data.get("groups") or []
+        total = int(data.get("total") or data.get("group_count") or 0)
+        for g in batch:
+            gid = str(g.get("group_id") or "").strip()
+            if not gid or gid in seen_ids:
+                continue
+            seen_ids.add(gid)
+            all_groups.append({
+                "group_id": gid,
+                "name": _clean(g.get("name")) or gid,
+                "avatar": _clean(g.get("avatar")) or "",
+                "group_link": _clean(g.get("group_link")) or "",
+                "description": _clean(g.get("group_description")) or "",
+                "member_count": int(g.get("total_member") or 0),
+                "status": _clean(g.get("status")) or "enabled",
+            })
+        if not batch:
+            break
+        offset += len(batch)
+        if (total > 0 and offset >= total) or len(all_groups) >= 2000:
+            break
+    return all_groups
 
 
 @app.post("/api/v1/zalo-oa/chat-groups/refresh")
 def zalo_oa_chat_groups_refresh(current_user: dict = Depends(require_dispatch_staff)):
-    """Làm mới danh sách nhóm hội thoại + thống kê để cập nhật cột khách hàng."""
-    stats = _zalo_refresh_chat_groups()
-    return {"success": True, "stats": stats}
+    """Kết nối Zalo OA và đồng bộ trực tiếp danh sách nhóm Zalo OA thực tế về phần mềm."""
+    if not _zalo_configured():
+        raise HTTPException(status_code=503, detail="Máy chủ chưa cấu hình ZALO_APP_ID / ZALO_APP_SECRET")
+
+    def _clear_dead_token():
+        c_del = get_db()
+        cur_del = c_del.cursor()
+        try:
+            cur_del.execute("DELETE FROM zalo_oa_tokens WHERE id = 1")
+            c_del.commit()
+        finally:
+            cur_del.close()
+            c_del.close()
+
+    token = None
+    try:
+        token = _zalo_access_token()
+    except ZaloAuthRequired:
+        if _zalo_try_heal_from_crm():
+            token = _zalo_access_token()
+        else:
+            _clear_dead_token()
+            raise HTTPException(status_code=409, detail="Zalo OA chưa được kết nối. Vui lòng cấp quyền kết nối Zalo OA.")
+
+    oa_name = ""
+    oa_id = ""
+    try:
+        oa_info = _zalo_get("/v2.0/oa/getoa", {}, token)
+        oa_name = _clean(oa_info.get("name")) or ""
+        oa_id = str(oa_info.get("oa_id") or "").strip()
+    except ZaloAuthRequired:
+        if _zalo_try_heal_from_crm():
+            token = _zalo_access_token()
+            oa_info = _zalo_get("/v2.0/oa/getoa", {}, token)
+            oa_name = _clean(oa_info.get("name")) or ""
+            oa_id = str(oa_info.get("oa_id") or "").strip()
+        else:
+            _clear_dead_token()
+            raise HTTPException(status_code=409, detail="Phiên kết nối Zalo OA đã hết hạn. Vui lòng cấp quyền lại.")
+    except ZaloRateLimited as rate_err:
+        raise HTTPException(status_code=503, detail=f"Zalo OA đang giới hạn lượt gọi API ({rate_err}). Vui lòng thử lại sau ít phút.")
+    except Exception as e:
+        raise HTTPException(status_code=502, detail=f"Không kiểm tra được kết nối Zalo OA: {e}")
+
+    try:
+        live_groups = _zalo_fetch_oa_chat_groups(token)
+    except ZaloAuthRequired:
+        _clear_dead_token()
+        raise HTTPException(status_code=409, detail="Cần cấp quyền kết nối Zalo OA để đọc danh sách nhóm.")
+    except ZaloRateLimited as rate_err:
+        raise HTTPException(status_code=503, detail=f"Zalo OA đang giới hạn lượt gọi API ({rate_err}).")
+    except Exception as e:
+        raise HTTPException(status_code=502, detail=str(e))
+
+    conn = get_db()
+    cur = conn.cursor()
+    try:
+        live_ids = []
+        total_members = 0
+        for g in live_groups:
+            live_ids.append(g["group_id"])
+            total_members += int(g.get("member_count") or 0)
+            cur.execute(
+                """INSERT INTO zalo_oa_chat_groups
+                       (group_id, name, type, member_count, avatar, group_link, description, status, updated_at)
+                   VALUES (%s, %s, 'oa_group', %s, %s, %s, %s, %s, CURRENT_TIMESTAMP)
+                   ON CONFLICT (group_id) DO UPDATE SET
+                       name = EXCLUDED.name,
+                       type = 'oa_group',
+                       member_count = EXCLUDED.member_count,
+                       avatar = EXCLUDED.avatar,
+                       group_link = EXCLUDED.group_link,
+                       description = EXCLUDED.description,
+                       status = EXCLUDED.status,
+                       updated_at = CURRENT_TIMESTAMP""",
+                (
+                    g["group_id"],
+                    g["name"],
+                    g["member_count"],
+                    g["avatar"],
+                    g["group_link"],
+                    g["description"],
+                    g["status"],
+                ),
+            )
+            # Giữ nguyên tên nhóm đã lưu cho khách (từ Excel / nhập tay), chỉ điền khi đang trống
+            cur.execute(
+                """UPDATE customers SET zalo_group_name = %s
+                   WHERE zalo_group_id = %s AND COALESCE(TRIM(zalo_group_name), '') = ''""",
+                (g["name"], g["group_id"]),
+            )
+            if g["name"] and g["name"] != g["group_id"]:
+                cur.execute(
+                    """UPDATE customers
+                       SET zalo_group_id = %s, zalo_group_name = %s
+                       WHERE COALESCE(TRIM(zalo_group_id), '') = ''
+                         AND LOWER(TRIM(COALESCE(zalo_group_name, ''))) = LOWER(TRIM(%s))""",
+                    (g["group_id"], g["name"], g["name"]),
+                )
+
+        # Đồng bộ chuẩn danh sách nhóm Zalo OA: dọn các nhóm cũ không còn thuộc OA và không gắn khách hàng nào
+        if live_ids:
+            cur.execute(
+                """DELETE FROM zalo_oa_chat_groups
+                   WHERE NOT (group_id = ANY(%s))
+                     AND NOT EXISTS (
+                         SELECT 1 FROM customers c
+                         WHERE c.zalo_group_id = zalo_oa_chat_groups.group_id AND c.is_active = TRUE
+                     )""",
+                (live_ids,),
+            )
+        else:
+            cur.execute(
+                """DELETE FROM zalo_oa_chat_groups
+                   WHERE NOT EXISTS (
+                       SELECT 1 FROM customers c
+                       WHERE c.zalo_group_id = zalo_oa_chat_groups.group_id AND c.is_active = TRUE
+                   )"""
+            )
+        cur.execute(
+            """SELECT COUNT(*) AS cnt FROM customers
+               WHERE is_active = TRUE
+                 AND COALESCE(source, 'manual') <> 'zalo_oa'
+                 AND zalo_group_id IS NOT NULL
+                 AND TRIM(zalo_group_id) <> ''"""
+        )
+        linked_customers = int((cur.fetchone() or {}).get("cnt") or 0)
+        conn.commit()
+        saved_groups = _zalo_query_saved_chat_groups(cur)
+        stats = {
+            "groups": len(live_groups),
+            "named": sum(1 for g in live_groups if g.get("name")),
+            "members": total_members,
+            "linked_customers": linked_customers,
+        }
+        return {
+            "success": True,
+            "oa_id": oa_id,
+            "oa_name": oa_name,
+            "stats": stats,
+            "groups": saved_groups,
+        }
+    except Exception as e:
+        conn.rollback()
+        raise HTTPException(status_code=500, detail=f"Lỗi lưu danh sách nhóm Zalo OA: {e}")
+    finally:
+        cur.close()
+        conn.close()
 
 
 @app.post("/api/v1/zalo-oa/chat-groups/{group_id}/message")
@@ -3060,9 +3500,13 @@ def get_vehicles(include_inactive: bool = False, current_user: dict = Depends(ge
     sync_fleet_vehicles()
     conn = get_db()
     cur = conn.cursor()
-    # include_inactive=true: trả TOÀN BỘ đội xe (đang hoạt động + tạm ngừng/báo nghỉ),
+    # include_inactive=true: trả TOÀN BỘ đội xe (đang hoạt động + báo nghỉ + ngừng hoạt động),
     # không lọc theo gps_provider vì xe báo nghỉ thường đã bị gỡ gps_provider (NULL).
-    where = ("TRUE" if include_inactive else "COALESCE(v.in_fleet, TRUE) = TRUE")
+    where = (
+        "TRUE"
+        if include_inactive
+        else "COALESCE(v.in_fleet, TRUE) = TRUE AND COALESCE(v.status, 'ready') NOT IN ('inactive', 'stopped')"
+    )
     cur.execute(f"""
         SELECT v.*, u.full_name as driver_name, u.username as driver_username, u.phone as driver_phone 
         FROM vehicles v 
@@ -3274,8 +3718,9 @@ def update_vehicle(plate_number: str, v: VehicleUpdate, current_user: dict = Dep
             # (Báo nghỉ / Hủy báo nghỉ từ app Tài xế, hoặc Điều phối đổi trạng thái thủ công)
             if v.status != exist.get("status"):
                 status_labels = {
-                    "ready": "Đang hoạt động",
-                    "inactive": "Tạm ngừng hoạt động",
+                    "ready": "Sẵn sàng hoạt động",
+                    "inactive": "Báo nghỉ",
+                    "stopped": "Ngừng hoạt động",
                     "maintenance": "Bảo trì",
                 }
                 old_lb = status_labels.get(exist.get("status"), exist.get("status") or "Không rõ")
@@ -3293,7 +3738,11 @@ def update_vehicle(plate_number: str, v: VehicleUpdate, current_user: dict = Dep
                     username=driver_user["username"] if driver_user else None,
                     full_name=driver_user["full_name"] if driver_user else None,
                     role_code="driver",
-                    action="BAO_NGHI" if v.status == VEHICLE_STATUS_INACTIVE else "VEHOATDONG",
+                    action=(
+                        "NGUNG_HOAT_DONG"
+                        if v.status == VEHICLE_STATUS_STOPPED
+                        else ("BAO_NGHI" if v.status == VEHICLE_STATUS_INACTIVE else "VEHOATDONG")
+                    ),
                     action_detail=(
                         f"{current_user.get('full_name') or current_user.get('username')} ({', '.join(current_user.get('roles', [])) or 'không rõ vai trò'}) "
                         f"đã cập nhật trạng thái phương tiện {plate_number} từ '{old_lb}' sang '{new_lb}'"
@@ -3313,6 +3762,7 @@ def update_vehicle(plate_number: str, v: VehicleUpdate, current_user: dict = Dep
         conn.rollback()
         conn.close()
         raise HTTPException(status_code=400, detail=str(e))
+
 
 # ----------------- DỊCH VỤ GPS BÌNH ANH -----------------
 # Tài liệu: docs/Vintrans.pdf. Xác thực Basic Auth: CustomerCode / Key.
@@ -3455,7 +3905,9 @@ def _fetch_binhanh_vehicles() -> list:
         })
     return out
 
-VEHICLE_STATUS_INACTIVE = "inactive"  # Tạm ngừng hoạt động (không còn trên Vietmap / Bình Anh)
+VEHICLE_STATUS_READY = "ready"
+VEHICLE_STATUS_INACTIVE = "inactive"  # Báo nghỉ / Tạm ngừng hoạt động
+VEHICLE_STATUS_STOPPED = "stopped"    # Ngừng hoạt động
 
 DEFAULT_DRIVER_PASSWORD = "123456"  # Mật khẩu mặc định cho account Tài xế tự sinh (theo danh sách tài khoản dự án)
 
@@ -3630,7 +4082,9 @@ def sync_fleet_vehicles(force: bool = False):
                     if prov and (row.get("in_fleet") is not False or row.get("status") != VEHICLE_STATUS_INACTIVE):
                         stats["deactivated"].append({"plate_number": row["plate_number"], "provider": prov})
                     cur.execute(
-                        "UPDATE vehicles SET in_fleet = FALSE, status = %s WHERE plate_number = %s",
+                        """UPDATE vehicles SET in_fleet = FALSE,
+                               status = CASE WHEN status = 'stopped' THEN 'stopped' ELSE %s END
+                           WHERE plate_number = %s""",
                         (VEHICLE_STATUS_INACTIVE, row["plate_number"]),
                     )
                     # Ghi lịch sử hoạt động: hệ thống tự Tạm ngừng xe khi mất tín hiệu GPS
@@ -4635,10 +5089,28 @@ def restore_location_suggestion(suggestion_id: int, current_user: dict = Depends
 def get_gas_stations(current_user: dict = Depends(get_current_user)):
     conn = get_db()
     cur = conn.cursor()
-    cur.execute("SELECT * FROM gas_stations ORDER BY id ASC")
-    stations = cur.fetchall()
-    cur.close()
-    conn.close()
+    try:
+        cur.execute("""
+            SELECT gs.*,
+                   COUNT(q.id) FILTER (WHERE q.is_active = TRUE) AS qr_count,
+                   COALESCE(
+                       ARRAY_AGG(q.plate_number ORDER BY q.plate_number ASC)
+                       FILTER (WHERE q.id IS NOT NULL AND q.is_active = TRUE),
+                       '{}'
+                   ) AS qr_plates
+            FROM gas_stations gs
+            LEFT JOIN gas_station_vehicle_qr_codes q ON q.gas_station_id = gs.id
+            GROUP BY gs.id
+            ORDER BY gs.id ASC
+        """)
+        stations = cur.fetchall()
+    except Exception:
+        conn.rollback()
+        cur.execute("SELECT * FROM gas_stations ORDER BY id ASC")
+        stations = cur.fetchall()
+    finally:
+        cur.close()
+        conn.close()
     return stations
 
 @app.post("/api/v1/gas-stations", status_code=status.HTTP_201_CREATED)
@@ -4690,6 +5162,7 @@ def update_gas_station(station_id: int, gs: GasStationCreate, current_user: dict
         conn.close()
         raise HTTPException(status_code=400, detail=str(e))
 
+
 @app.delete("/api/v1/gas-stations/{station_id}")
 def delete_gas_station(station_id: int, current_user: dict = Depends(get_current_user)):
     conn = get_db()
@@ -4712,6 +5185,802 @@ def delete_gas_station(station_id: int, current_user: dict = Depends(get_current
         conn.rollback()
         conn.close()
         raise HTTPException(status_code=400, detail=str(e))
+
+
+class GasStationQrUpsert(BaseModel):
+    gas_station_id: int
+    plate_number: str
+    qr_image_url: str
+    qr_code_label: Optional[str] = None
+    note: Optional[str] = None
+    is_active: bool = True
+
+
+class GasStationQrUpdate(BaseModel):
+    gas_station_id: Optional[int] = None
+    plate_number: Optional[str] = None
+    qr_image_url: Optional[str] = None
+    qr_code_label: Optional[str] = None
+    note: Optional[str] = None
+    is_active: Optional[bool] = None
+
+
+def _require_qr_manager(current_user: dict):
+    roles = [str(r).strip().lower() for r in current_user.get("roles", [])]
+    username = (current_user.get("username") or "").strip().lower()
+    if username != "admin" and not any(r in ("admin", "manager", "dispatcher") for r in roles):
+        raise HTTPException(
+            status_code=403,
+            detail="Chỉ tài khoản Quản lý, Điều phối hoặc Admin mới có quyền quản lý Mã QR Cây dầu",
+        )
+
+
+def _fetch_qr_rows(cur, gas_station_id: Optional[int] = None, plate_number: Optional[str] = None, active_only: bool = False):
+    sql = """
+        SELECT q.*,
+               gs.name AS gas_station_name,
+               gs.address AS gas_station_address,
+               v.vehicle_type,
+               v.ownership_type,
+               v.default_driver_id,
+               u.full_name AS driver_name,
+               u.username AS driver_username,
+               u.phone AS driver_phone
+        FROM gas_station_vehicle_qr_codes q
+        JOIN gas_stations gs ON gs.id = q.gas_station_id
+        LEFT JOIN vehicles v ON v.plate_number = q.plate_number
+        LEFT JOIN users u ON u.id = v.default_driver_id
+        WHERE 1=1
+    """
+    params = []
+    if gas_station_id is not None:
+        sql += " AND q.gas_station_id = %s"
+        params.append(gas_station_id)
+    if plate_number:
+        norm = _normalize_plate(plate_number)
+        sql += " AND REPLACE(REPLACE(REPLACE(UPPER(q.plate_number), '-', ''), '.', ''), ' ', '') = %s"
+        params.append(norm)
+    if active_only:
+        sql += " AND q.is_active = TRUE"
+    sql += " ORDER BY gs.name ASC, q.plate_number ASC, q.id DESC"
+    cur.execute(sql, tuple(params))
+    return cur.fetchall()
+
+
+@app.get("/api/v1/gas-station-qr-codes")
+def get_gas_station_qr_codes(
+    gas_station_id: Optional[int] = None,
+    plate_number: Optional[str] = None,
+    active_only: bool = False,
+    current_user: dict = Depends(get_current_user),
+):
+    conn = get_db()
+    cur = conn.cursor()
+    try:
+        return _fetch_qr_rows(cur, gas_station_id=gas_station_id, plate_number=plate_number, active_only=active_only)
+    finally:
+        cur.close()
+        conn.close()
+
+
+@app.get("/api/v1/gas-station-qr-codes/by-vehicle/{plate_number}")
+def get_gas_station_qr_by_vehicle(
+    plate_number: str,
+    gas_station_id: Optional[int] = None,
+    current_user: dict = Depends(get_current_user),
+):
+    conn = get_db()
+    cur = conn.cursor()
+    try:
+        rows = _fetch_qr_rows(cur, gas_station_id=gas_station_id, plate_number=plate_number, active_only=True)
+        return {
+            "plate_number": plate_number,
+            "count": len(rows),
+            "qr_codes": rows,
+            "primary_qr": rows[0] if rows else None,
+            "warning": "Lưu ý: Mã QR này chỉ có hiệu lực sử dụng cho 01 lần vào cây dầu (theo 01 lần phê duyệt đề xuất).",
+        }
+    finally:
+        cur.close()
+        conn.close()
+
+
+@app.post("/api/v1/gas-station-qr-codes", status_code=status.HTTP_201_CREATED)
+def upsert_gas_station_qr_code(
+    body: GasStationQrUpsert,
+    current_user: dict = Depends(get_current_user),
+):
+    _require_qr_manager(current_user)
+    plate = _clean(body.plate_number)
+    qr_url = _clean(body.qr_image_url)
+    if not plate:
+        raise HTTPException(status_code=400, detail="Vui lòng chọn hoặc nhập biển số phương tiện")
+    if not qr_url:
+        raise HTTPException(status_code=400, detail="Vui lòng tải lên hình ảnh Mã QR của cây dầu")
+
+    conn = get_db()
+    cur = conn.cursor()
+    try:
+        cur.execute("SELECT id, name FROM gas_stations WHERE id = %s", (body.gas_station_id,))
+        gs = cur.fetchone()
+        if not gs:
+            raise HTTPException(status_code=404, detail="Không tìm thấy cây dầu được chọn")
+
+        # Chuẩn hóa biển số theo danh mục vehicles nếu khớp
+        v_info = _find_vehicle(cur, plate)
+        if v_info and v_info.get("plate_number"):
+            plate = v_info["plate_number"]
+
+        actor = current_user.get("full_name") or current_user.get("username") or "manager"
+        cur.execute(
+            """INSERT INTO gas_station_vehicle_qr_codes
+                   (gas_station_id, plate_number, qr_image_url, qr_code_label, note, is_active, updated_by, updated_at)
+               VALUES (%s, %s, %s, %s, %s, %s, %s, CURRENT_TIMESTAMP)
+               ON CONFLICT (gas_station_id, plate_number) DO UPDATE SET
+                   qr_image_url = EXCLUDED.qr_image_url,
+                   qr_code_label = EXCLUDED.qr_code_label,
+                   note = EXCLUDED.note,
+                   is_active = EXCLUDED.is_active,
+                   updated_by = EXCLUDED.updated_by,
+                   updated_at = CURRENT_TIMESTAMP
+               RETURNING *""",
+            (
+                body.gas_station_id,
+                plate,
+                qr_url,
+                _clean(body.qr_code_label),
+                _clean(body.note),
+                body.is_active,
+                actor,
+            ),
+        )
+        saved = cur.fetchone()
+        conn.commit()
+        rows = _fetch_qr_rows(cur, gas_station_id=body.gas_station_id, plate_number=plate)
+        return rows[0] if rows else saved
+    except HTTPException:
+        conn.rollback()
+        raise
+    except Exception as e:
+        conn.rollback()
+        raise HTTPException(status_code=400, detail=str(e))
+    finally:
+        cur.close()
+        conn.close()
+
+
+@app.put("/api/v1/gas-station-qr-codes/{qr_id}")
+def update_gas_station_qr_code(
+    qr_id: int,
+    body: GasStationQrUpdate,
+    current_user: dict = Depends(get_current_user),
+):
+    _require_qr_manager(current_user)
+    conn = get_db()
+    cur = conn.cursor()
+    try:
+        cur.execute("SELECT * FROM gas_station_vehicle_qr_codes WHERE id = %s", (qr_id,))
+        existing = cur.fetchone()
+        if not existing:
+            raise HTTPException(status_code=404, detail="Không tìm thấy bản ghi Mã QR")
+
+        new_station_id = body.gas_station_id if body.gas_station_id is not None else existing["gas_station_id"]
+        new_plate = _clean(body.plate_number) if body.plate_number is not None else existing["plate_number"]
+        v_info = _find_vehicle(cur, new_plate)
+        if v_info and v_info.get("plate_number"):
+            new_plate = v_info["plate_number"]
+        new_url = _clean(body.qr_image_url) if body.qr_image_url is not None else existing["qr_image_url"]
+        new_label = _clean(body.qr_code_label) if body.qr_code_label is not None else existing.get("qr_code_label")
+        new_note = _clean(body.note) if body.note is not None else existing.get("note")
+        new_active = body.is_active if body.is_active is not None else existing.get("is_active", True)
+
+        if not new_plate or not new_url:
+            raise HTTPException(status_code=400, detail="Biển số xe và ảnh Mã QR không được để trống")
+
+        cur.execute(
+            """SELECT id FROM gas_station_vehicle_qr_codes
+               WHERE gas_station_id = %s AND LOWER(plate_number) = LOWER(%s) AND id <> %s""",
+            (new_station_id, new_plate, qr_id),
+        )
+        if cur.fetchone():
+            raise HTTPException(
+                status_code=409,
+                detail=f"Phương tiện {new_plate} đã có Mã QR tại cây dầu này. Hãy sửa trực tiếp trên bản ghi đó.",
+            )
+
+        actor = current_user.get("full_name") or current_user.get("username") or "manager"
+        cur.execute(
+            """UPDATE gas_station_vehicle_qr_codes
+               SET gas_station_id = %s,
+                   plate_number = %s,
+                   qr_image_url = %s,
+                   qr_code_label = %s,
+                   note = %s,
+                   is_active = %s,
+                   updated_by = %s,
+                   updated_at = CURRENT_TIMESTAMP
+               WHERE id = %s RETURNING *""",
+            (new_station_id, new_plate, new_url, new_label, new_note, new_active, actor, qr_id),
+        )
+        updated = cur.fetchone()
+        conn.commit()
+        rows = _fetch_qr_rows(cur, gas_station_id=new_station_id, plate_number=new_plate)
+        return rows[0] if rows else updated
+    except HTTPException:
+        conn.rollback()
+        raise
+    except Exception as e:
+        conn.rollback()
+        raise HTTPException(status_code=400, detail=str(e))
+    finally:
+        cur.close()
+        conn.close()
+
+
+@app.delete("/api/v1/gas-station-qr-codes/{qr_id}")
+def delete_gas_station_qr_code(
+    qr_id: int,
+    current_user: dict = Depends(get_current_user),
+):
+    _require_qr_manager(current_user)
+    conn = get_db()
+    cur = conn.cursor()
+    try:
+        cur.execute("SELECT id, plate_number FROM gas_station_vehicle_qr_codes WHERE id = %s", (qr_id,))
+        existing = cur.fetchone()
+        if not existing:
+            raise HTTPException(status_code=404, detail="Không tìm thấy bản ghi Mã QR")
+        cur.execute("DELETE FROM gas_station_vehicle_qr_codes WHERE id = %s", (qr_id,))
+        conn.commit()
+        return {"success": True, "deleted_id": qr_id, "plate_number": existing["plate_number"]}
+    except HTTPException:
+        conn.rollback()
+        raise
+    except Exception as e:
+        conn.rollback()
+        raise HTTPException(status_code=400, detail=str(e))
+    finally:
+        cur.close()
+        conn.close()
+
+
+# ----------------- NGHIỆP VỤ ĐỀ XUẤT ĐỔ DẦU, DUYỆT MỞ QR 1 LẦN & NGHIỆM THU (TASK T2) -----------------
+
+QR_ONE_TIME_WARNING = "Lưu ý: Mã QR này chỉ có hiệu lực sử dụng cho 01 lần vào cây dầu (theo 01 lần phê duyệt đề xuất)."
+
+
+class FuelRequestCreate(BaseModel):
+    plate_number: str
+    before_taplo_photo_url: str
+    before_odo_km: Optional[float] = None
+    gas_station_id: Optional[int] = None
+    order_id: Optional[int] = None
+    order_code: Optional[str] = None
+    request_note: Optional[str] = None
+    gps_lat: Optional[float] = None
+    gps_lng: Optional[float] = None
+
+
+class FuelRequestReview(BaseModel):
+    action: str  # 'approve' | 'reject'
+    gas_station_id: Optional[int] = None
+    note: Optional[str] = None
+
+
+class FuelRequestComplete(BaseModel):
+    after_taplo_photo_url: str
+    fuel_receipt_photo_url: str
+    after_odo_km: Optional[float] = None
+    liters_filled: Optional[float] = None
+    note: Optional[str] = None
+    gps_lat: Optional[float] = None
+    gps_lng: Optional[float] = None
+
+
+def _resolve_qr_for_vehicle_and_station(cur, plate_number: str, gas_station_id: Optional[int] = None):
+    norm = _normalize_plate(plate_number)
+    if gas_station_id is not None:
+        cur.execute(
+            """SELECT q.*, gs.name AS gas_station_name, gs.address AS gas_station_address
+               FROM gas_station_vehicle_qr_codes q
+               JOIN gas_stations gs ON gs.id = q.gas_station_id
+               WHERE q.is_active = TRUE
+                 AND q.gas_station_id = %s
+                 AND REPLACE(REPLACE(REPLACE(UPPER(q.plate_number), '-', ''), '.', ''), ' ', '') = %s
+               ORDER BY q.id DESC LIMIT 1""",
+            (gas_station_id, norm),
+        )
+        row = cur.fetchone()
+        if row:
+            return row
+
+    cur.execute(
+        """SELECT q.*, gs.name AS gas_station_name, gs.address AS gas_station_address
+           FROM gas_station_vehicle_qr_codes q
+           JOIN gas_stations gs ON gs.id = q.gas_station_id
+           WHERE q.is_active = TRUE
+             AND REPLACE(REPLACE(REPLACE(UPPER(q.plate_number), '-', ''), '.', ''), ' ', '') = %s
+           ORDER BY q.id DESC LIMIT 1""",
+        (norm,),
+    )
+    row = cur.fetchone()
+    if row:
+        return row
+
+    if gas_station_id is not None:
+        cur.execute(
+            """SELECT q.*, gs.name AS gas_station_name, gs.address AS gas_station_address
+               FROM gas_station_vehicle_qr_codes q
+               JOIN gas_stations gs ON gs.id = q.gas_station_id
+               WHERE q.is_active = TRUE AND q.gas_station_id = %s
+               ORDER BY q.id DESC LIMIT 1""",
+            (gas_station_id,),
+        )
+        row = cur.fetchone()
+        if row:
+            return row
+    return None
+
+
+def _format_fuel_request_row(row: dict, include_qr_for_manager: bool = False) -> dict:
+    item = dict(row)
+    st = (item.get("status") or "pending").strip().lower()
+    # Quy tắc cốt lõi Yêu cầu 02:
+    # Chỉ mở hiển thị Mã QR khi đề xuất ở trạng thái 'approved' (đã được Điều phối bấm Duyệt và chưa nghiệm thu đóng lượt đổ).
+    # Ngay khi chụp đủ 2 ảnh nghiệm thu ('completed'), Mã QR tự động bị ẩn đi (qr_visible = False, active_qr_image_url = None).
+    raw_qr_url = item.get("qr_image_url") or item.get("matched_qr_image_url")
+    raw_qr_label = item.get("qr_code_label") or item.get("matched_qr_code_label")
+    if st == "approved" and raw_qr_url:
+        item["qr_visible"] = True
+        item["active_qr_image_url"] = raw_qr_url
+        item["active_qr_code_label"] = raw_qr_label or "Mã QR Cây dầu cố định theo xe"
+        item["qr_warning"] = QR_ONE_TIME_WARNING
+    else:
+        item["qr_visible"] = False
+        item["active_qr_image_url"] = None
+        item["active_qr_code_label"] = raw_qr_label if include_qr_for_manager else None
+        item["qr_warning"] = QR_ONE_TIME_WARNING if st == "approved" else None
+        if not include_qr_for_manager:
+            item["qr_image_url"] = None
+            item.pop("matched_qr_image_url", None)
+    return item
+
+
+def _fetch_fuel_requests(
+    cur,
+    request_id: Optional[int] = None,
+    plate_number: Optional[str] = None,
+    status_filter: Optional[str] = None,
+    gas_station_id: Optional[int] = None,
+    driver_id: Optional[int] = None,
+    limit: int = 100,
+    include_qr_for_manager: bool = False,
+):
+    sql = """
+        SELECT fr.*,
+               COALESCE(gs.name, fr.gas_station_name) AS resolved_gas_station_name,
+               gs.address AS gas_station_address,
+               v.vehicle_type,
+               v.ownership_type,
+               COALESCE(u.full_name, fr.driver_name, u.username) AS resolved_driver_name,
+               u.phone AS driver_phone,
+               (
+                   SELECT q.qr_image_url
+                   FROM gas_station_vehicle_qr_codes q
+                   WHERE q.is_active = TRUE
+                     AND REPLACE(REPLACE(REPLACE(UPPER(q.plate_number), '-', ''), '.', ''), ' ', '')
+                         = REPLACE(REPLACE(REPLACE(UPPER(fr.plate_number), '-', ''), '.', ''), ' ', '')
+                     AND (fr.gas_station_id IS NULL OR q.gas_station_id = fr.gas_station_id)
+                   ORDER BY q.id DESC LIMIT 1
+               ) AS matched_qr_image_url,
+               (
+                   SELECT q.qr_code_label
+                   FROM gas_station_vehicle_qr_codes q
+                   WHERE q.is_active = TRUE
+                     AND REPLACE(REPLACE(REPLACE(UPPER(q.plate_number), '-', ''), '.', ''), ' ', '')
+                         = REPLACE(REPLACE(REPLACE(UPPER(fr.plate_number), '-', ''), '.', ''), ' ', '')
+                     AND (fr.gas_station_id IS NULL OR q.gas_station_id = fr.gas_station_id)
+                   ORDER BY q.id DESC LIMIT 1
+               ) AS matched_qr_code_label
+        FROM fuel_requests fr
+        LEFT JOIN gas_stations gs ON gs.id = fr.gas_station_id
+        LEFT JOIN vehicles v ON v.plate_number = fr.plate_number
+        LEFT JOIN users u ON u.id = fr.driver_id
+        WHERE 1=1
+    """
+    params = []
+    if request_id is not None:
+        sql += " AND fr.id = %s"
+        params.append(request_id)
+    if plate_number:
+        norm = _normalize_plate(plate_number)
+        sql += " AND REPLACE(REPLACE(REPLACE(UPPER(fr.plate_number), '-', ''), '.', ''), ' ', '') = %s"
+        params.append(norm)
+    if status_filter and status_filter.strip().upper() != "ALL":
+        sql += " AND LOWER(fr.status) = %s"
+        params.append(status_filter.strip().lower())
+    if gas_station_id is not None:
+        sql += " AND fr.gas_station_id = %s"
+        params.append(gas_station_id)
+    if driver_id is not None:
+        sql += " AND fr.driver_id = %s"
+        params.append(driver_id)
+    sql += " ORDER BY CASE WHEN fr.status = 'pending' THEN 0 WHEN fr.status = 'approved' THEN 1 ELSE 2 END, fr.requested_at DESC, fr.id DESC LIMIT %s"
+    params.append(max(1, min(limit, 500)))
+    cur.execute(sql, tuple(params))
+    rows = cur.fetchall()
+    return [_format_fuel_request_row(r, include_qr_for_manager=include_qr_for_manager) for r in rows]
+
+
+@app.get("/api/v1/fuel-requests")
+def get_fuel_requests(
+    plate_number: Optional[str] = None,
+    status: Optional[str] = None,
+    gas_station_id: Optional[int] = None,
+    limit: int = 100,
+    current_user: dict = Depends(get_current_user),
+):
+    roles = [str(r).strip().lower() for r in current_user.get("roles", [])]
+    username = (current_user.get("username") or "").strip().lower()
+    is_mgr = username == "admin" or any(r in ("admin", "manager", "dispatcher") for r in roles)
+    conn = get_db()
+    cur = conn.cursor()
+    try:
+        return _fetch_fuel_requests(
+            cur,
+            plate_number=plate_number,
+            status_filter=status,
+            gas_station_id=gas_station_id,
+            limit=limit,
+            include_qr_for_manager=is_mgr,
+        )
+    finally:
+        cur.close()
+        conn.close()
+
+
+@app.get("/api/v1/fuel-requests/active/{plate_number}")
+def get_active_fuel_request_for_vehicle(
+    plate_number: str,
+    current_user: dict = Depends(get_current_user),
+):
+    conn = get_db()
+    cur = conn.cursor()
+    try:
+        rows = _fetch_fuel_requests(
+            cur,
+            plate_number=plate_number,
+            limit=10,
+            include_qr_for_manager=False,
+        )
+        active = next((r for r in rows if r.get("status") in ("pending", "approved")), None)
+        latest = rows[0] if rows else None
+        return {
+            "plate_number": plate_number,
+            "active_request": active,
+            "latest_request": latest,
+            "history": rows[:5],
+        }
+    finally:
+        cur.close()
+        conn.close()
+
+
+@app.post("/api/v1/fuel-requests", status_code=status.HTTP_201_CREATED)
+def create_fuel_request(
+    body: FuelRequestCreate,
+    current_user: dict = Depends(get_current_user),
+):
+    plate = _clean(body.plate_number)
+    taplo_url = _clean(body.before_taplo_photo_url)
+    if not plate:
+        raise HTTPException(status_code=400, detail="Vui lòng chọn phương tiện cần đề xuất đổ dầu")
+    if not taplo_url:
+        raise HTTPException(
+            status_code=400,
+            detail="Bắt buộc phải chụp ảnh Đồng hồ taplo trước khi gửi đề xuất đổ dầu",
+        )
+
+    conn = get_db()
+    cur = conn.cursor()
+    try:
+        norm = _normalize_plate(plate)
+        cur.execute(
+            """SELECT plate_number, default_driver_id
+               FROM vehicles
+               WHERE REPLACE(REPLACE(REPLACE(UPPER(plate_number), '-', ''), '.', ''), ' ', '') = %s
+               LIMIT 1""",
+            (norm,),
+        )
+        v_row = cur.fetchone()
+        canonical_plate = v_row["plate_number"] if v_row else plate.upper()
+
+        # Kiểm tra nếu xe đang có đề xuất pending hoặc approved chưa đóng lượt đổ
+        cur.execute(
+            """SELECT id, status FROM fuel_requests
+               WHERE REPLACE(REPLACE(REPLACE(UPPER(plate_number), '-', ''), '.', ''), ' ', '') = %s
+                 AND status IN ('pending', 'approved')
+               ORDER BY id DESC LIMIT 1""",
+            (norm,),
+        )
+        existing_open = cur.fetchone()
+        if existing_open:
+            if existing_open["status"] == "approved":
+                raise HTTPException(
+                    status_code=400,
+                    detail=f"Xe {canonical_plate} đang có lệnh đổ dầu đã được duyệt mở Mã QR. Vui lòng chụp Đồng hồ taplo + Phiếu nhận dầu để đóng lượt đổ hiện tại trước khi tạo đề xuất mới.",
+                )
+            # Nếu đang pending thì cập nhật lại ảnh taplo/thông tin mới nhất của đề xuất đó
+            station_id = body.gas_station_id
+            station_name = None
+            qr_match = _resolve_qr_for_vehicle_and_station(cur, canonical_plate, station_id)
+            if station_id is None and qr_match:
+                station_id = qr_match["gas_station_id"]
+                station_name = qr_match.get("gas_station_name")
+            elif station_id is not None:
+                cur.execute("SELECT id, name FROM gas_stations WHERE id = %s", (station_id,))
+                gs = cur.fetchone()
+                if gs:
+                    station_name = gs["name"]
+
+            cur.execute(
+                """UPDATE fuel_requests
+                   SET before_taplo_photo_url = %s,
+                       before_odo_km = %s,
+                       gas_station_id = COALESCE(%s, gas_station_id),
+                       gas_station_name = COALESCE(%s, gas_station_name),
+                       request_note = %s,
+                       request_gps_lat = %s,
+                       request_gps_lng = %s,
+                       requested_at = CURRENT_TIMESTAMP,
+                       updated_at = CURRENT_TIMESTAMP
+                   WHERE id = %s RETURNING id""",
+                (
+                    taplo_url,
+                    body.before_odo_km,
+                    station_id,
+                    station_name,
+                    _clean(body.request_note),
+                    body.gps_lat,
+                    body.gps_lng,
+                    existing_open["id"],
+                ),
+            )
+            conn.commit()
+            rows = _fetch_fuel_requests(cur, request_id=existing_open["id"], include_qr_for_manager=False)
+            result = rows[0] if rows else {"id": existing_open["id"]}
+            _emit_event("fuel_request_created", result)
+            return result
+
+        station_id = body.gas_station_id
+        station_name = None
+        qr_match = _resolve_qr_for_vehicle_and_station(cur, canonical_plate, station_id)
+        if station_id is None and qr_match:
+            station_id = qr_match["gas_station_id"]
+            station_name = qr_match.get("gas_station_name")
+        elif station_id is not None:
+            cur.execute("SELECT id, name FROM gas_stations WHERE id = %s", (station_id,))
+            gs = cur.fetchone()
+            if gs:
+                station_name = gs["name"]
+
+        cur.execute("SELECT id, full_name, username FROM users WHERE id = %s", (current_user["id"],))
+        u_row = cur.fetchone()
+        driver_id = u_row["id"] if u_row else None
+        driver_name = (u_row.get("full_name") or u_row.get("username") if u_row else None) or current_user.get("username")
+
+        cur.execute(
+            """INSERT INTO fuel_requests (
+                   plate_number, driver_id, driver_name,
+                   gas_station_id, gas_station_name,
+                   order_id, order_code,
+                   before_taplo_photo_url, before_odo_km,
+                   request_note, request_gps_lat, request_gps_lng,
+                   status, qr_code_id, qr_image_url, qr_code_label,
+                   requested_at, updated_at
+               )
+               VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, 'pending', %s, %s, %s, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
+               RETURNING id""",
+            (
+                canonical_plate,
+                driver_id,
+                driver_name,
+                station_id,
+                station_name,
+                body.order_id,
+                _clean(body.order_code),
+                taplo_url,
+                body.before_odo_km,
+                _clean(body.request_note),
+                body.gps_lat,
+                body.gps_lng,
+                qr_match["id"] if qr_match else None,
+                qr_match["qr_image_url"] if qr_match else None,
+                qr_match.get("qr_code_label") if qr_match else None,
+            ),
+        )
+        new_id = cur.fetchone()["id"]
+        conn.commit()
+        rows = _fetch_fuel_requests(cur, request_id=new_id, include_qr_for_manager=False)
+        result = rows[0] if rows else {"id": new_id}
+        _emit_event("fuel_request_created", result)
+        return result
+    except HTTPException:
+        conn.rollback()
+        raise
+    except Exception as e:
+        conn.rollback()
+        raise HTTPException(status_code=400, detail=str(e))
+    finally:
+        cur.close()
+        conn.close()
+
+
+@app.post("/api/v1/fuel-requests/{request_id}/review")
+def review_fuel_request(
+    request_id: int,
+    body: FuelRequestReview,
+    current_user: dict = Depends(get_current_user),
+):
+    _require_qr_manager(current_user)
+    act = (body.action or "").strip().lower()
+    if act not in ("approve", "approved", "reject", "rejected"):
+        raise HTTPException(status_code=400, detail="Hành động phê duyệt phải là 'approve' hoặc 'reject'")
+
+    conn = get_db()
+    cur = conn.cursor()
+    try:
+        cur.execute("SELECT * FROM fuel_requests WHERE id = %s", (request_id,))
+        fr = cur.fetchone()
+        if not fr:
+            raise HTTPException(status_code=404, detail="Không tìm thấy đề xuất đổ dầu")
+
+        cur.execute("SELECT id, full_name, username FROM users WHERE id = %s", (current_user["id"],))
+        u_row = cur.fetchone()
+        approver_id = u_row["id"] if u_row else None
+        approver_name = (u_row.get("full_name") or u_row.get("username") if u_row else None) or current_user.get("username")
+
+        if act in ("reject", "rejected"):
+            cur.execute(
+                """UPDATE fuel_requests
+                   SET status = 'rejected',
+                       approved_by_id = %s,
+                       approved_by_name = %s,
+                       approved_note = %s,
+                       approved_at = CURRENT_TIMESTAMP,
+                       updated_at = CURRENT_TIMESTAMP
+                   WHERE id = %s""",
+                (approver_id, approver_name, _clean(body.note), request_id),
+            )
+            conn.commit()
+            rows = _fetch_fuel_requests(cur, request_id=request_id, include_qr_for_manager=True)
+            result = rows[0] if rows else {"id": request_id, "status": "rejected"}
+            _emit_event("fuel_request_reviewed", result, target_user_id=fr.get("driver_id"))
+            return result
+
+        # Duyệt mở Mã QR 1 lần cho xe
+        target_station_id = body.gas_station_id if body.gas_station_id is not None else fr.get("gas_station_id")
+        qr_match = _resolve_qr_for_vehicle_and_station(cur, fr["plate_number"], target_station_id)
+        qr_id = qr_match["id"] if qr_match else fr.get("qr_code_id")
+        qr_url = qr_match["qr_image_url"] if qr_match else fr.get("qr_image_url")
+        qr_label = qr_match.get("qr_code_label") if qr_match else fr.get("qr_code_label")
+        station_name = (qr_match.get("gas_station_name") if qr_match else None) or fr.get("gas_station_name")
+        if qr_match and target_station_id is None:
+            target_station_id = qr_match["gas_station_id"]
+
+        if not qr_url:
+            raise HTTPException(
+                status_code=400,
+                detail=f"Xe {fr['plate_number']} chưa được gắn ảnh Mã QR Cây dầu. Vui lòng tải lên ảnh Mã QR cho xe tại màn hình Quản lý Cây dầu trước khi duyệt.",
+            )
+
+        cur.execute(
+            """UPDATE fuel_requests
+               SET status = 'approved',
+                   gas_station_id = %s,
+                   gas_station_name = COALESCE(%s, gas_station_name),
+                   qr_code_id = %s,
+                   qr_image_url = %s,
+                   qr_code_label = %s,
+                   approved_by_id = %s,
+                   approved_by_name = %s,
+                   approved_note = %s,
+                   approved_at = CURRENT_TIMESTAMP,
+                   updated_at = CURRENT_TIMESTAMP
+               WHERE id = %s""",
+            (
+                target_station_id,
+                station_name,
+                qr_id,
+                qr_url,
+                qr_label,
+                approver_id,
+                approver_name,
+                _clean(body.note),
+                request_id,
+            ),
+        )
+        conn.commit()
+        rows = _fetch_fuel_requests(cur, request_id=request_id, include_qr_for_manager=True)
+        result = rows[0] if rows else {"id": request_id, "status": "approved"}
+        _emit_event("fuel_request_reviewed", result, target_user_id=fr.get("driver_id"))
+        return result
+    except HTTPException:
+        conn.rollback()
+        raise
+    except Exception as e:
+        conn.rollback()
+        raise HTTPException(status_code=400, detail=str(e))
+    finally:
+        cur.close()
+        conn.close()
+
+
+@app.post("/api/v1/fuel-requests/{request_id}/complete")
+def complete_fuel_request(
+    request_id: int,
+    body: FuelRequestComplete,
+    current_user: dict = Depends(get_current_user),
+):
+    after_taplo = _clean(body.after_taplo_photo_url)
+    receipt_photo = _clean(body.fuel_receipt_photo_url)
+    if not after_taplo or not receipt_photo:
+        raise HTTPException(
+            status_code=400,
+            detail="Bắt buộc phải chụp đủ 02 ảnh: (1) Ảnh Đồng hồ taplo sau khi đổ và (2) Ảnh Phiếu nhận dầu để đóng lượt đổ dầu và ẩn Mã QR.",
+        )
+
+    conn = get_db()
+    cur = conn.cursor()
+    try:
+        cur.execute("SELECT * FROM fuel_requests WHERE id = %s", (request_id,))
+        fr = cur.fetchone()
+        if not fr:
+            raise HTTPException(status_code=404, detail="Không tìm thấy đề xuất đổ dầu")
+        if fr.get("status") != "approved":
+            raise HTTPException(
+                status_code=400,
+                detail="Chỉ có thể nghiệm thu đóng lượt đổ đối với đề xuất đã được Điều phối phê duyệt.",
+            )
+
+        cur.execute(
+            """UPDATE fuel_requests
+               SET status = 'completed',
+                   after_taplo_photo_url = %s,
+                   after_odo_km = %s,
+                   fuel_receipt_photo_url = %s,
+                   liters_filled = %s,
+                   completion_note = %s,
+                   completion_gps_lat = %s,
+                   completion_gps_lng = %s,
+                   completed_at = CURRENT_TIMESTAMP,
+                   updated_at = CURRENT_TIMESTAMP
+               WHERE id = %s""",
+            (
+                after_taplo,
+                body.after_odo_km,
+                receipt_photo,
+                body.liters_filled,
+                _clean(body.note),
+                body.gps_lat,
+                body.gps_lng,
+                request_id,
+            ),
+        )
+        conn.commit()
+        rows = _fetch_fuel_requests(cur, request_id=request_id, include_qr_for_manager=False)
+        result = rows[0] if rows else {"id": request_id, "status": "completed", "qr_visible": False}
+        _emit_event("fuel_request_completed", result)
+        return result
+    except HTTPException:
+        conn.rollback()
+        raise
+    except Exception as e:
+        conn.rollback()
+        raise HTTPException(status_code=400, detail=str(e))
+    finally:
+        cur.close()
+        conn.close()
 
 @app.get("/api/v1/reports/summary")
 def get_reports_summary(current_user: dict = Depends(get_current_user)):
@@ -4775,21 +6044,32 @@ def _find_vehicle(cur, plate: Optional[str]) -> Optional[dict]:
     return None
 
 def _vehicle_is_resting(cur, plate: Optional[str]) -> bool:
-    """Xe đang 'Tạm ngừng hoạt động' (Báo nghỉ): tài xế không được nhận chuyến/đơn hàng.
-    Chỉ thoát trạng thái khi Điều phối kích hoạt lại xe (status != inactive)
-    HOẶC tài xế được Duyệt Nhận Chuyến (5 ảnh hôm nay có flag_status = 'approved')."""
+    """Xe đang 'Báo nghỉ' (inactive) hoặc 'Ngừng hoạt động' (stopped): tài xế không được nhận chuyến/đơn hàng."""
     if not plate or not str(plate).strip():
         return False
     try:
         v = _find_vehicle(cur, plate)
-        if not v or v.get("status") != VEHICLE_STATUS_INACTIVE:
+        if not v or v.get("status") not in (VEHICLE_STATUS_INACTIVE, VEHICLE_STATUS_STOPPED):
             return False
         return True
     except Exception:
         return False
 
 
-def _vehicle_resting_reason(plate: str) -> str:
+def _vehicle_resting_reason(plate: str, cur=None) -> str:
+    st = VEHICLE_STATUS_INACTIVE
+    if cur is not None:
+        try:
+            v = _find_vehicle(cur, plate)
+            if v and v.get("status"):
+                st = v.get("status")
+        except Exception:
+            pass
+    if st == VEHICLE_STATUS_STOPPED:
+        return (
+            f"Xe {plate} đang ở trạng thái Ngừng hoạt động. "
+            f"Không thể nhận chuyến/đơn hàng cho đến khi Quản lý hoặc Điều phối kích hoạt lại xe."
+        )
     return (
         f"Xe {plate} đang ở trạng thái Tạm ngừng hoạt động (Báo nghỉ). "
         f"Không thể nhận chuyến/đơn hàng. Chỉ khi Điều phối kích hoạt lại xe "
@@ -4831,7 +6111,7 @@ def create_order(o: OrderCreate, current_user: dict = Depends(get_current_user))
         # Xe đang "Tạm ngừng hoạt động" (Báo nghỉ) thì không được nhận đơn hàng mới
         # (chỉ áp dụng với xe có trong Đội xe; xe nhập tự do sẽ không tra thấy xe)
         if _vehicle_is_resting(cur, o.assigned_vehicle_plate):
-            raise HTTPException(status_code=409, detail=_vehicle_resting_reason(o.assigned_vehicle_plate))
+            raise HTTPException(status_code=409, detail=_vehicle_resting_reason(o.assigned_vehicle_plate, cur))
         cur.execute(
             """INSERT INTO orders (order_code, customer_code, factory_code, product_id, product_detail, transport_type, carrier_name, customer_group_id,
                                   pickup_address, pickup_lat, pickup_lng, delivery_address, delivery_lat, delivery_lng,
@@ -4959,7 +6239,7 @@ def update_order(order_id: int, o: OrderUpdate, current_user: dict = Depends(get
                 # Xe đang "Tạm ngừng hoạt động" (Báo nghỉ) thì không thể gán đơn hàng cho xe đó
                 # (chỉ áp dụng với xe có trong Đội xe; xe nhập tự do sẽ không tra thấy xe)
                 if _vehicle_is_resting(cur, resolved_plate):
-                    raise HTTPException(status_code=409, detail=_vehicle_resting_reason(resolved_plate))
+                    raise HTTPException(status_code=409, detail=_vehicle_resting_reason(resolved_plate, cur))
                 fields.append("assigned_vehicle_plate = %s")
                 values.append(resolved_plate)
                 fields.append("assigned_driver_id = %s")
@@ -5067,7 +6347,8 @@ def check_inspection_status(plate_number: str, current_user: dict = Depends(get_
     # (review_inspection se tu kich hoat lai xe khi duyet cho xe dang bao nghi).
     cur.execute("SELECT status FROM vehicles WHERE plate_number = %s", (plate_number,))
     veh = cur.fetchone()
-    if veh and (veh.get("status") or "") == VEHICLE_STATUS_INACTIVE:
+    veh_status = (veh.get("status") or "") if veh else ""
+    if veh_status in (VEHICLE_STATUS_INACTIVE, VEHICLE_STATUS_STOPPED):
         cur.close()
         conn.close()
         return {
@@ -5075,8 +6356,12 @@ def check_inspection_status(plate_number: str, current_user: dict = Depends(get_
             "is_inspected": False,
             "can_take_trip": False,
             "bypass_inspection": False,
-            "vehicle_status": VEHICLE_STATUS_INACTIVE,
-            "reason": "Xe dang Tam ngung hoat dong (Bao nghi). Khong the nhan chuyen cho den khi Dieu phoi kich hoat lai xe hoac Duyet Nhan Chuyen",
+            "vehicle_status": veh_status,
+            "reason": (
+                "Xe đang ở trạng thái Ngừng hoạt động. Không thể nhận chuyến cho đến khi Quản lý/Điều phối kích hoạt lại xe."
+                if veh_status == VEHICLE_STATUS_STOPPED
+                else "Xe dang Tam ngung hoat dong (Bao nghi). Khong the nhan chuyen cho den khi Dieu phoi kich hoat lai xe hoac Duyet Nhan Chuyen"
+            ),
         }
     cur.execute(
         "SELECT * FROM kiem_tra_dau_ngay WHERE plate_number = %s AND check_date = CURRENT_DATE ORDER BY id DESC LIMIT 1",
@@ -5147,7 +6432,11 @@ def get_inspections(date: Optional[str] = None, plate_number: Optional[str] = No
     query = """
         SELECT k.*, u.full_name as driver_name, u.username as driver_username, u.phone as driver_phone,
                v.vehicle_type, v.ownership_type, v.owner_company, v.status as vehicle_status,
-               CASE WHEN v.status = 'inactive' THEN 'Tạm ngừng hoạt động' ELSE 'Đang hoạt động' END as vehicle_status_label,
+               CASE
+                 WHEN v.status = 'stopped' THEN 'Ngừng hoạt động'
+                 WHEN v.status = 'inactive' THEN 'Tạm ngừng hoạt động'
+                 ELSE 'Đang hoạt động'
+               END as vehicle_status_label,
                rv.full_name as resolver_name
         FROM kiem_tra_dau_ngay k
         LEFT JOIN users u ON k.driver_id = u.id

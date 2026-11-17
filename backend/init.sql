@@ -413,3 +413,58 @@ CREATE TABLE IF NOT EXISTS device_tokens (
     is_active BOOLEAN DEFAULT TRUE,
     created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
 );
+
+-- Bảng danh sách ảnh Mã QR cố định của Cây dầu gắn theo từng phương tiện
+CREATE TABLE IF NOT EXISTS gas_station_vehicle_qr_codes (
+    id SERIAL PRIMARY KEY,
+    gas_station_id INT NOT NULL REFERENCES gas_stations(id) ON DELETE CASCADE,
+    plate_number VARCHAR(50) NOT NULL,
+    qr_image_url TEXT NOT NULL,
+    qr_code_label VARCHAR(150),
+    note TEXT,
+    is_active BOOLEAN DEFAULT TRUE,
+    updated_by VARCHAR(100),
+    created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
+    UNIQUE (gas_station_id, plate_number)
+);
+CREATE INDEX IF NOT EXISTS ix_gas_station_qr_plate ON gas_station_vehicle_qr_codes(plate_number);
+CREATE INDEX IF NOT EXISTS ix_gas_station_qr_station ON gas_station_vehicle_qr_codes(gas_station_id);
+
+-- Bảng Đề xuất đổ dầu, Duyệt mở Mã QR 1 lần và Nghiệm thu sau khi đổ dầu (Task T2)
+CREATE TABLE IF NOT EXISTS fuel_requests (
+    id SERIAL PRIMARY KEY,
+    plate_number VARCHAR(50) NOT NULL,
+    driver_id INT REFERENCES users(id) ON DELETE SET NULL,
+    driver_name VARCHAR(150),
+    gas_station_id INT REFERENCES gas_stations(id) ON DELETE SET NULL,
+    gas_station_name VARCHAR(150),
+    order_id INT REFERENCES orders(id) ON DELETE SET NULL,
+    order_code VARCHAR(80),
+    before_taplo_photo_url TEXT NOT NULL,
+    before_odo_km DOUBLE PRECISION,
+    request_note TEXT,
+    request_gps_lat DOUBLE PRECISION,
+    request_gps_lng DOUBLE PRECISION,
+    status VARCHAR(30) DEFAULT 'pending', -- 'pending' | 'approved' | 'completed' | 'rejected'
+    qr_code_id INT REFERENCES gas_station_vehicle_qr_codes(id) ON DELETE SET NULL,
+    qr_image_url TEXT,
+    qr_code_label VARCHAR(150),
+    approved_by_id INT REFERENCES users(id) ON DELETE SET NULL,
+    approved_by_name VARCHAR(150),
+    approved_note TEXT,
+    approved_at TIMESTAMP WITH TIME ZONE,
+    after_taplo_photo_url TEXT,
+    after_odo_km DOUBLE PRECISION,
+    fuel_receipt_photo_url TEXT,
+    liters_filled DOUBLE PRECISION,
+    completion_note TEXT,
+    completion_gps_lat DOUBLE PRECISION,
+    completion_gps_lng DOUBLE PRECISION,
+    requested_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
+    completed_at TIMESTAMP WITH TIME ZONE,
+    updated_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
+);
+CREATE INDEX IF NOT EXISTS ix_fuel_requests_plate ON fuel_requests(plate_number);
+CREATE INDEX IF NOT EXISTS ix_fuel_requests_status ON fuel_requests(status);
+CREATE INDEX IF NOT EXISTS ix_fuel_requests_requested_at ON fuel_requests(requested_at DESC);

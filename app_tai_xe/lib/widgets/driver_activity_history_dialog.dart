@@ -36,6 +36,7 @@ class _DriverActivityHistoryDialogState
   // Danh sách loại hoạt động hiển thị trong bộ lọc (khớp action backend ghi)
   static const Map<String, String> _actionLabels = {
     'BAO_NGHI': 'Báo nghỉ',
+    'NGUNG_HOAT_DONG': 'Ngừng hoạt động',
     'VEHOATDONG': 'Hủy báo nghỉ / Kích hoạt xe',
   };
 

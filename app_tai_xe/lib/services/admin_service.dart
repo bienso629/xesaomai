@@ -481,7 +481,7 @@ class AdminService {
 
   /// Gọi API Zalo OA, trả về {'ok': bool, 'status': int, 'data': dynamic, 'message': String}
   static Future<Map<String, dynamic>> _zaloCall(String method, String path,
-      {Map<String, dynamic>? body}) async {
+      {Map<String, dynamic>? body, int timeoutSeconds = 25}) async {
     try {
       final uri = Uri.parse('$baseUrl/zalo-oa/$path');
       final headers = await _headers();
@@ -489,7 +489,7 @@ class AdminService {
       final res = await (method == 'POST'
               ? http.post(uri, headers: headers, body: body != null ? jsonEncode(body) : null)
               : http.get(uri, headers: headers))
-          .timeout(const Duration(seconds: 10));
+          .timeout(Duration(seconds: timeoutSeconds));
       await _checkUnauthorized(res);
       final decoded = res.bodyBytes.isEmpty
           ? null
@@ -531,9 +531,9 @@ class AdminService {
   static Future<Map<String, dynamic>> fetchZaloOaChatGroups() =>
       _zaloCall('GET', 'chat-groups');
 
-  /// Tự động làm mới dữ liệu nhóm hội thoại Zalo OA (dùng cho cột khách hàng)
+  /// Kết nối Zalo OA và đồng bộ trực tiếp danh sách nhóm Zalo OA về phần mềm
   static Future<Map<String, dynamic>> refreshZaloOaChatGroups() =>
-      _zaloCall('POST', 'chat-groups/refresh');
+      _zaloCall('POST', 'chat-groups/refresh', timeoutSeconds: 45);
 
   /// Đặt tên hiển thị cho nhóm hội thoại (Zalo không cung cấp tên nhóm qua API)
   static Future<Map<String, dynamic>> renameZaloOaChatGroup(
@@ -664,6 +664,303 @@ class AdminService {
       if (res.statusCode == 200) return true;
     } catch (_) {}
     return false;
+  }
+
+  /// Lấy danh sách ảnh Mã QR cố định của Cây dầu gắn theo từng phương tiện
+  static Future<List<dynamic>> fetchGasStationQrCodes({
+    int? gasStationId,
+    String? plateNumber,
+    bool activeOnly = false,
+  }) async {
+    try {
+      final params = <String, String>{};
+      if (gasStationId != null) params['gas_station_id'] = '$gasStationId';
+      if (plateNumber != null && plateNumber.trim().isNotEmpty) {
+        params['plate_number'] = plateNumber.trim();
+      }
+      if (activeOnly) params['active_only'] = 'true';
+      final uri = Uri.parse('$baseUrl/gas-station-qr-codes')
+          .replace(queryParameters: params.isEmpty ? null : params);
+      final res = await http
+          .get(uri, headers: await _headers())
+          .timeout(const Duration(seconds: 8));
+      await _checkUnauthorized(res);
+      if (res.statusCode == 200) {
+        return jsonDecode(utf8.decode(res.bodyBytes)) as List<dynamic>;
+      }
+    } catch (_) {}
+    return [];
+  }
+
+  /// Tra cứu Mã QR Cây dầu đang kích hoạt của 1 biển số xe (dùng khi mở QR sau duyệt đề xuất đổ dầu)
+  static Future<Map<String, dynamic>?> fetchGasStationQrByVehicle(
+    String plateNumber, {
+    int? gasStationId,
+  }) async {
+    try {
+      final encoded = Uri.encodeComponent(plateNumber.trim());
+      final uri = Uri.parse(
+        gasStationId != null
+            ? '$baseUrl/gas-station-qr-codes/by-vehicle/$encoded?gas_station_id=$gasStationId'
+            : '$baseUrl/gas-station-qr-codes/by-vehicle/$encoded',
+      );
+      final res = await http
+          .get(uri, headers: await _headers())
+          .timeout(const Duration(seconds: 8));
+      await _checkUnauthorized(res);
+      if (res.statusCode == 200) {
+        return jsonDecode(utf8.decode(res.bodyBytes)) as Map<String, dynamic>;
+      }
+    } catch (_) {}
+    return null;
+  }
+
+  /// Tạo mới / cập nhật (upsert) hoặc chỉnh sửa ảnh Mã QR Cây dầu theo từng xe
+  static Future<Map<String, dynamic>> saveGasStationQrCode({
+    int? id,
+    required int gasStationId,
+    required String plateNumber,
+    required String qrImageUrl,
+    String? qrCodeLabel,
+    String? note,
+    bool isActive = true,
+  }) async {
+    try {
+      final uri = id == null
+          ? Uri.parse('$baseUrl/gas-station-qr-codes')
+          : Uri.parse('$baseUrl/gas-station-qr-codes/$id');
+      final body = jsonEncode({
+        'gas_station_id': gasStationId,
+        'plate_number': plateNumber.trim(),
+        'qr_image_url': qrImageUrl.trim(),
+        'qr_code_label': qrCodeLabel?.trim(),
+        'note': note?.trim(),
+        'is_active': isActive,
+      });
+      final res = await (id == null
+              ? http.post(uri, headers: await _headers(), body: body)
+              : http.put(uri, headers: await _headers(), body: body))
+          .timeout(const Duration(seconds: 10));
+      await _checkUnauthorized(res);
+      final decoded = res.bodyBytes.isEmpty
+          ? null
+          : jsonDecode(utf8.decode(res.bodyBytes));
+      if (res.statusCode == 200 || res.statusCode == 201) {
+        return {'success': true, 'data': decoded};
+      }
+      final detail = decoded is Map ? decoded['detail'] : null;
+      return {
+        'success': false,
+        'message': detail?.toString() ?? 'Lỗi lưu Mã QR Cây dầu (${res.statusCode})',
+      };
+    } catch (e) {
+      return {'success': false, 'message': 'Không thể kết nối API: $e'};
+    }
+  }
+
+  /// Xóa bản ghi Mã QR Cây dầu của phương tiện
+  static Future<bool> deleteGasStationQrCode(int id) async {
+    try {
+      final res = await http
+          .delete(
+            Uri.parse('$baseUrl/gas-station-qr-codes/$id'),
+            headers: await _headers(),
+          )
+          .timeout(const Duration(seconds: 8));
+      await _checkUnauthorized(res);
+      return res.statusCode == 200 || res.statusCode == 204;
+    } catch (_) {}
+    return false;
+  }
+
+  /// Lấy danh sách Đề xuất đổ dầu (phục vụ Điều phối, Quản lý và lịch sử của Tài xế)
+  static Future<List<dynamic>> fetchFuelRequests({
+    String? plateNumber,
+    String? status,
+    int? gasStationId,
+    int limit = 100,
+  }) async {
+    try {
+      final params = <String, String>{'limit': '$limit'};
+      if (plateNumber != null && plateNumber.trim().isNotEmpty) {
+        params['plate_number'] = plateNumber.trim();
+      }
+      if (status != null && status.trim().isNotEmpty) {
+        params['status'] = status.trim();
+      }
+      if (gasStationId != null) {
+        params['gas_station_id'] = '$gasStationId';
+      }
+      final uri = Uri.parse(
+        '$baseUrl/fuel-requests',
+      ).replace(queryParameters: params);
+      final res = await http
+          .get(uri, headers: await _headers())
+          .timeout(const Duration(seconds: 8));
+      await _checkUnauthorized(res);
+      if (res.statusCode == 200) {
+        return jsonDecode(utf8.decode(res.bodyBytes)) as List<dynamic>;
+      }
+    } catch (_) {}
+    return [];
+  }
+
+  /// Lấy đề xuất đổ dầu đang hoạt động (pending / approved) của phương tiện
+  static Future<Map<String, dynamic>?> fetchActiveFuelRequest(
+    String plateNumber,
+  ) async {
+    try {
+      final encoded = Uri.encodeComponent(plateNumber.trim());
+      final res = await http
+          .get(
+            Uri.parse('$baseUrl/fuel-requests/active/$encoded'),
+            headers: await _headers(),
+          )
+          .timeout(const Duration(seconds: 8));
+      await _checkUnauthorized(res);
+      if (res.statusCode == 200) {
+        return jsonDecode(utf8.decode(res.bodyBytes)) as Map<String, dynamic>;
+      }
+    } catch (_) {}
+    return null;
+  }
+
+  /// Tài xế tạo mới Đề xuất đổ dầu (bắt buộc kèm ảnh Đồng hồ taplo)
+  static Future<Map<String, dynamic>> createFuelRequest({
+    required String plateNumber,
+    required String beforeTaploPhotoUrl,
+    double? beforeOdoKm,
+    int? gasStationId,
+    int? orderId,
+    String? orderCode,
+    String? requestNote,
+    double? gpsLat,
+    double? gpsLng,
+  }) async {
+    try {
+      final body = jsonEncode({
+        'plate_number': plateNumber.trim(),
+        'before_taplo_photo_url': beforeTaploPhotoUrl.trim(),
+        if (beforeOdoKm != null) 'before_odo_km': beforeOdoKm,
+        if (gasStationId != null) 'gas_station_id': gasStationId,
+        if (orderId != null) 'order_id': orderId,
+        if (orderCode != null && orderCode.trim().isNotEmpty)
+          'order_code': orderCode.trim(),
+        if (requestNote != null && requestNote.trim().isNotEmpty)
+          'request_note': requestNote.trim(),
+        if (gpsLat != null) 'gps_lat': gpsLat,
+        if (gpsLng != null) 'gps_lng': gpsLng,
+      });
+      final res = await http
+          .post(
+            Uri.parse('$baseUrl/fuel-requests'),
+            headers: await _headers(),
+            body: body,
+          )
+          .timeout(const Duration(seconds: 12));
+      await _checkUnauthorized(res);
+      final decoded = res.bodyBytes.isEmpty
+          ? null
+          : jsonDecode(utf8.decode(res.bodyBytes));
+      if (res.statusCode == 200 || res.statusCode == 201) {
+        return {'success': true, 'data': decoded};
+      }
+      final detail = decoded is Map ? decoded['detail'] : null;
+      return {
+        'success': false,
+        'message':
+            detail?.toString() ??
+            'Không thể gửi đề xuất đổ dầu (${res.statusCode})',
+      };
+    } catch (e) {
+      return {'success': false, 'message': 'Lỗi kết nối API: $e'};
+    }
+  }
+
+  /// Điều phối / Quản lý phê duyệt (mở Mã QR 1 lần) hoặc từ chối đề xuất đổ dầu
+  static Future<Map<String, dynamic>> reviewFuelRequest(
+    int requestId, {
+    required String action,
+    int? gasStationId,
+    String? note,
+  }) async {
+    try {
+      final body = jsonEncode({
+        'action': action,
+        if (gasStationId != null) 'gas_station_id': gasStationId,
+        if (note != null && note.trim().isNotEmpty) 'note': note.trim(),
+      });
+      final res = await http
+          .post(
+            Uri.parse('$baseUrl/fuel-requests/$requestId/review'),
+            headers: await _headers(),
+            body: body,
+          )
+          .timeout(const Duration(seconds: 10));
+      await _checkUnauthorized(res);
+      final decoded = res.bodyBytes.isEmpty
+          ? null
+          : jsonDecode(utf8.decode(res.bodyBytes));
+      if (res.statusCode == 200) {
+        return {'success': true, 'data': decoded};
+      }
+      final detail = decoded is Map ? decoded['detail'] : null;
+      return {
+        'success': false,
+        'message':
+            detail?.toString() ??
+            'Không thể phê duyệt đề xuất đổ dầu (${res.statusCode})',
+      };
+    } catch (e) {
+      return {'success': false, 'message': 'Lỗi kết nối API: $e'};
+    }
+  }
+
+  /// Tài xế gửi 02 ảnh nghiệm thu (Ảnh Đồng hồ taplo sau khi đổ + Ảnh Phiếu nhận dầu) để đóng lượt đổ và ẩn Mã QR
+  static Future<Map<String, dynamic>> completeFuelRequest(
+    int requestId, {
+    required String afterTaploPhotoUrl,
+    required String fuelReceiptPhotoUrl,
+    double? afterOdoKm,
+    double? litersFilled,
+    String? note,
+    double? gpsLat,
+    double? gpsLng,
+  }) async {
+    try {
+      final body = jsonEncode({
+        'after_taplo_photo_url': afterTaploPhotoUrl.trim(),
+        'fuel_receipt_photo_url': fuelReceiptPhotoUrl.trim(),
+        if (afterOdoKm != null) 'after_odo_km': afterOdoKm,
+        if (litersFilled != null) 'liters_filled': litersFilled,
+        if (note != null && note.trim().isNotEmpty) 'note': note.trim(),
+        if (gpsLat != null) 'gps_lat': gpsLat,
+        if (gpsLng != null) 'gps_lng': gpsLng,
+      });
+      final res = await http
+          .post(
+            Uri.parse('$baseUrl/fuel-requests/$requestId/complete'),
+            headers: await _headers(),
+            body: body,
+          )
+          .timeout(const Duration(seconds: 12));
+      await _checkUnauthorized(res);
+      final decoded = res.bodyBytes.isEmpty
+          ? null
+          : jsonDecode(utf8.decode(res.bodyBytes));
+      if (res.statusCode == 200) {
+        return {'success': true, 'data': decoded};
+      }
+      final detail = decoded is Map ? decoded['detail'] : null;
+      return {
+        'success': false,
+        'message':
+            detail?.toString() ??
+            'Không thể hoàn tất nghiệm thu đổ dầu (${res.statusCode})',
+      };
+    } catch (e) {
+      return {'success': false, 'message': 'Lỗi kết nối API: $e'};
+    }
   }
 
   /// Lấy danh sách tài xế
@@ -1006,6 +1303,37 @@ class AdminService {
     }
   }
 
+  /// Tải ảnh lên máy chủ từ mảng byte (tương thích đa nền tảng với FilePicker)
+  static Future<Map<String, dynamic>> uploadImageBytes(
+    List<int> bytes,
+    String filename,
+  ) async {
+    try {
+      final request = http.MultipartRequest(
+        'POST',
+        Uri.parse('$baseUrl/upload/image'),
+      );
+      request.files.add(
+        http.MultipartFile.fromBytes('file', bytes, filename: filename),
+      );
+      final streamedResponse = await request.send().timeout(
+        const Duration(seconds: 20),
+      );
+      final response = await http.Response.fromStream(streamedResponse);
+      if (response.statusCode == 200) {
+        final data = jsonDecode(utf8.decode(response.bodyBytes));
+        return {
+          'success': true,
+          'url': data['url'],
+          'filename': data['filename'],
+        };
+      }
+      return {'success': false, 'message': 'Lỗi máy chủ khi tải ảnh (${response.statusCode})'};
+    } catch (e) {
+      return {'success': false, 'message': 'Không thể upload ảnh: $e'};
+    }
+  }
+
   /// Import danh sách khách hàng từ file Excel (theo mẫu "cấu trúc khách hàng.xlsx").
   /// [bytes] là nội dung file .xlsx, [filename] là tên gốc của file.
   /// Trả về: {success, inserted, updated, groupsLearned, skipped, skippedDetails, errors, total, message}
@@ -1038,6 +1366,8 @@ class AdminService {
           'inserted': data['inserted'] ?? 0,
           'updated': data['updated'] ?? 0,
           'groupsLearned': data['groups_learned'] ?? 0,
+          'withGroup': data['with_group'] ?? 0,
+          'missingGroupColumns': List<String>.from(data['missing_group_columns'] ?? []),
           'skipped': data['skipped'] ?? 0,
           'skippedDetails': List<String>.from(data['skipped_details'] ?? []),
           'errors': List<String>.from(data['errors'] ?? []),

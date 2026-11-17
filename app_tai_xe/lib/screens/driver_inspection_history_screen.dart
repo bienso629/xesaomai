@@ -4,7 +4,6 @@ import '../widgets/center_loading_overlay.dart';
 import 'package:provider/provider.dart';
 import '../services/admin_service.dart';
 import '../services/app_state.dart';
-import 'camera_inspection_screen.dart';
 import '../config/api_config.dart';
 
 class DriverInspectionHistoryScreen extends StatefulWidget {
@@ -490,20 +489,6 @@ class _DriverInspectionHistoryScreenState extends State<DriverInspectionHistoryS
                   ),
           ),
         ],
-      ),
-      floatingActionButton: FloatingActionButton.extended(
-        backgroundColor: Colors.blue.shade800,
-        foregroundColor: Colors.white,
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(4)),
-        elevation: 3,
-        icon: const Icon(Icons.camera_alt, size: 20),
-        label: const Text("Chụp kiểm tra xe", style: TextStyle(fontWeight: FontWeight.bold, fontSize: 13)),
-        onPressed: () async {
-          final result = await Navigator.push(context, MaterialPageRoute(builder: (_) => const CameraInspectionScreen()));
-          if (result == true || mounted) {
-            _loadHistory();
-          }
-        },
       ),
     );
   }

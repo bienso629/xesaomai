@@ -23,6 +23,7 @@ class _RealtimeHeaderNotificationBellState
   bool _isPanelOpen = false;
   List<dynamic> _inspections = [];
   List<dynamic> _orders = [];
+  List<dynamic> _fuelRequests = [];
 
   late final AnimationController _animController;
   late final Animation<Offset> _slideAnim;
@@ -87,6 +88,7 @@ class _RealtimeHeaderNotificationBellState
       final results = await Future.wait([
         AdminService.fetchInspections(),
         AdminService.fetchOrders(),
+        AdminService.fetchFuelRequests(limit: 50),
       ]);
       if (mounted) {
         final state = context.read<AppState>();
@@ -94,6 +96,7 @@ class _RealtimeHeaderNotificationBellState
         setState(() {
           _inspections = results[0];
           _orders = results[1];
+          _fuelRequests = results[2];
           _isLoading = false;
         });
         final collected = _collectReports(state);
@@ -347,6 +350,85 @@ class _RealtimeHeaderNotificationBellState
         'icon': Icons.car_crash_rounded,
         'group': 'ALERT',
         'type': 'VEHICLE',
+      });
+    }
+
+    // 4. Báo cáo Đề xuất đổ dầu & Mở Mã QR 1 lần (Task T2)
+    for (final item in _fuelRequests) {
+      if (item is! Map) continue;
+      final reqId = item['id'];
+      final plate = (item['plate_number'] ?? 'Chưa rõ xe').toString();
+      final driverName =
+          (item['resolved_driver_name'] ?? item['driver_name'] ?? 'Tài xế')
+              .toString();
+      final phone = (item['driver_phone'] ?? '').toString();
+      final st = (item['status'] ?? 'pending').toString().toLowerCase();
+      final stationName =
+          (item['resolved_gas_station_name'] ??
+                  item['gas_station_name'] ??
+                  'Cây dầu')
+              .toString();
+      final beforeKm = item['before_odo_km'];
+      final afterKm = item['after_odo_km'];
+      final liters = item['liters_filled'];
+      final dt = _parseTime(
+        item['completed_at'] ??
+            item['approved_at'] ??
+            item['updated_at'] ??
+            item['requested_at'],
+      );
+      final notifId = 'fuel_${reqId}_$st';
+
+      String title;
+      String desc;
+      Color badgeColor;
+      IconData iconData;
+      String groupKey;
+
+      if (st == 'pending') {
+        title = 'Đề xuất đổ dầu • Chờ duyệt mở Mã QR';
+        desc =
+            'Xe $plate xin đổ dầu tại $stationName${beforeKm != null ? ' • Taplo: $beforeKm km' : ''} (Đã chụp ảnh Đồng hồ taplo)';
+        badgeColor = Colors.deepOrange.shade700;
+        iconData = Icons.local_gas_station_rounded;
+        groupKey = 'ALERT';
+      } else if (st == 'approved') {
+        title = 'Đã duyệt đổ dầu • Đang mở Mã QR 1 lần';
+        desc =
+            'Xe $plate đang mở Mã QR tại $stationName • Chờ tài xế chụp Taplo + Phiếu nhận dầu để đóng QR';
+        badgeColor = Colors.green.shade700;
+        iconData = Icons.qr_code_2_rounded;
+        groupKey = 'TRIP';
+      } else if (st == 'completed') {
+        title = 'Hoàn tất đổ dầu & Nghiệm thu (Đã ẩn QR)';
+        desc =
+            'Xe $plate đã đổ dầu xong tại $stationName${liters != null ? ' ($liters lít)' : ''}${afterKm != null ? ' • Taplo sau đổ: $afterKm km' : ''}';
+        badgeColor = Colors.teal.shade700;
+        iconData = Icons.verified_rounded;
+        groupKey = 'TRIP';
+      } else {
+        title = 'Từ chối đề xuất đổ dầu';
+        desc = 'Xe $plate tại $stationName';
+        badgeColor = Colors.red.shade700;
+        iconData = Icons.cancel_outlined;
+        groupKey = 'ALERT';
+      }
+
+      reports.add({
+        'id': notifId,
+        'fuel_request_id': reqId,
+        'fuel_status': st,
+        'driver_name': driverName,
+        'phone': phone,
+        'plate': plate,
+        'title': title,
+        'description': desc,
+        'time_label': _formatClock(dt),
+        'timestamp': dt,
+        'color': badgeColor,
+        'icon': iconData,
+        'group': groupKey,
+        'type': 'FUEL_REQUEST',
       });
     }
 
@@ -1352,6 +1434,127 @@ class _SlideNotificationPanelContentState
                                                         height: 1.32,
                                                       ),
                                                     ),
+                                                    if (item['type'] ==
+                                                            'FUEL_REQUEST' &&
+                                                        item['fuel_status'] ==
+                                                            'pending' &&
+                                                        item['fuel_request_id'] !=
+                                                            null) ...[
+                                                      const SizedBox(height: 8),
+                                                      Row(
+                                                        children: [
+                                                          SizedBox(
+                                                            height: 30,
+                                                            child:
+                                                                ElevatedButton
+                                                                    .icon(
+                                                              style: ElevatedButton
+                                                                  .styleFrom(
+                                                                backgroundColor:
+                                                                    Colors.green
+                                                                        .shade700,
+                                                                foregroundColor:
+                                                                    Colors
+                                                                        .white,
+                                                                elevation: 0,
+                                                                padding:
+                                                                    const EdgeInsets
+                                                                        .symmetric(
+                                                                  horizontal:
+                                                                      10,
+                                                                ),
+                                                                shape:
+                                                                    RoundedRectangleBorder(
+                                                                  borderRadius:
+                                                                      BorderRadius
+                                                                          .circular(
+                                                                              4),
+                                                                ),
+                                                              ),
+                                                              icon: const Icon(
+                                                                Icons
+                                                                    .check_circle_outline,
+                                                                size: 14,
+                                                              ),
+                                                              label: const Text(
+                                                                'Duyệt (OK) - Mở Mã QR 1 lần',
+                                                                style:
+                                                                    TextStyle(
+                                                                  fontSize:
+                                                                      11.5,
+                                                                  fontWeight:
+                                                                      FontWeight
+                                                                          .bold,
+                                                                ),
+                                                              ),
+                                                              onPressed:
+                                                                  () async {
+                                                                final int?
+                                                                    reqId = int
+                                                                        .tryParse(
+                                                                  item['fuel_request_id']
+                                                                      .toString(),
+                                                                );
+                                                                if (reqId ==
+                                                                    null) {
+                                                                  return;
+                                                                }
+                                                                final res = await AdminService
+                                                                    .reviewFuelRequest(
+                                                                  reqId,
+                                                                  action:
+                                                                      'approve',
+                                                                );
+                                                                if (!context
+                                                                    .mounted) {
+                                                                  return;
+                                                                }
+                                                                if (res['success'] ==
+                                                                    true) {
+                                                                  if (!isRead) {
+                                                                    state.toggleNotificationRead(
+                                                                        notifId);
+                                                                  }
+                                                                  widget
+                                                                      .onRefresh();
+                                                                  ScaffoldMessenger
+                                                                      .of(context)
+                                                                      .showSnackBar(
+                                                                    SnackBar(
+                                                                      backgroundColor:
+                                                                          Colors
+                                                                              .green
+                                                                              .shade700,
+                                                                      content:
+                                                                          Text(
+                                                                        'Đã duyệt đề xuất đổ dầu và mở Mã QR 1 lần cho xe $plate!',
+                                                                      ),
+                                                                    ),
+                                                                  );
+                                                                } else {
+                                                                  ScaffoldMessenger
+                                                                      .of(context)
+                                                                      .showSnackBar(
+                                                                    SnackBar(
+                                                                      backgroundColor:
+                                                                          Colors
+                                                                              .red
+                                                                              .shade700,
+                                                                      content:
+                                                                          Text(
+                                                                        (res['message'] ??
+                                                                                'Không thể duyệt đề xuất')
+                                                                            .toString(),
+                                                                      ),
+                                                                    ),
+                                                                  );
+                                                                }
+                                                              },
+                                                            ),
+                                                          ),
+                                                        ],
+                                                      ),
+                                                    ],
                                                   ],
                                                 ),
                                               ),

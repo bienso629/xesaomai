@@ -23,6 +23,7 @@ import '../widgets/order_attachments_section.dart';
 import '../models/reminder_model.dart';
 import '../models/breakdown_model.dart';
 import '../config/api_config.dart';
+import 'package:file_picker/file_picker.dart';
 
 class DispatchSupervisorScreen extends StatefulWidget {
   /// Diem neo kiem thu (test seam): cho phep bo kiem thu nap du lieu gia
@@ -77,10 +78,17 @@ class _DispatchSupervisorScreenState extends State<DispatchSupervisorScreen> {
   bool _isSyncingFleet = false;
   String _vehicleStatusBusy = '';
 
-  /// Xe đang Tạm ngừng hoạt động (không còn trên Vietmap / Bình Anh)
-  bool _isVehicleInactive(dynamic v) =>
-      v is Map &&
-      (v['in_fleet'] == false || (v['status'] ?? '').toString() == 'inactive');
+  /// Mã trạng thái chuẩn của phương tiện: 'ready' | 'inactive' (Báo nghỉ) | 'stopped' (Ngừng hoạt động)
+  String _vehicleStatusValue(dynamic v) {
+    if (v is! Map) return 'ready';
+    final st = (v['status'] ?? '').toString().trim().toLowerCase();
+    if (st == 'stopped') return 'stopped';
+    if (st == 'inactive' || v['in_fleet'] == false) return 'inactive';
+    return 'ready';
+  }
+
+  /// Xe đang Báo nghỉ hoặc Ngừng hoạt động (không được gán đơn hàng mới)
+  bool _isVehicleInactive(dynamic v) => _vehicleStatusValue(v) != 'ready';
 
   /// Xe đang hoạt động: dùng cho các ô chọn xe của đơn hàng
   List<dynamic> get _activeVehicles =>
@@ -107,6 +115,7 @@ class _DispatchSupervisorScreenState extends State<DispatchSupervisorScreen> {
   }
 
   List<dynamic> _inspections = [];
+  List<dynamic> _fuelRequests = [];
 
   // Bộ lọc & phân trang cho Block Báo cáo Realtime Trạng thái Tài xế
   String _realtimeReportFilter = 'ALL'; // ALL, TRIP, INSPECTION, ALERT
@@ -124,6 +133,7 @@ class _DispatchSupervisorScreenState extends State<DispatchSupervisorScreen> {
   // Tìm kiếm, Lọc và Phân trang đội xe & phương tiện
   String _vehicleSearchQuery = '';
   String _selectedOwnershipFilter = 'ALL';
+  String _selectedVehicleStatusFilter = 'ready';
   final TextEditingController _vehicleSearchCtrl = TextEditingController();
   int _vehicleCurrentPage = 1;
   int _vehiclePageSize = 10;
@@ -223,6 +233,7 @@ class _DispatchSupervisorScreenState extends State<DispatchSupervisorScreen> {
         AdminService.fetchVehicles(includeInactive: true),
         AdminService.fetchInspections(),
         AdminService.fetchActiveShifts(),
+        AdminService.fetchFuelRequests(limit: 80),
       ]);
       if (mounted) {
         setState(() {
@@ -230,6 +241,7 @@ class _DispatchSupervisorScreenState extends State<DispatchSupervisorScreen> {
           _vehicles = results[1];
           _inspections = results[2];
           _activeShifts = results[3];
+          _fuelRequests = results[4];
         });
       }
     } catch (_) {}
@@ -426,6 +438,7 @@ class _DispatchSupervisorScreenState extends State<DispatchSupervisorScreen> {
       AdminService.fetchActiveShifts(),
       AdminService.fetchInspections(),
       AdminService.fetchDrivers(),
+      AdminService.fetchFuelRequests(limit: 80),
     ]);
 
     if (mounted) {
@@ -441,6 +454,7 @@ class _DispatchSupervisorScreenState extends State<DispatchSupervisorScreen> {
         _activeShifts = results[8] as List<dynamic>;
         _inspections = results[9] as List<dynamic>;
         _drivers = results[10] as List<dynamic>;
+        _fuelRequests = results[11] as List<dynamic>;
         _isLoading = false;
       });
     }
@@ -792,6 +806,10 @@ class _DispatchSupervisorScreenState extends State<DispatchSupervisorScreen> {
 
           // KHỐI QUẢN LÝ CA TRỰC ĐIỀU PHỐI (DISPATCHER SHIFTS & ON DUTY)
           _buildActiveDispatchersCard(state),
+          const SizedBox(height: 16),
+
+          // KHỐI ĐỀ XUẤT ĐỔ DẦU, DUYỆT MỞ MÃ QR 1 LẦN & NGHIỆM THU (TASK T2)
+          _buildFuelRequestsOverviewCard(state),
           const SizedBox(height: 16),
 
           // KHỐI BÁO CÁO REALTIME TRẠNG THÁI TÀI XẾ (Đã loại bỏ theo yêu cầu, chuyển hoàn toàn sang Widget Notification Bell trên Header)
@@ -2661,7 +2679,14 @@ class _DispatchSupervisorScreenState extends State<DispatchSupervisorScreen> {
             }
           }
 
-          // 2. Kiểm tra từ khóa tìm kiếm (Search Query)
+          // 2. Kiểm tra trạng thái phương tiện (Status Filter - mặc định: 'ready')
+          if (_selectedVehicleStatusFilter != 'ALL') {
+            if (_vehicleStatusValue(v) != _selectedVehicleStatusFilter) {
+              return false;
+            }
+          }
+
+          // 3. Kiểm tra từ khóa tìm kiếm (Search Query)
           if (query.isNotEmpty) {
             final plate = (v['plate_number'] ?? '').toString().toLowerCase();
             final vtype = (v['vehicle_type'] ?? '').toString().toLowerCase();
@@ -2829,6 +2854,68 @@ class _DispatchSupervisorScreenState extends State<DispatchSupervisorScreen> {
                           if (val != null) {
                             setState(() {
                               _selectedOwnershipFilter = val;
+                              _vehicleCurrentPage = 1;
+                            });
+                          }
+                        },
+                      ),
+                    ),
+                  ),
+                  const SizedBox(width: 10),
+                  // Bộ lọc theo Trạng thái phương tiện (mặc định: Sẵn sàng hoạt động)
+                  Expanded(
+                    flex: 2,
+                    child: SizedBox(
+                      height: 36,
+                      child: DropdownButtonFormField<String>(
+                        value: _selectedVehicleStatusFilter,
+                        isExpanded: true,
+                        isDense: true,
+                        iconSize: 18,
+                        style: const TextStyle(
+                          fontSize: 12.5,
+                          color: Colors.black87,
+                          fontFamily: 'Nunito',
+                        ),
+                        decoration: const InputDecoration(
+                          isDense: true,
+                          constraints: BoxConstraints(
+                            minHeight: 36,
+                            maxHeight: 36,
+                          ),
+                          prefixIcon: Icon(Icons.toggle_on_outlined, size: 17),
+                          prefixIconConstraints: BoxConstraints(
+                            minWidth: 34,
+                            minHeight: 36,
+                            maxHeight: 36,
+                          ),
+                          contentPadding: EdgeInsets.symmetric(
+                            horizontal: 10,
+                            vertical: 0,
+                          ),
+                        ),
+                        items: const [
+                          DropdownMenuItem(
+                            value: 'ALL',
+                            child: Text("Tất cả trạng thái"),
+                          ),
+                          DropdownMenuItem(
+                            value: 'ready',
+                            child: Text("Sẵn sàng hoạt động"),
+                          ),
+                          DropdownMenuItem(
+                            value: 'inactive',
+                            child: Text("Báo nghỉ"),
+                          ),
+                          DropdownMenuItem(
+                            value: 'stopped',
+                            child: Text("Ngừng hoạt động"),
+                          ),
+                        ],
+                        onChanged: (val) {
+                          if (val != null) {
+                            setState(() {
+                              _selectedVehicleStatusFilter = val;
                               _vehicleCurrentPage = 1;
                             });
                           }
@@ -5063,10 +5150,14 @@ class _DispatchSupervisorScreenState extends State<DispatchSupervisorScreen> {
           final address = (gs['address'] ?? '').toString().toLowerCase();
           final lat = (gs['lat'] ?? '').toString().toLowerCase();
           final lng = (gs['lng'] ?? '').toString().toLowerCase();
+          final qrPlates = (gs['qr_plates'] is List)
+              ? (gs['qr_plates'] as List).join(' ').toLowerCase()
+              : '';
           return name.contains(query) ||
               address.contains(query) ||
               lat.contains(query) ||
-              lng.contains(query);
+              lng.contains(query) ||
+              qrPlates.contains(query);
         }).toList();
 
         final totalItems = filteredStations.length;
@@ -5160,6 +5251,92 @@ class _DispatchSupervisorScreenState extends State<DispatchSupervisorScreen> {
                     ),
                   ),
                   const SizedBox(width: 10),
+                  // Nút duyệt Đề xuất đổ dầu & mở Mã QR 1 lần
+                  SizedBox(
+                    height: 36,
+                    child: OutlinedButton.icon(
+                      style: OutlinedButton.styleFrom(
+                        backgroundColor: Colors.amber.shade50,
+                        foregroundColor: Colors.deepOrange.shade900,
+                        side: BorderSide(color: Colors.amber.shade400),
+                        elevation: 0,
+                        minimumSize: const Size(0, 36),
+                        fixedSize: const Size.fromHeight(36),
+                        tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                        padding: const EdgeInsets.symmetric(horizontal: 12),
+                        shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(4),
+                        ),
+                      ),
+                      icon: const Icon(Icons.fact_check_outlined, size: 16),
+                      label: Text(
+                        "Đề xuất đổ dầu (${_fuelRequests.where((r) => r is Map && r['status'] == 'pending').length} chờ duyệt)",
+                        style: const TextStyle(
+                          fontWeight: FontWeight.w600,
+                          fontSize: 12.5,
+                        ),
+                      ),
+                      onPressed: () => _showFuelRequestsManagerDialog(),
+                    ),
+                  ),
+                  const SizedBox(width: 8),
+                  // Nút quản lý danh sách Mã QR Cây dầu theo từng xe
+                  SizedBox(
+                    height: 36,
+                    child: OutlinedButton.icon(
+                      style: OutlinedButton.styleFrom(
+                        backgroundColor: Colors.indigo.shade50,
+                        foregroundColor: Colors.indigo.shade800,
+                        side: BorderSide(color: Colors.indigo.shade300),
+                        elevation: 0,
+                        minimumSize: const Size(0, 36),
+                        fixedSize: const Size.fromHeight(36),
+                        tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                        padding: const EdgeInsets.symmetric(horizontal: 12),
+                        shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(4),
+                        ),
+                      ),
+                      icon: const Icon(Icons.qr_code_2, size: 16),
+                      label: const Text(
+                        "Quản lý Mã QR theo xe",
+                        style: TextStyle(
+                          fontWeight: FontWeight.w600,
+                          fontSize: 12.5,
+                        ),
+                      ),
+                      onPressed: () => _showGasStationQrManagerDialog(),
+                    ),
+                  ),
+                  const SizedBox(width: 8),
+                  // Nút tải lên trực tiếp ảnh Mã QR Cây dầu gắn cho xe
+                  SizedBox(
+                    height: 36,
+                    child: ElevatedButton.icon(
+                      style: ElevatedButton.styleFrom(
+                        backgroundColor: Colors.teal.shade700,
+                        foregroundColor: Colors.white,
+                        elevation: 0,
+                        minimumSize: const Size(0, 36),
+                        fixedSize: const Size.fromHeight(36),
+                        tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                        padding: const EdgeInsets.symmetric(horizontal: 12),
+                        shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(4),
+                        ),
+                      ),
+                      icon: const Icon(Icons.cloud_upload_outlined, size: 16),
+                      label: const Text(
+                        "Tải lên Mã QR xe",
+                        style: TextStyle(
+                          fontWeight: FontWeight.w600,
+                          fontSize: 12.5,
+                        ),
+                      ),
+                      onPressed: () => _showUpsertGasStationQrDialog(),
+                    ),
+                  ),
+                  const SizedBox(width: 8),
                   // Nút thêm mới trạm dầu
                   SizedBox(
                     height: 36,
@@ -5274,6 +5451,15 @@ class _DispatchSupervisorScreenState extends State<DispatchSupervisorScreen> {
                                   ),
                                   DataColumn(
                                     label: Text(
+                                      "Mã QR theo xe",
+                                      style: TextStyle(
+                                        fontWeight: FontWeight.bold,
+                                        fontSize: 13,
+                                      ),
+                                    ),
+                                  ),
+                                  DataColumn(
+                                    label: Text(
                                       "Thao tác",
                                       style: TextStyle(
                                         fontWeight: FontWeight.bold,
@@ -5297,6 +5483,15 @@ class _DispatchSupervisorScreenState extends State<DispatchSupervisorScreen> {
                                   final radius =
                                       (gs['allowed_radius_meters'] ?? '')
                                           .toString();
+                                  final qrCount = int.tryParse(
+                                        (gs['qr_count'] ?? 0).toString(),
+                                      ) ??
+                                      0;
+                                  final qrPlates = (gs['qr_plates'] is List)
+                                      ? (gs['qr_plates'] as List)
+                                          .map((e) => e.toString())
+                                          .toList()
+                                      : <String>[];
 
                                   DataCell makeCell(Widget child) {
                                     return DataCell(
@@ -5426,11 +5621,109 @@ class _DispatchSupervisorScreenState extends State<DispatchSupervisorScreen> {
                                           ),
                                         ),
                                       ),
-                                      // Cột 5: Thao tác (Bản đồ + Sửa + Xóa)
+                                      // Cột 5: Mã QR theo xe (bấm để mở quản lý QR của trạm)
+                                      makeCell(
+                                        InkWell(
+                                          borderRadius: BorderRadius.circular(4),
+                                          onTap: () {
+                                            _showGasStationQrManagerDialog(
+                                              initialStation:
+                                                  Map<String, dynamic>.from(
+                                                    gs as Map,
+                                                  ),
+                                            );
+                                          },
+                                          child: Container(
+                                            padding: const EdgeInsets.symmetric(
+                                              horizontal: 8,
+                                              vertical: 4,
+                                            ),
+                                            decoration: BoxDecoration(
+                                              color: qrCount > 0
+                                                  ? Colors.indigo.shade50
+                                                  : Colors.grey.shade100,
+                                              borderRadius:
+                                                  BorderRadius.circular(4),
+                                              border: Border.all(
+                                                color: qrCount > 0
+                                                    ? Colors.indigo.shade200
+                                                    : Colors.grey.shade300,
+                                              ),
+                                            ),
+                                            child: Row(
+                                              mainAxisSize: MainAxisSize.min,
+                                              children: [
+                                                Icon(
+                                                  Icons.qr_code_2,
+                                                  size: 14,
+                                                  color: qrCount > 0
+                                                      ? Colors.indigo.shade700
+                                                      : Colors.grey.shade600,
+                                                ),
+                                                const SizedBox(width: 5),
+                                                Text(
+                                                  qrCount > 0
+                                                      ? "$qrCount xe (${qrPlates.take(2).join(', ')}${qrPlates.length > 2 ? '...' : ''})"
+                                                      : "Chưa gắn mã QR",
+                                                  style: TextStyle(
+                                                    color: qrCount > 0
+                                                        ? Colors.indigo.shade900
+                                                        : Colors.grey.shade700,
+                                                    fontSize: 11.5,
+                                                    fontWeight: FontWeight.bold,
+                                                  ),
+                                                ),
+                                              ],
+                                            ),
+                                          ),
+                                        ),
+                                      ),
+                                      // Cột 6: Thao tác (Mã QR xe + Bản đồ + Sửa + Xóa)
                                       makeCell(
                                         Row(
                                           mainAxisSize: MainAxisSize.min,
                                           children: [
+                                            OutlinedButton.icon(
+                                              style: OutlinedButton.styleFrom(
+                                                foregroundColor:
+                                                    Colors.indigo.shade800,
+                                                side: BorderSide(
+                                                  color: Colors.indigo.shade300,
+                                                ),
+                                                padding:
+                                                    const EdgeInsets.symmetric(
+                                                      horizontal: 10,
+                                                    ),
+                                                minimumSize: const Size(0, 32),
+                                                tapTargetSize:
+                                                    MaterialTapTargetSize
+                                                        .shrinkWrap,
+                                                shape: RoundedRectangleBorder(
+                                                  borderRadius:
+                                                      BorderRadius.circular(4),
+                                                ),
+                                              ),
+                                              icon: const Icon(
+                                                Icons.qr_code_scanner,
+                                                size: 14,
+                                              ),
+                                              label: const Text(
+                                                "Mã QR xe",
+                                                style: TextStyle(
+                                                  fontSize: 12,
+                                                  fontWeight: FontWeight.bold,
+                                                ),
+                                              ),
+                                              onPressed: () {
+                                                _showGasStationQrManagerDialog(
+                                                  initialStation:
+                                                      Map<String, dynamic>.from(
+                                                        gs as Map,
+                                                      ),
+                                                );
+                                              },
+                                            ),
+                                            const SizedBox(width: 6),
                                             OutlinedButton.icon(
                                               style: OutlinedButton.styleFrom(
                                                 foregroundColor:
@@ -5750,6 +6043,3297 @@ class _DispatchSupervisorScreenState extends State<DispatchSupervisorScreen> {
         );
       }
     }
+  }
+
+  // Chuẩn hóa đường dẫn ảnh Mã QR để hiển thị trên ứng dụng
+  String _resolveFullImageUrl(String rawUrl) {
+    final trimmed = rawUrl.trim();
+    if (trimmed.isEmpty) return '';
+    if (trimmed.startsWith('http://') || trimmed.startsWith('https://')) {
+      return trimmed;
+    }
+    if (trimmed.startsWith('/')) {
+      return '${ApiConfig.host}$trimmed';
+    }
+    return '${ApiConfig.host}/$trimmed';
+  }
+
+  // ============ DIALOG XEM PHÓNG TO ẢNH MÃ QR CÂY DẦU THEO XE ============
+  void _showQrImagePreviewDialog(
+    Map<String, dynamic> qrItem, {
+    VoidCallback? onRefresh,
+  }) {
+    final plate = (qrItem['plate_number'] ?? 'N/A').toString();
+    final stationName = (qrItem['gas_station_name'] ?? 'N/A').toString();
+    final stationAddress = (qrItem['gas_station_address'] ?? '').toString();
+    final driverName = (qrItem['driver_name'] ?? '').toString();
+    final qrLabel =
+        (qrItem['qr_code_label'] ?? qrItem['qr_label'] ?? '').toString();
+    final note = (qrItem['note'] ?? '').toString();
+    final qrUrl = _resolveFullImageUrl(
+      (qrItem['qr_image_url'] ?? '').toString(),
+    );
+
+    showDialog(
+      context: context,
+      builder: (ctx) {
+        final Size screenSize = MediaQuery.of(ctx).size;
+        final double targetWidth = math.min(680.0, screenSize.width * 0.94);
+        final double targetHeight = math.min(720.0, screenSize.height * 0.90);
+        return Dialog(
+          backgroundColor: Colors.white,
+          surfaceTintColor: Colors.white,
+          constraints: BoxConstraints(
+            minWidth: 320,
+            maxWidth: targetWidth,
+            maxHeight: targetHeight,
+          ),
+          insetPadding: const EdgeInsets.symmetric(
+            horizontal: 20,
+            vertical: 20,
+          ),
+          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(4)),
+          child: Container(
+            width: targetWidth,
+            padding: const EdgeInsets.all(20),
+            child: SingleChildScrollView(
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+              Row(
+                children: [
+                  Container(
+                    padding: const EdgeInsets.all(8),
+                    decoration: BoxDecoration(
+                      color: Colors.indigo.shade50,
+                      borderRadius: BorderRadius.circular(4),
+                    ),
+                    child: Icon(
+                      Icons.qr_code_2,
+                      color: Colors.indigo.shade700,
+                      size: 22,
+                    ),
+                  ),
+                  const SizedBox(width: 10),
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          "Mã QR Cây dầu - Xe $plate",
+                          style: const TextStyle(
+                            fontSize: 16,
+                            fontWeight: FontWeight.bold,
+                          ),
+                        ),
+                        const SizedBox(height: 2),
+                        Text(
+                          stationAddress.isNotEmpty
+                              ? "$stationName ($stationAddress)"
+                              : stationName,
+                          style: TextStyle(
+                            fontSize: 12.5,
+                            color: Colors.grey.shade700,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                  IconButton(
+                    icon: const Icon(Icons.close, size: 20),
+                    onPressed: () => Navigator.pop(ctx),
+                  ),
+                ],
+              ),
+              const Divider(height: 20),
+              // Thông tin phương tiện & nhãn QR
+              Container(
+                width: double.infinity,
+                padding: const EdgeInsets.all(10),
+                decoration: BoxDecoration(
+                  color: Colors.grey.shade50,
+                  borderRadius: BorderRadius.circular(4),
+                  border: Border.all(color: Colors.grey.shade300),
+                ),
+                child: Wrap(
+                  spacing: 16,
+                  runSpacing: 6,
+                  children: [
+                    Text(
+                      "Biển số xe: $plate",
+                      style: const TextStyle(
+                        fontSize: 12.5,
+                        fontWeight: FontWeight.bold,
+                      ),
+                    ),
+                    if (driverName.isNotEmpty)
+                      Text(
+                        "Tài xế phụ trách: $driverName",
+                        style: const TextStyle(fontSize: 12.5),
+                      ),
+                    if (qrLabel.isNotEmpty)
+                      Text(
+                        "Nhãn QR: $qrLabel",
+                        style: TextStyle(
+                          fontSize: 12.5,
+                          color: Colors.indigo.shade800,
+                          fontWeight: FontWeight.w600,
+                        ),
+                      ),
+                    if (note.isNotEmpty)
+                      Text(
+                        "Ghi chú: $note",
+                        style: TextStyle(
+                          fontSize: 12,
+                          color: Colors.grey.shade700,
+                        ),
+                      ),
+                  ],
+                ),
+              ),
+              const SizedBox(height: 12),
+              // Khung ảnh Mã QR phóng to rõ nét
+              Container(
+                width: double.infinity,
+                height: 320,
+                decoration: BoxDecoration(
+                  color: Colors.white,
+                  borderRadius: BorderRadius.circular(4),
+                  border: Border.all(color: Colors.grey.shade300),
+                ),
+                child: qrUrl.isEmpty
+                    ? Center(
+                        child: Text(
+                          "Chưa có đường dẫn ảnh Mã QR",
+                          style: TextStyle(color: Colors.grey.shade600),
+                        ),
+                      )
+                    : ClipRRect(
+                        borderRadius: BorderRadius.circular(4),
+                        child: InteractiveViewer(
+                          minScale: 0.8,
+                          maxScale: 4.0,
+                          child: Center(
+                            child: Image.network(
+                              qrUrl,
+                              fit: BoxFit.contain,
+                              errorBuilder: (_, __, ___) => Column(
+                                mainAxisAlignment: MainAxisAlignment.center,
+                                children: [
+                                  Icon(
+                                    Icons.broken_image_outlined,
+                                    size: 42,
+                                    color: Colors.grey.shade400,
+                                  ),
+                                  const SizedBox(height: 8),
+                                  Text(
+                                    "Không tải được ảnh Mã QR ($qrUrl)",
+                                    style: TextStyle(
+                                      fontSize: 12,
+                                      color: Colors.grey.shade600,
+                                    ),
+                                    textAlign: TextAlign.center,
+                                  ),
+                                ],
+                              ),
+                            ),
+                          ),
+                        ),
+                      ),
+              ),
+              const SizedBox(height: 12),
+              // Lưu ý nghiệp vụ theo đặc tả Yêu cầu 02
+              Container(
+                width: double.infinity,
+                padding: const EdgeInsets.symmetric(
+                  horizontal: 12,
+                  vertical: 8,
+                ),
+                decoration: BoxDecoration(
+                  color: Colors.amber.shade50,
+                  borderRadius: BorderRadius.circular(4),
+                  border: Border.all(color: Colors.amber.shade300),
+                ),
+                child: Row(
+                  children: [
+                    Icon(
+                      Icons.info_outline,
+                      size: 16,
+                      color: Colors.amber.shade900,
+                    ),
+                    const SizedBox(width: 8),
+                    Expanded(
+                      child: Text(
+                        "Lưu ý: Mã QR này chỉ có hiệu lực sử dụng cho 01 lần vào cây dầu (theo 01 lần phê duyệt đề xuất).",
+                        style: TextStyle(
+                          fontSize: 12,
+                          color: Colors.amber.shade900,
+                          fontWeight: FontWeight.w600,
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              const SizedBox(height: 16),
+              Row(
+                mainAxisAlignment: MainAxisAlignment.end,
+                children: [
+                  SizedBox(
+                    height: 36,
+                    child: OutlinedButton.icon(
+                      style: OutlinedButton.styleFrom(
+                        foregroundColor: Colors.teal.shade700,
+                        side: BorderSide(color: Colors.teal.shade300),
+                        shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(4),
+                        ),
+                      ),
+                      icon: const Icon(Icons.edit_outlined, size: 15),
+                      label: const Text(
+                        "Đổi ảnh / Cập nhật",
+                        style: TextStyle(
+                          fontSize: 12.5,
+                          fontWeight: FontWeight.w600,
+                        ),
+                      ),
+                      onPressed: () {
+                        Navigator.pop(ctx);
+                        _showUpsertGasStationQrDialog(
+                          existingQr: qrItem,
+                          onSaved: onRefresh,
+                        );
+                      },
+                    ),
+                  ),
+                  const SizedBox(width: 8),
+                  SizedBox(
+                    height: 36,
+                    child: ElevatedButton(
+                      style: ElevatedButton.styleFrom(
+                        backgroundColor: Colors.blue.shade800,
+                        foregroundColor: Colors.white,
+                        elevation: 0,
+                        shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(4),
+                        ),
+                      ),
+                      onPressed: () => Navigator.pop(ctx),
+                      child: const Text(
+                        "Đóng",
+                        style: TextStyle(
+                          fontSize: 12.5,
+                          fontWeight: FontWeight.w600,
+                        ),
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+            ],
+          ),
+        ),
+          ),
+        );
+      },
+    );
+  }
+
+  // ============ DIALOG TẢI LÊN / CẬP NHẬT ẢNH MÃ QR CÂY DẦU THEO XE ============
+  Future<void> _showUpsertGasStationQrDialog({
+    Map<String, dynamic>? existingQr,
+    int? defaultStationId,
+    VoidCallback? onSaved,
+  }) async {
+    if (_gasStations.isEmpty) {
+      await _loadGasStations();
+    }
+    if (!mounted) return;
+    if (_gasStations.isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          backgroundColor: Colors.orange,
+          content: Text(
+            "Chưa có trạm dầu nào. Vui lòng thêm trạm dầu trước khi gắn Mã QR cho xe.",
+          ),
+        ),
+      );
+      return;
+    }
+
+    final isEdit = existingQr != null && existingQr['id'] != null;
+    final int? qrId = isEdit
+        ? int.tryParse(existingQr['id'].toString())
+        : null;
+
+    int? selectedStationId = int.tryParse(
+      (existingQr?['gas_station_id'] ?? defaultStationId ?? '').toString(),
+    );
+    final stationIds = _gasStations
+        .map((gs) => int.tryParse((gs['id'] ?? '').toString()))
+        .whereType<int>()
+        .toList();
+    if (selectedStationId == null || !stationIds.contains(selectedStationId)) {
+      selectedStationId = stationIds.isNotEmpty ? stationIds.first : null;
+    }
+
+    // Chuẩn bị danh sách biển số xe từ đội xe hiện có
+    final fleetPlates = <String>[];
+    final plateToDriver = <String, String>{};
+    for (final v in _vehicles) {
+      if (v is Map) {
+        final p = (v['plate_number'] ?? '').toString().trim().toUpperCase();
+        if (p.isNotEmpty && !fleetPlates.contains(p)) {
+          fleetPlates.add(p);
+          final dName = (v['driver_name'] ?? '').toString().trim();
+          final vType = (v['vehicle_type'] ?? '').toString().trim();
+          plateToDriver[p] = [
+            if (dName.isNotEmpty) "TX: $dName",
+            if (vType.isNotEmpty) vType,
+          ].join(' - ');
+        }
+      }
+    }
+    fleetPlates.sort();
+
+    final initialPlate = (existingQr?['plate_number'] ?? '')
+        .toString()
+        .trim()
+        .toUpperCase();
+    if (initialPlate.isNotEmpty && !fleetPlates.contains(initialPlate)) {
+      fleetPlates.insert(0, initialPlate);
+    }
+
+    String? selectedDropdownPlate = initialPlate.isNotEmpty
+        ? initialPlate
+        : (fleetPlates.isNotEmpty ? fleetPlates.first : null);
+    final plateCtrl = TextEditingController(
+      text: selectedDropdownPlate ?? '',
+    );
+    final labelCtrl = TextEditingController(
+      text: (existingQr?['qr_code_label'] ?? existingQr?['qr_label'] ?? '')
+          .toString(),
+    );
+    final noteCtrl = TextEditingController(
+      text: (existingQr?['note'] ?? '').toString(),
+    );
+    String uploadedQrUrl = (existingQr?['qr_image_url'] ?? '')
+        .toString()
+        .trim();
+    String uploadedFileName = uploadedQrUrl.isNotEmpty
+        ? uploadedQrUrl.split('/').last
+        : '';
+    bool isActive = existingQr == null
+        ? true
+        : (existingQr['is_active'] == true);
+    bool isUploading = false;
+    bool isSaving = false;
+    String errorMsg = '';
+
+    await showDialog(
+      context: context,
+      barrierDismissible: false,
+      builder: (ctx) => StatefulBuilder(
+        builder: (ctx, setDialogState) {
+          final previewUrl = _resolveFullImageUrl(uploadedQrUrl);
+
+          Future<void> pickAndUploadQrImage() async {
+            try {
+              final result = await FilePicker.platform.pickFiles(
+                type: FileType.image,
+                allowMultiple: false,
+                withData: true,
+              );
+              if (result == null || result.files.isEmpty) return;
+              final file = result.files.first;
+
+              setDialogState(() {
+                isUploading = true;
+                errorMsg = '';
+              });
+
+              Map<String, dynamic>? uploadRes;
+              if (file.bytes != null && file.bytes!.isNotEmpty) {
+                uploadRes = await AdminService.uploadImageBytes(
+                  file.bytes!,
+                  file.name,
+                );
+              } else if (file.path != null && file.path!.isNotEmpty) {
+                uploadRes = await AdminService.uploadImage(file.path!);
+              }
+
+              final url = uploadRes?['url']?.toString() ?? '';
+              if (uploadRes != null &&
+                  uploadRes['success'] == true &&
+                  url.isNotEmpty) {
+                setDialogState(() {
+                  uploadedQrUrl = url;
+                  uploadedFileName = file.name;
+                  isUploading = false;
+                });
+              } else {
+                setDialogState(() {
+                  isUploading = false;
+                  errorMsg =
+                      (uploadRes?['message'] ??
+                              "Tải ảnh Mã QR lên máy chủ thất bại. Vui lòng thử lại.")
+                          .toString();
+                });
+              }
+            } catch (e) {
+              setDialogState(() {
+                isUploading = false;
+                errorMsg = "Lỗi khi chọn hoặc tải ảnh Mã QR: $e";
+              });
+            }
+          }
+
+          final Size screenSize = MediaQuery.of(ctx).size;
+          final double targetWidth = math.min(760.0, screenSize.width * 0.95);
+          final double targetHeight = math.min(760.0, screenSize.height * 0.92);
+
+          return Dialog(
+            backgroundColor: Colors.white,
+            surfaceTintColor: Colors.white,
+            constraints: BoxConstraints(
+              minWidth: 320,
+              maxWidth: targetWidth,
+              maxHeight: targetHeight,
+            ),
+            insetPadding: const EdgeInsets.symmetric(
+              horizontal: 20,
+              vertical: 20,
+            ),
+            shape: RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(4),
+            ),
+            child: Container(
+              width: targetWidth,
+              padding: const EdgeInsets.all(20),
+              child: SingleChildScrollView(
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Row(
+                      children: [
+                        Container(
+                          padding: const EdgeInsets.all(8),
+                          decoration: BoxDecoration(
+                            color: Colors.teal.shade50,
+                            borderRadius: BorderRadius.circular(4),
+                          ),
+                          child: Icon(
+                            isEdit ? Icons.edit_note : Icons.qr_code_2,
+                            color: Colors.teal.shade700,
+                            size: 22,
+                          ),
+                        ),
+                        const SizedBox(width: 10),
+                        Expanded(
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Text(
+                                isEdit
+                                    ? "Cập nhật ảnh Mã QR Cây dầu theo xe"
+                                    : "Tải lên ảnh Mã QR Cây dầu theo từng xe",
+                                style: const TextStyle(
+                                  fontSize: 16,
+                                  fontWeight: FontWeight.bold,
+                                ),
+                              ),
+                              const SizedBox(height: 2),
+                              Text(
+                                "Gắn ảnh Mã QR cố định của cây dầu cho từng phương tiện vận tải",
+                                style: TextStyle(
+                                  fontSize: 12,
+                                  color: Colors.grey.shade600,
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
+                        IconButton(
+                          icon: const Icon(Icons.close, size: 20),
+                          onPressed: isSaving
+                              ? null
+                              : () => Navigator.pop(ctx),
+                        ),
+                      ],
+                    ),
+                    const Divider(height: 24),
+                    // 1. Chọn Cây dầu
+                    DropdownButtonFormField<int>(
+                      value: selectedStationId,
+                      isExpanded: true,
+                      decoration: InputDecoration(
+                        labelText: "Chọn Cây dầu (*)",
+                        prefixIcon: const Icon(
+                          Icons.local_gas_station,
+                          size: 18,
+                        ),
+                        border: OutlineInputBorder(
+                          borderRadius: BorderRadius.circular(4),
+                        ),
+                      ),
+                      items: _gasStations
+                          .map((gs) {
+                            final id = int.tryParse(
+                              (gs['id'] ?? '').toString(),
+                            );
+                            if (id == null) return null;
+                            final sName = (gs['name'] ?? 'Trạm #$id')
+                                .toString();
+                            final sAddr = (gs['address'] ?? '').toString();
+                            return DropdownMenuItem<int>(
+                              value: id,
+                              child: Text(
+                                sAddr.isNotEmpty
+                                    ? "$sName - $sAddr"
+                                    : sName,
+                                overflow: TextOverflow.ellipsis,
+                                style: const TextStyle(fontSize: 13),
+                              ),
+                            );
+                          })
+                          .whereType<DropdownMenuItem<int>>()
+                          .toList(),
+                      onChanged: (val) {
+                        setDialogState(() {
+                          selectedStationId = val;
+                        });
+                      },
+                    ),
+                    const SizedBox(height: 14),
+                    // 2. Chọn phương tiện từ Đội xe hoặc nhập biển số
+                    Row(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        if (fleetPlates.isNotEmpty) ...[
+                          Expanded(
+                            flex: 6,
+                            child: DropdownButtonFormField<String>(
+                              value: fleetPlates.contains(selectedDropdownPlate)
+                                  ? selectedDropdownPlate
+                                  : null,
+                              isExpanded: true,
+                              decoration: InputDecoration(
+                                labelText: "Chọn nhanh từ Đội xe",
+                                prefixIcon: const Icon(
+                                  Icons.local_shipping_outlined,
+                                  size: 18,
+                                ),
+                                border: OutlineInputBorder(
+                                  borderRadius: BorderRadius.circular(4),
+                                ),
+                              ),
+                              items: fleetPlates.map((p) {
+                                final sub = plateToDriver[p] ?? '';
+                                return DropdownMenuItem<String>(
+                                  value: p,
+                                  child: Text(
+                                    sub.isNotEmpty ? "$p ($sub)" : p,
+                                    overflow: TextOverflow.ellipsis,
+                                    style: const TextStyle(fontSize: 13),
+                                  ),
+                                );
+                              }).toList(),
+                              onChanged: (val) {
+                                setDialogState(() {
+                                  selectedDropdownPlate = val;
+                                  if (val != null) {
+                                    plateCtrl.text = val;
+                                  }
+                                });
+                              },
+                            ),
+                          ),
+                          const SizedBox(width: 10),
+                        ],
+                        Expanded(
+                          flex: 5,
+                          child: TextField(
+                            controller: plateCtrl,
+                            textCapitalization: TextCapitalization.characters,
+                            onChanged: (val) {
+                              final upper = val.trim().toUpperCase();
+                              setDialogState(() {
+                                if (fleetPlates.contains(upper)) {
+                                  selectedDropdownPlate = upper;
+                                } else {
+                                  selectedDropdownPlate = null;
+                                }
+                              });
+                            },
+                            decoration: InputDecoration(
+                              labelText: "Biển số xe (*)",
+                              hintText: "VD: 50H-449.66",
+                              prefixIcon: const Icon(
+                                Icons.pin_outlined,
+                                size: 18,
+                              ),
+                              border: OutlineInputBorder(
+                                borderRadius: BorderRadius.circular(4),
+                              ),
+                            ),
+                          ),
+                        ),
+                      ],
+                    ),
+                    const SizedBox(height: 14),
+                    // 3. Khu vực tải lên & xem trước ảnh Mã QR cố định
+                    Container(
+                      width: double.infinity,
+                      padding: const EdgeInsets.all(12),
+                      decoration: BoxDecoration(
+                        color: Colors.grey.shade50,
+                        borderRadius: BorderRadius.circular(4),
+                        border: Border.all(color: Colors.grey.shade300),
+                      ),
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Row(
+                            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                            children: [
+                              const Expanded(
+                                child: Text(
+                                  "Ảnh Mã QR cố định của cây dầu cho xe (*)",
+                                  style: TextStyle(
+                                    fontSize: 13,
+                                    fontWeight: FontWeight.bold,
+                                  ),
+                                ),
+                              ),
+                              const SizedBox(width: 8),
+                              SizedBox(
+                                height: 34,
+                                child: ElevatedButton.icon(
+                                  style: ElevatedButton.styleFrom(
+                                    backgroundColor: Colors.indigo.shade700,
+                                    foregroundColor: Colors.white,
+                                    elevation: 0,
+                                    shape: RoundedRectangleBorder(
+                                      borderRadius: BorderRadius.circular(4),
+                                    ),
+                                  ),
+                                  icon: isUploading
+                                      ? const SizedBox(
+                                          width: 14,
+                                          height: 14,
+                                          child: CircularProgressIndicator(
+                                            strokeWidth: 2,
+                                            color: Colors.white,
+                                          ),
+                                        )
+                                      : const Icon(
+                                          Icons.upload_file,
+                                          size: 16,
+                                        ),
+                                  label: Text(
+                                    isUploading
+                                        ? "Đang tải ảnh..."
+                                        : (uploadedQrUrl.isEmpty
+                                              ? "Chọn & Tải ảnh Mã QR"
+                                              : "Đổi ảnh Mã QR khác"),
+                                    style: const TextStyle(
+                                      fontSize: 12,
+                                      fontWeight: FontWeight.w600,
+                                    ),
+                                  ),
+                                  onPressed: isUploading
+                                      ? null
+                                      : pickAndUploadQrImage,
+                                ),
+                              ),
+                            ],
+                          ),
+                          const SizedBox(height: 10),
+                          if (uploadedQrUrl.isEmpty)
+                            Container(
+                              width: double.infinity,
+                              height: 150,
+                              decoration: BoxDecoration(
+                                color: Colors.white,
+                                borderRadius: BorderRadius.circular(4),
+                                border: Border.all(
+                                  color: Colors.grey.shade300,
+                                ),
+                              ),
+                              child: InkWell(
+                                borderRadius: BorderRadius.circular(4),
+                                onTap: isUploading
+                                    ? null
+                                    : pickAndUploadQrImage,
+                                child: Column(
+                                  mainAxisAlignment: MainAxisAlignment.center,
+                                  children: [
+                                    Icon(
+                                      Icons.qr_code_scanner,
+                                      size: 40,
+                                      color: Colors.grey.shade400,
+                                    ),
+                                    const SizedBox(height: 8),
+                                    Text(
+                                      "Bấm vào đây để chọn tệp ảnh Mã QR (PNG, JPG, WEBP) từ máy tính",
+                                      style: TextStyle(
+                                        fontSize: 12.5,
+                                        color: Colors.grey.shade600,
+                                      ),
+                                    ),
+                                  ],
+                                ),
+                              ),
+                            )
+                          else
+                            Row(
+                              crossAxisAlignment: CrossAxisAlignment.center,
+                              children: [
+                                Container(
+                                  width: 140,
+                                  height: 140,
+                                  decoration: BoxDecoration(
+                                    color: Colors.white,
+                                    borderRadius: BorderRadius.circular(4),
+                                    border: Border.all(
+                                      color: Colors.indigo.shade200,
+                                    ),
+                                  ),
+                                  child: ClipRRect(
+                                    borderRadius: BorderRadius.circular(4),
+                                    child: Image.network(
+                                      previewUrl,
+                                      fit: BoxFit.contain,
+                                      errorBuilder: (_, __, ___) => Center(
+                                        child: Icon(
+                                          Icons.qr_code_2,
+                                          size: 48,
+                                          color: Colors.indigo.shade300,
+                                        ),
+                                      ),
+                                    ),
+                                  ),
+                                ),
+                                const SizedBox(width: 14),
+                                Expanded(
+                                  child: Column(
+                                    crossAxisAlignment:
+                                        CrossAxisAlignment.start,
+                                    children: [
+                                      Row(
+                                        children: [
+                                          Icon(
+                                            Icons.check_circle,
+                                            size: 16,
+                                            color: Colors.green.shade700,
+                                          ),
+                                          const SizedBox(width: 6),
+                                          const Expanded(
+                                            child: Text(
+                                              "Đã tải ảnh Mã QR lên hệ thống",
+                                              style: TextStyle(
+                                                fontSize: 12.5,
+                                                fontWeight: FontWeight.bold,
+                                                color: Colors.green,
+                                              ),
+                                            ),
+                                          ),
+                                        ],
+                                      ),
+                                      const SizedBox(height: 6),
+                                      Text(
+                                        "Tệp: $uploadedFileName",
+                                        style: TextStyle(
+                                          fontSize: 12,
+                                          color: Colors.grey.shade700,
+                                        ),
+                                      ),
+                                      const SizedBox(height: 4),
+                                      SelectableText(
+                                        "Đường dẫn: $uploadedQrUrl",
+                                        style: TextStyle(
+                                          fontSize: 11.5,
+                                          color: Colors.grey.shade600,
+                                        ),
+                                      ),
+                                    ],
+                                  ),
+                                ),
+                              ],
+                            ),
+                        ],
+                      ),
+                    ),
+                    const SizedBox(height: 14),
+                    // 4. Nhãn Mã QR và Ghi chú
+                    Row(
+                      children: [
+                        Expanded(
+                          child: TextField(
+                            controller: labelCtrl,
+                            decoration: InputDecoration(
+                              labelText: "Nhãn / Mã định danh QR (Tùy chọn)",
+                              hintText: "VD: QR định mức dầu DO 0.05S",
+                              prefixIcon: const Icon(
+                                Icons.label_outline,
+                                size: 18,
+                              ),
+                              border: OutlineInputBorder(
+                                borderRadius: BorderRadius.circular(4),
+                              ),
+                            ),
+                          ),
+                        ),
+                        const SizedBox(width: 10),
+                        Expanded(
+                          child: TextField(
+                            controller: noteCtrl,
+                            decoration: InputDecoration(
+                              labelText: "Ghi chú quản lý (Tùy chọn)",
+                              hintText: "VD: Áp dụng cho đầu kéo nội bộ",
+                              prefixIcon: const Icon(
+                                Icons.notes_outlined,
+                                size: 18,
+                              ),
+                              border: OutlineInputBorder(
+                                borderRadius: BorderRadius.circular(4),
+                              ),
+                            ),
+                          ),
+                        ),
+                      ],
+                    ),
+                    const SizedBox(height: 10),
+                    // 5. Công tắc kích hoạt
+                    SwitchListTile(
+                      contentPadding: EdgeInsets.zero,
+                      hoverColor: Colors.transparent,
+                      activeColor: Colors.green.shade600,
+                      title: const Text(
+                        "Cho phép sử dụng Mã QR này khi phê duyệt đề xuất đổ dầu",
+                        style: TextStyle(
+                          fontSize: 13,
+                          fontWeight: FontWeight.w600,
+                        ),
+                      ),
+                      subtitle: Text(
+                        isActive
+                            ? "Đang kích hoạt: Khi Quản lý duyệt đề xuất đổ dầu của xe tại trạm này, tài xế sẽ được mở Mã QR."
+                            : "Đang tạm khóa: Không cấp phát Mã QR này cho đề xuất mới.",
+                        style: TextStyle(
+                          fontSize: 11.5,
+                          color: Colors.grey.shade600,
+                        ),
+                      ),
+                      value: isActive,
+                      onChanged: (val) {
+                        setDialogState(() {
+                          isActive = val;
+                        });
+                      },
+                    ),
+                    if (errorMsg.isNotEmpty) ...[
+                      const SizedBox(height: 8),
+                      Container(
+                        width: double.infinity,
+                        padding: const EdgeInsets.all(10),
+                        decoration: BoxDecoration(
+                          color: Colors.red.shade50,
+                          borderRadius: BorderRadius.circular(4),
+                          border: Border.all(color: Colors.red.shade200),
+                        ),
+                        child: Text(
+                          errorMsg,
+                          style: TextStyle(
+                            fontSize: 12,
+                            color: Colors.red.shade800,
+                            fontWeight: FontWeight.w600,
+                          ),
+                        ),
+                      ),
+                    ],
+                    const SizedBox(height: 16),
+                    Row(
+                      mainAxisAlignment: MainAxisAlignment.end,
+                      children: [
+                        SizedBox(
+                          height: 36,
+                          child: OutlinedButton(
+                            style: OutlinedButton.styleFrom(
+                              shape: RoundedRectangleBorder(
+                                borderRadius: BorderRadius.circular(4),
+                              ),
+                            ),
+                            onPressed: isSaving
+                                ? null
+                                : () => Navigator.pop(ctx),
+                            child: const Text("Hủy"),
+                          ),
+                        ),
+                        const SizedBox(width: 8),
+                        SizedBox(
+                          height: 36,
+                          child: ElevatedButton.icon(
+                            style: ElevatedButton.styleFrom(
+                              backgroundColor: Colors.blue.shade800,
+                              foregroundColor: Colors.white,
+                              elevation: 0,
+                              shape: RoundedRectangleBorder(
+                                borderRadius: BorderRadius.circular(4),
+                              ),
+                            ),
+                            icon: isSaving
+                                ? const SizedBox(
+                                    width: 14,
+                                    height: 14,
+                                    child: CircularProgressIndicator(
+                                      strokeWidth: 2,
+                                      color: Colors.white,
+                                    ),
+                                  )
+                                : const Icon(Icons.save_outlined, size: 16),
+                            label: Text(
+                              isSaving
+                                  ? "Đang lưu..."
+                                  : (isEdit
+                                        ? "Cập nhật Mã QR"
+                                        : "Lưu Mã QR theo xe"),
+                              style: const TextStyle(
+                                fontSize: 12.5,
+                                fontWeight: FontWeight.w600,
+                              ),
+                            ),
+                            onPressed: (isSaving || isUploading)
+                                ? null
+                                : () async {
+                                    final plate = plateCtrl.text
+                                        .trim()
+                                        .toUpperCase();
+                                    if (selectedStationId == null) {
+                                      setDialogState(() {
+                                        errorMsg = "Vui lòng chọn Cây dầu.";
+                                      });
+                                      return;
+                                    }
+                                    if (plate.isEmpty) {
+                                      setDialogState(() {
+                                        errorMsg =
+                                            "Vui lòng chọn hoặc nhập Biển số xe.";
+                                      });
+                                      return;
+                                    }
+                                    if (uploadedQrUrl.isEmpty) {
+                                      setDialogState(() {
+                                        errorMsg =
+                                            "Vui lòng chọn và tải lên ảnh Mã QR của cây dầu cho xe $plate.";
+                                      });
+                                      return;
+                                    }
+
+                                    setDialogState(() {
+                                      isSaving = true;
+                                      errorMsg = '';
+                                    });
+
+                                    final res =
+                                        await AdminService.saveGasStationQrCode(
+                                          id: qrId,
+                                          gasStationId: selectedStationId!,
+                                          plateNumber: plate,
+                                          qrImageUrl: uploadedQrUrl,
+                                          qrCodeLabel: labelCtrl.text.trim(),
+                                          note: noteCtrl.text.trim(),
+                                          isActive: isActive,
+                                        );
+
+                                    if (!mounted) return;
+                                    if (res['success'] == true) {
+                                      Navigator.pop(ctx);
+                                      await _loadGasStations();
+                                      onSaved?.call();
+                                      if (!mounted) return;
+                                      ScaffoldMessenger.of(
+                                        context,
+                                      ).showSnackBar(
+                                        SnackBar(
+                                          backgroundColor:
+                                              Colors.green.shade700,
+                                          content: Text(
+                                            (res['message'] ??
+                                                    "Đã lưu ảnh Mã QR cây dầu cho xe $plate")
+                                                .toString(),
+                                          ),
+                                        ),
+                                      );
+                                    } else {
+                                      setDialogState(() {
+                                        isSaving = false;
+                                        errorMsg =
+                                            (res['message'] ??
+                                                    "Không thể lưu Mã QR. Vui lòng kiểm tra quyền Quản lý.")
+                                                .toString();
+                                      });
+                                    }
+                                  },
+                          ),
+                        ),
+                      ],
+                    ),
+                  ],
+                ),
+              ),
+            ),
+          );
+        },
+      ),
+    );
+  }
+
+  // Xác nhận xóa bản ghi Mã QR Cây dầu theo xe
+  void _confirmDeleteGasStationQr(
+    Map<String, dynamic> qrItem, {
+    VoidCallback? onDeleted,
+  }) {
+    final qrId = int.tryParse((qrItem['id'] ?? '').toString());
+    if (qrId == null) return;
+    final plate = (qrItem['plate_number'] ?? 'N/A').toString();
+    final stationName = (qrItem['gas_station_name'] ?? 'N/A').toString();
+
+    showDialog(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        backgroundColor: Colors.white,
+        surfaceTintColor: Colors.white,
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(4)),
+        title: Row(
+          children: [
+            Icon(
+              Icons.warning_amber_rounded,
+              color: Colors.red.shade700,
+              size: 22,
+            ),
+            const SizedBox(width: 8),
+            const Text(
+              "Xác nhận xóa Mã QR Cây dầu",
+              style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
+            ),
+          ],
+        ),
+        content: Text(
+          "Bạn có chắc chắn muốn xóa ảnh Mã QR của xe $plate tại trạm \"$stationName\" không?",
+          style: const TextStyle(fontSize: 13.5),
+        ),
+        actions: [
+          SizedBox(
+            height: 36,
+            child: OutlinedButton(
+              style: OutlinedButton.styleFrom(
+                shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(4),
+                ),
+              ),
+              onPressed: () => Navigator.pop(ctx),
+              child: const Text("Hủy"),
+            ),
+          ),
+          SizedBox(
+            height: 36,
+            child: ElevatedButton.icon(
+              style: ElevatedButton.styleFrom(
+                backgroundColor: Colors.red.shade700,
+                foregroundColor: Colors.white,
+                elevation: 0,
+                shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(4),
+                ),
+              ),
+              icon: const Icon(Icons.delete_outline, size: 16),
+              label: const Text(
+                "Xóa Mã QR",
+                style: TextStyle(fontWeight: FontWeight.w600, fontSize: 12.5),
+              ),
+              onPressed: () async {
+                Navigator.pop(ctx);
+                final ok = await AdminService.deleteGasStationQrCode(qrId);
+                if (!mounted) return;
+                if (ok) {
+                  await _loadGasStations();
+                  onDeleted?.call();
+                  if (!mounted) return;
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    SnackBar(
+                      backgroundColor: Colors.green.shade700,
+                      content: Text(
+                        "Đã xóa Mã QR của xe $plate tại $stationName",
+                      ),
+                    ),
+                  );
+                } else {
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    const SnackBar(
+                      backgroundColor: Colors.red,
+                      content: Text("Không thể xóa Mã QR. Vui lòng thử lại."),
+                    ),
+                  );
+                }
+              },
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  // ============ DIALOG QUẢN LÝ DANH SÁCH MÃ QR CÂY DẦU THEO TỪNG XE ============
+  void _showGasStationQrManagerDialog({Map<String, dynamic>? initialStation}) {
+    int? filterStationId = int.tryParse(
+      (initialStation?['id'] ?? '').toString(),
+    );
+    String searchKeyword = '';
+    final searchCtrl = TextEditingController();
+    List<Map<String, dynamic>> qrList = [];
+    bool isLoadingQr = true;
+    bool initialized = false;
+
+    showDialog(
+      context: context,
+      builder: (ctx) => StatefulBuilder(
+        builder: (ctx, setModalState) {
+          Future<void> loadQrRecords() async {
+            setModalState(() {
+              isLoadingQr = true;
+            });
+            final items = await AdminService.fetchGasStationQrCodes(
+              gasStationId: filterStationId,
+            );
+            setModalState(() {
+              qrList = items
+                  .whereType<Map>()
+                  .map((e) => Map<String, dynamic>.from(e))
+                  .toList();
+              isLoadingQr = false;
+            });
+          }
+
+          if (!initialized) {
+            initialized = true;
+            Future.microtask(loadQrRecords);
+          }
+
+          final q = searchKeyword.trim().toLowerCase();
+          final filteredQr = qrList.where((item) {
+            if (q.isEmpty) return true;
+            final plate = (item['plate_number'] ?? '').toString().toLowerCase();
+            final stName = (item['gas_station_name'] ?? '')
+                .toString()
+                .toLowerCase();
+            final dName = (item['driver_name'] ?? '').toString().toLowerCase();
+            final label =
+                (item['qr_code_label'] ?? item['qr_label'] ?? '')
+                    .toString()
+                    .toLowerCase();
+            final note = (item['note'] ?? '').toString().toLowerCase();
+            return plate.contains(q) ||
+                stName.contains(q) ||
+                dName.contains(q) ||
+                label.contains(q) ||
+                note.contains(q);
+          }).toList();
+
+          final activeCount = filteredQr
+              .where((item) => item['is_active'] == true)
+              .length;
+          final Size screenSize = MediaQuery.of(ctx).size;
+          final double targetWidth = screenSize.width * 0.96;
+          final double targetHeight = screenSize.height * 0.90;
+
+          return Dialog(
+            backgroundColor: Colors.white,
+            surfaceTintColor: Colors.white,
+            constraints: BoxConstraints(
+              minWidth: 320,
+              maxWidth: targetWidth,
+              maxHeight: targetHeight,
+            ),
+            insetPadding: const EdgeInsets.symmetric(
+              horizontal: 16,
+              vertical: 16,
+            ),
+            shape: RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(4),
+            ),
+            child: Container(
+              width: targetWidth,
+              height: targetHeight,
+              padding: const EdgeInsets.all(20),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  // Header
+                  Row(
+                    children: [
+                      Container(
+                        padding: const EdgeInsets.all(8),
+                        decoration: BoxDecoration(
+                          color: Colors.indigo.shade50,
+                          borderRadius: BorderRadius.circular(4),
+                        ),
+                        child: Icon(
+                          Icons.qr_code_2,
+                          color: Colors.indigo.shade700,
+                          size: 24,
+                        ),
+                      ),
+                      const SizedBox(width: 10),
+                      Expanded(
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            const Text(
+                              "Quản lý danh sách ảnh Mã QR Cây dầu theo từng xe",
+                              style: TextStyle(
+                                fontSize: 16.5,
+                                fontWeight: FontWeight.bold,
+                              ),
+                            ),
+                            const SizedBox(height: 2),
+                            Text(
+                              "Tải lên, cập nhật và quản lý Mã QR cố định của cây dầu gắn với từng phương tiện vận tải",
+                              style: TextStyle(
+                                fontSize: 12.5,
+                                color: Colors.grey.shade600,
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                      IconButton(
+                        icon: const Icon(Icons.close, size: 20),
+                        onPressed: () => Navigator.pop(ctx),
+                      ),
+                    ],
+                  ),
+                  const Divider(height: 20),
+                  // Thanh công cụ lọc theo Cây dầu + Tìm kiếm biển số xe + Nút tải lên
+                  Row(
+                    children: [
+                      // Bộ lọc Cây dầu
+                      SizedBox(
+                        width: 260,
+                        height: 36,
+                        child: DropdownButtonFormField<int?>(
+                          value: filterStationId,
+                          isExpanded: true,
+                          style: const TextStyle(
+                            fontSize: 12.5,
+                            color: Colors.black87,
+                          ),
+                          decoration: InputDecoration(
+                            isDense: true,
+                            contentPadding: const EdgeInsets.symmetric(
+                              horizontal: 10,
+                              vertical: 0,
+                            ),
+                            constraints: const BoxConstraints(
+                              minHeight: 36,
+                              maxHeight: 36,
+                            ),
+                            prefixIcon: Icon(
+                              Icons.local_gas_station,
+                              size: 16,
+                              color: Colors.orange.shade700,
+                            ),
+                            prefixIconConstraints: const BoxConstraints(
+                              minWidth: 32,
+                              minHeight: 36,
+                              maxHeight: 36,
+                            ),
+                            border: OutlineInputBorder(
+                              borderRadius: BorderRadius.circular(4),
+                            ),
+                          ),
+                          items: [
+                            const DropdownMenuItem<int?>(
+                              value: null,
+                              child: Text(
+                                "Tất cả cây dầu",
+                                style: TextStyle(
+                                  fontSize: 12.5,
+                                  fontWeight: FontWeight.w600,
+                                ),
+                              ),
+                            ),
+                            ..._gasStations
+                                .map((gs) {
+                                  final id = int.tryParse(
+                                    (gs['id'] ?? '').toString(),
+                                  );
+                                  if (id == null) return null;
+                                  final sName = (gs['name'] ?? 'Trạm #$id')
+                                      .toString();
+                                  return DropdownMenuItem<int?>(
+                                    value: id,
+                                    child: Text(
+                                      sName,
+                                      overflow: TextOverflow.ellipsis,
+                                      style: const TextStyle(fontSize: 12.5),
+                                    ),
+                                  );
+                                })
+                                .whereType<DropdownMenuItem<int?>>(),
+                          ],
+                          onChanged: (val) {
+                            filterStationId = val;
+                            loadQrRecords();
+                          },
+                        ),
+                      ),
+                      const SizedBox(width: 10),
+                      // Ô tìm kiếm theo biển số xe / tài xế / nhãn QR
+                      Expanded(
+                        child: SizedBox(
+                          height: 36,
+                          child: TextField(
+                            controller: searchCtrl,
+                            style: const TextStyle(fontSize: 12.5),
+                            textAlignVertical: TextAlignVertical.center,
+                            onChanged: (val) {
+                              setModalState(() {
+                                searchKeyword = val;
+                              });
+                            },
+                            decoration: InputDecoration(
+                              isDense: true,
+                              constraints: const BoxConstraints(
+                                minHeight: 36,
+                                maxHeight: 36,
+                              ),
+                              hintText:
+                                  "Tìm theo biển số xe, tài xế, tên cây dầu, nhãn mã QR...",
+                              hintStyle: const TextStyle(fontSize: 12.5),
+                              prefixIcon: const Icon(Icons.search, size: 16),
+                              prefixIconConstraints: const BoxConstraints(
+                                minWidth: 34,
+                                minHeight: 36,
+                                maxHeight: 36,
+                              ),
+                              suffixIcon: searchKeyword.isNotEmpty
+                                  ? IconButton(
+                                      padding: EdgeInsets.zero,
+                                      constraints: const BoxConstraints(
+                                        minWidth: 32,
+                                        minHeight: 36,
+                                        maxHeight: 36,
+                                      ),
+                                      icon: const Icon(Icons.clear, size: 15),
+                                      onPressed: () {
+                                        searchCtrl.clear();
+                                        setModalState(() {
+                                          searchKeyword = '';
+                                        });
+                                      },
+                                    )
+                                  : null,
+                              contentPadding: const EdgeInsets.symmetric(
+                                horizontal: 10,
+                                vertical: 0,
+                              ),
+                              border: OutlineInputBorder(
+                                borderRadius: BorderRadius.circular(4),
+                              ),
+                            ),
+                          ),
+                        ),
+                      ),
+                      const SizedBox(width: 8),
+                      // Nút làm mới
+                      SizedBox(
+                        height: 36,
+                        child: OutlinedButton.icon(
+                          style: OutlinedButton.styleFrom(
+                            foregroundColor: Colors.blueGrey.shade800,
+                            side: BorderSide(color: Colors.grey.shade300),
+                            padding: const EdgeInsets.symmetric(horizontal: 10),
+                            shape: RoundedRectangleBorder(
+                              borderRadius: BorderRadius.circular(4),
+                            ),
+                          ),
+                          icon: const Icon(Icons.refresh, size: 16),
+                          label: const Text(
+                            "Làm mới",
+                            style: TextStyle(
+                              fontSize: 12.5,
+                              fontWeight: FontWeight.w600,
+                            ),
+                          ),
+                          onPressed: loadQrRecords,
+                        ),
+                      ),
+                      const SizedBox(width: 8),
+                      // Nút Tải lên Mã QR cho xe
+                      SizedBox(
+                        height: 36,
+                        child: ElevatedButton.icon(
+                          style: ElevatedButton.styleFrom(
+                            backgroundColor: Colors.teal.shade700,
+                            foregroundColor: Colors.white,
+                            elevation: 0,
+                            padding: const EdgeInsets.symmetric(horizontal: 12),
+                            shape: RoundedRectangleBorder(
+                              borderRadius: BorderRadius.circular(4),
+                            ),
+                          ),
+                          icon: const Icon(
+                            Icons.cloud_upload_outlined,
+                            size: 16,
+                          ),
+                          label: const Text(
+                            "Tải lên Mã QR cho xe",
+                            style: TextStyle(
+                              fontSize: 12.5,
+                              fontWeight: FontWeight.w600,
+                            ),
+                          ),
+                          onPressed: () {
+                            _showUpsertGasStationQrDialog(
+                              defaultStationId: filterStationId,
+                              onSaved: loadQrRecords,
+                            );
+                          },
+                        ),
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 10),
+                  // Thanh thống kê nhanh
+                  Container(
+                    width: double.infinity,
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 12,
+                      vertical: 8,
+                    ),
+                    decoration: BoxDecoration(
+                      color: Colors.blueGrey.shade50,
+                      borderRadius: BorderRadius.circular(4),
+                      border: Border.all(color: Colors.blueGrey.shade100),
+                    ),
+                    child: Row(
+                      children: [
+                        Text(
+                          "Tổng số cấu hình QR hiển thị: ${filteredQr.length}",
+                          style: const TextStyle(
+                            fontSize: 12,
+                            fontWeight: FontWeight.bold,
+                          ),
+                        ),
+                        const SizedBox(width: 16),
+                        Text(
+                          "Đang kích hoạt: $activeCount",
+                          style: TextStyle(
+                            fontSize: 12,
+                            color: Colors.green.shade800,
+                            fontWeight: FontWeight.w600,
+                          ),
+                        ),
+                        const SizedBox(width: 16),
+                        Expanded(
+                          child: Text(
+                            "Bấm vào ảnh QR thu nhỏ để xem phóng to Mã QR",
+                            textAlign: TextAlign.right,
+                            overflow: TextOverflow.ellipsis,
+                            style: TextStyle(
+                              fontSize: 11.5,
+                              color: Colors.blueGrey.shade700,
+                            ),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                  const SizedBox(height: 10),
+                  // Bảng dữ liệu Mã QR theo xe
+                  Expanded(
+                    child: Container(
+                      width: double.infinity,
+                      decoration: BoxDecoration(
+                        borderRadius: BorderRadius.circular(4),
+                        border: Border.all(color: Colors.grey.shade300),
+                      ),
+                      child: isLoadingQr
+                          ? const Center(child: CircularProgressIndicator())
+                          : filteredQr.isEmpty
+                          ? Center(
+                              child: Column(
+                                mainAxisAlignment: MainAxisAlignment.center,
+                                children: [
+                                  Icon(
+                                    Icons.qr_code_2,
+                                    size: 48,
+                                    color: Colors.grey.shade400,
+                                  ),
+                                  const SizedBox(height: 10),
+                                  Text(
+                                    "Chưa có ảnh Mã QR Cây dầu nào được gắn cho phương tiện theo bộ lọc hiện tại.",
+                                    style: TextStyle(
+                                      fontSize: 13.5,
+                                      color: Colors.grey.shade600,
+                                      fontWeight: FontWeight.w500,
+                                    ),
+                                  ),
+                                  const SizedBox(height: 10),
+                                  SizedBox(
+                                    height: 36,
+                                    child: OutlinedButton.icon(
+                                      style: OutlinedButton.styleFrom(
+                                        foregroundColor: Colors.teal.shade700,
+                                        side: BorderSide(
+                                          color: Colors.teal.shade300,
+                                        ),
+                                        shape: RoundedRectangleBorder(
+                                          borderRadius:
+                                              BorderRadius.circular(4),
+                                        ),
+                                      ),
+                                      icon: const Icon(
+                                        Icons.add_photo_alternate_outlined,
+                                        size: 16,
+                                      ),
+                                      label: const Text(
+                                        "Tải lên ảnh Mã QR đầu tiên",
+                                        style: TextStyle(
+                                          fontSize: 12.5,
+                                          fontWeight: FontWeight.w600,
+                                        ),
+                                      ),
+                                      onPressed: () {
+                                        _showUpsertGasStationQrDialog(
+                                          defaultStationId: filterStationId,
+                                          onSaved: loadQrRecords,
+                                        );
+                                      },
+                                    ),
+                                  ),
+                                ],
+                              ),
+                            )
+                          : LayoutBuilder(
+                              builder: (context, tableConstraints) {
+                                return SingleChildScrollView(
+                                  scrollDirection: Axis.vertical,
+                                  child: SingleChildScrollView(
+                                    scrollDirection: Axis.horizontal,
+                                    child: ConstrainedBox(
+                                      constraints: BoxConstraints(
+                                        minWidth: tableConstraints.maxWidth,
+                                      ),
+                                      child: DataTable(
+                                        headingRowColor:
+                                            MaterialStateProperty.all(
+                                              Colors.grey.shade100,
+                                            ),
+                                        headingRowHeight: 42,
+                                        dataRowMinHeight: 58,
+                                        dataRowMaxHeight: 66,
+                                        horizontalMargin: 16,
+                                        columnSpacing: 24,
+                                    columns: const [
+                                      DataColumn(
+                                        label: Text(
+                                          "Ảnh QR",
+                                          style: TextStyle(
+                                            fontWeight: FontWeight.bold,
+                                            fontSize: 12.5,
+                                          ),
+                                        ),
+                                      ),
+                                      DataColumn(
+                                        label: Text(
+                                          "Biển số xe",
+                                          style: TextStyle(
+                                            fontWeight: FontWeight.bold,
+                                            fontSize: 12.5,
+                                          ),
+                                        ),
+                                      ),
+                                      DataColumn(
+                                        label: Text(
+                                          "Tài xế phụ trách",
+                                          style: TextStyle(
+                                            fontWeight: FontWeight.bold,
+                                            fontSize: 12.5,
+                                          ),
+                                        ),
+                                      ),
+                                      DataColumn(
+                                        label: Text(
+                                          "Cây dầu áp dụng",
+                                          style: TextStyle(
+                                            fontWeight: FontWeight.bold,
+                                            fontSize: 12.5,
+                                          ),
+                                        ),
+                                      ),
+                                      DataColumn(
+                                        label: Text(
+                                          "Nhãn QR / Ghi chú",
+                                          style: TextStyle(
+                                            fontWeight: FontWeight.bold,
+                                            fontSize: 12.5,
+                                          ),
+                                        ),
+                                      ),
+                                      DataColumn(
+                                        label: Text(
+                                          "Trạng thái",
+                                          style: TextStyle(
+                                            fontWeight: FontWeight.bold,
+                                            fontSize: 12.5,
+                                          ),
+                                        ),
+                                      ),
+                                      DataColumn(
+                                        label: Text(
+                                          "Thao tác",
+                                          style: TextStyle(
+                                            fontWeight: FontWeight.bold,
+                                            fontSize: 12.5,
+                                          ),
+                                        ),
+                                      ),
+                                    ],
+                                    rows: List.generate(filteredQr.length, (
+                                      idx,
+                                    ) {
+                                      final item = filteredQr[idx];
+                                      final plate =
+                                          (item['plate_number'] ?? 'N/A')
+                                              .toString();
+                                      final vType =
+                                          (item['vehicle_type'] ?? '')
+                                              .toString();
+                                      final dName =
+                                          (item['driver_name'] ?? '')
+                                              .toString();
+                                      final stName =
+                                          (item['gas_station_name'] ?? 'N/A')
+                                              .toString();
+                                      final stAddr =
+                                          (item['gas_station_address'] ?? '')
+                                              .toString();
+                                      final qrLabel =
+                                          (item['qr_code_label'] ??
+                                                  item['qr_label'] ??
+                                                  '')
+                                              .toString();
+                                      final note =
+                                          (item['note'] ?? '').toString();
+                                      final active =
+                                          item['is_active'] == true;
+                                      final imgUrl = _resolveFullImageUrl(
+                                        (item['qr_image_url'] ?? '')
+                                            .toString(),
+                                      );
+
+                                      return DataRow(
+                                        color: MaterialStateProperty.all(
+                                          idx % 2 == 0
+                                              ? Colors.white
+                                              : Colors.grey.shade50,
+                                        ),
+                                        cells: [
+                                          // 1. Ảnh QR thu nhỏ
+                                          DataCell(
+                                            InkWell(
+                                              borderRadius:
+                                                  BorderRadius.circular(4),
+                                              onTap: () =>
+                                                  _showQrImagePreviewDialog(
+                                                    item,
+                                                    onRefresh: loadQrRecords,
+                                                  ),
+                                              child: Container(
+                                                width: 44,
+                                                height: 44,
+                                                decoration: BoxDecoration(
+                                                  color: Colors.white,
+                                                  borderRadius:
+                                                      BorderRadius.circular(4),
+                                                  border: Border.all(
+                                                    color:
+                                                        Colors.indigo.shade200,
+                                                  ),
+                                                ),
+                                                child: ClipRRect(
+                                                  borderRadius:
+                                                      BorderRadius.circular(4),
+                                                  child: imgUrl.isEmpty
+                                                      ? Icon(
+                                                          Icons.qr_code_2,
+                                                          size: 26,
+                                                          color: Colors
+                                                              .indigo
+                                                              .shade400,
+                                                        )
+                                                      : Image.network(
+                                                          imgUrl,
+                                                          fit: BoxFit.cover,
+                                                          errorBuilder:
+                                                              (
+                                                                _,
+                                                                __,
+                                                                ___,
+                                                              ) => Icon(
+                                                                Icons.qr_code_2,
+                                                                size: 26,
+                                                                color: Colors
+                                                                    .indigo
+                                                                    .shade400,
+                                                              ),
+                                                        ),
+                                                ),
+                                              ),
+                                            ),
+                                          ),
+                                          // 2. Biển số xe
+                                          DataCell(
+                                            Column(
+                                              mainAxisAlignment:
+                                                  MainAxisAlignment.center,
+                                              crossAxisAlignment:
+                                                  CrossAxisAlignment.start,
+                                              children: [
+                                                Container(
+                                                  padding:
+                                                      const EdgeInsets.symmetric(
+                                                        horizontal: 8,
+                                                        vertical: 2,
+                                                      ),
+                                                  decoration: BoxDecoration(
+                                                    color: Colors.blue.shade50,
+                                                    borderRadius:
+                                                        BorderRadius.circular(
+                                                          4,
+                                                        ),
+                                                    border: Border.all(
+                                                      color:
+                                                          Colors.blue.shade200,
+                                                    ),
+                                                  ),
+                                                  child: Text(
+                                                    plate,
+                                                    style: TextStyle(
+                                                      fontWeight:
+                                                          FontWeight.bold,
+                                                      fontSize: 12.5,
+                                                      color:
+                                                          Colors.blue.shade900,
+                                                    ),
+                                                  ),
+                                                ),
+                                                if (vType.isNotEmpty)
+                                                  Padding(
+                                                    padding:
+                                                        const EdgeInsets.only(
+                                                          top: 2,
+                                                        ),
+                                                    child: Text(
+                                                      vType,
+                                                      style: TextStyle(
+                                                        fontSize: 11,
+                                                        color: Colors
+                                                            .grey
+                                                            .shade600,
+                                                      ),
+                                                    ),
+                                                  ),
+                                              ],
+                                            ),
+                                          ),
+                                          // 3. Tài xế phụ trách
+                                          DataCell(
+                                            Text(
+                                              dName.isNotEmpty
+                                                  ? dName
+                                                  : "Chưa gán tài xế",
+                                              style: TextStyle(
+                                                fontSize: 12.5,
+                                                fontWeight: dName.isNotEmpty
+                                                    ? FontWeight.w600
+                                                    : FontWeight.normal,
+                                                color: dName.isNotEmpty
+                                                    ? Colors.black87
+                                                    : Colors.grey.shade500,
+                                              ),
+                                            ),
+                                          ),
+                                          // 4. Cây dầu áp dụng
+                                          DataCell(
+                                            Column(
+                                              mainAxisAlignment:
+                                                  MainAxisAlignment.center,
+                                              crossAxisAlignment:
+                                                  CrossAxisAlignment.start,
+                                              children: [
+                                                Text(
+                                                  stName,
+                                                  style: const TextStyle(
+                                                    fontSize: 12.5,
+                                                    fontWeight: FontWeight.bold,
+                                                  ),
+                                                ),
+                                                if (stAddr.isNotEmpty)
+                                                  Text(
+                                                    stAddr,
+                                                    style: TextStyle(
+                                                      fontSize: 11,
+                                                      color:
+                                                          Colors.grey.shade600,
+                                                    ),
+                                                  ),
+                                              ],
+                                            ),
+                                          ),
+                                          // 5. Nhãn QR / Ghi chú
+                                          DataCell(
+                                            Column(
+                                              mainAxisAlignment:
+                                                  MainAxisAlignment.center,
+                                              crossAxisAlignment:
+                                                  CrossAxisAlignment.start,
+                                              children: [
+                                                Text(
+                                                  qrLabel.isNotEmpty
+                                                      ? qrLabel
+                                                      : "Mã QR cố định",
+                                                  style: TextStyle(
+                                                    fontSize: 12,
+                                                    fontWeight: FontWeight.w600,
+                                                    color:
+                                                        Colors.indigo.shade800,
+                                                  ),
+                                                ),
+                                                if (note.isNotEmpty)
+                                                  Text(
+                                                    note,
+                                                    style: TextStyle(
+                                                      fontSize: 11,
+                                                      color:
+                                                          Colors.grey.shade700,
+                                                    ),
+                                                  ),
+                                              ],
+                                            ),
+                                          ),
+                                          // 6. Trạng thái
+                                          DataCell(
+                                            Container(
+                                              padding:
+                                                  const EdgeInsets.symmetric(
+                                                    horizontal: 8,
+                                                    vertical: 3,
+                                                  ),
+                                              decoration: BoxDecoration(
+                                                color: active
+                                                    ? Colors.green.shade50
+                                                    : Colors.grey.shade200,
+                                                borderRadius:
+                                                    BorderRadius.circular(4),
+                                                border: Border.all(
+                                                  color: active
+                                                      ? Colors.green.shade300
+                                                      : Colors.grey.shade400,
+                                                ),
+                                              ),
+                                              child: Text(
+                                                active
+                                                    ? "Đang áp dụng"
+                                                    : "Tạm khóa",
+                                                style: TextStyle(
+                                                  fontSize: 11,
+                                                  fontWeight: FontWeight.bold,
+                                                  color: active
+                                                      ? Colors.green.shade800
+                                                      : Colors.grey.shade700,
+                                                ),
+                                              ),
+                                            ),
+                                          ),
+                                          // 7. Thao tác
+                                          DataCell(
+                                            Row(
+                                              mainAxisSize: MainAxisSize.min,
+                                              children: [
+                                                OutlinedButton.icon(
+                                                  style: OutlinedButton.styleFrom(
+                                                    foregroundColor:
+                                                        Colors.teal.shade700,
+                                                    side: BorderSide(
+                                                      color:
+                                                          Colors.teal.shade300,
+                                                    ),
+                                                    padding:
+                                                        const EdgeInsets.symmetric(
+                                                          horizontal: 8,
+                                                        ),
+                                                    minimumSize: const Size(
+                                                      0,
+                                                      32,
+                                                    ),
+                                                    tapTargetSize:
+                                                        MaterialTapTargetSize
+                                                            .shrinkWrap,
+                                                    shape: RoundedRectangleBorder(
+                                                      borderRadius:
+                                                          BorderRadius.circular(
+                                                            4,
+                                                          ),
+                                                    ),
+                                                  ),
+                                                  icon: const Icon(
+                                                    Icons.edit_outlined,
+                                                    size: 14,
+                                                  ),
+                                                  label: const Text(
+                                                    "Đổi ảnh / Sửa",
+                                                    style: TextStyle(
+                                                      fontSize: 11.5,
+                                                      fontWeight:
+                                                          FontWeight.bold,
+                                                    ),
+                                                  ),
+                                                  onPressed: () =>
+                                                      _showUpsertGasStationQrDialog(
+                                                        existingQr: item,
+                                                        onSaved: loadQrRecords,
+                                                      ),
+                                                ),
+                                                const SizedBox(width: 6),
+                                                OutlinedButton.icon(
+                                                  style: OutlinedButton.styleFrom(
+                                                    foregroundColor:
+                                                        Colors.red.shade700,
+                                                    side: BorderSide(
+                                                      color:
+                                                          Colors.red.shade300,
+                                                    ),
+                                                    padding:
+                                                        const EdgeInsets.symmetric(
+                                                          horizontal: 8,
+                                                        ),
+                                                    minimumSize: const Size(
+                                                      0,
+                                                      32,
+                                                    ),
+                                                    tapTargetSize:
+                                                        MaterialTapTargetSize
+                                                            .shrinkWrap,
+                                                    shape: RoundedRectangleBorder(
+                                                      borderRadius:
+                                                          BorderRadius.circular(
+                                                            4,
+                                                          ),
+                                                    ),
+                                                  ),
+                                                  icon: const Icon(
+                                                    Icons.delete_outline,
+                                                    size: 14,
+                                                  ),
+                                                  label: const Text(
+                                                    "Xóa",
+                                                    style: TextStyle(
+                                                      fontSize: 11.5,
+                                                      fontWeight:
+                                                          FontWeight.bold,
+                                                    ),
+                                                  ),
+                                                  onPressed: () =>
+                                                      _confirmDeleteGasStationQr(
+                                                        item,
+                                                        onDeleted:
+                                                            loadQrRecords,
+                                                      ),
+                                                ),
+                                              ],
+                                            ),
+                                          ),
+                                        ],
+                                      );
+                                    }),
+                                      ),
+                                    ),
+                                  ),
+                                );
+                              },
+                            ),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          );
+        },
+      ),
+    );
+  }
+
+  // ============ KHỐI & HỘP THOẠI DUYỆT ĐỀ XUẤT ĐỔ DẦU, MỞ QR 1 LẦN & NGHIỆM THU (TASK T2) ============
+
+  Widget _buildFuelRequestsOverviewCard(AppState state) {
+    final pendingList = _fuelRequests
+        .where((r) => r is Map && (r['status'] ?? '') == 'pending')
+        .map((r) => Map<String, dynamic>.from(r as Map))
+        .toList();
+    final approvedList = _fuelRequests
+        .where((r) => r is Map && (r['status'] ?? '') == 'approved')
+        .map((r) => Map<String, dynamic>.from(r as Map))
+        .toList();
+    final completedCount = _fuelRequests
+        .where((r) => r is Map && (r['status'] ?? '') == 'completed')
+        .length;
+
+    return Card(
+      elevation: 0,
+      color: Colors.white,
+      shape: RoundedRectangleBorder(
+        borderRadius: BorderRadius.circular(4),
+        side: BorderSide(
+          color: pendingList.isNotEmpty
+              ? Colors.deepOrange.shade300
+              : Colors.grey.shade300,
+          width: pendingList.isNotEmpty ? 1.5 : 1,
+        ),
+      ),
+      child: Padding(
+        padding: const EdgeInsets.all(16),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
+              children: [
+                Container(
+                  padding: const EdgeInsets.all(8),
+                  decoration: BoxDecoration(
+                    color: pendingList.isNotEmpty
+                        ? Colors.deepOrange.shade50
+                        : Colors.teal.shade50,
+                    borderRadius: BorderRadius.circular(4),
+                  ),
+                  child: Icon(
+                    Icons.local_gas_station,
+                    color: pendingList.isNotEmpty
+                        ? Colors.deepOrange.shade800
+                        : Colors.teal.shade800,
+                    size: 22,
+                  ),
+                ),
+                const SizedBox(width: 10),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Row(
+                        children: [
+                          const Flexible(
+                            child: Text(
+                              "Đề Xuất Đổ Dầu & Duyệt Mở Mã QR 1 Lần",
+                              overflow: TextOverflow.ellipsis,
+                              style: TextStyle(
+                                fontSize: 15.5,
+                                fontWeight: FontWeight.bold,
+                              ),
+                            ),
+                          ),
+                          if (pendingList.isNotEmpty) ...[
+                            const SizedBox(width: 8),
+                            Container(
+                              padding: const EdgeInsets.symmetric(
+                                horizontal: 8,
+                                vertical: 2,
+                              ),
+                              decoration: BoxDecoration(
+                                color: Colors.red.shade600,
+                                borderRadius: BorderRadius.circular(4),
+                              ),
+                              child: Text(
+                                "${pendingList.length} chờ duyệt",
+                                style: const TextStyle(
+                                  color: Colors.white,
+                                  fontSize: 11,
+                                  fontWeight: FontWeight.bold,
+                                ),
+                              ),
+                            ),
+                          ],
+                        ],
+                      ),
+                      const SizedBox(height: 2),
+                      Text(
+                        "Tài xế gửi đề xuất kèm ảnh Đồng hồ taplo -> Điều phối bấm Duyệt (OK) để mở Mã QR 1 lần -> Tự động ẩn QR khi tài xế chụp đủ Taplo + Phiếu nhận dầu",
+                        style: TextStyle(
+                          fontSize: 12,
+                          color: Colors.grey.shade600,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+                const SizedBox(width: 8),
+                SizedBox(
+                  height: 36,
+                  child: OutlinedButton.icon(
+                    style: OutlinedButton.styleFrom(
+                      foregroundColor: Colors.indigo.shade800,
+                      side: BorderSide(color: Colors.indigo.shade300),
+                      shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(4),
+                      ),
+                    ),
+                    icon: const Icon(Icons.list_alt, size: 16),
+                    label: Text(
+                      "Danh sách & Nghiệm thu (${_fuelRequests.length})",
+                      style: const TextStyle(
+                        fontSize: 12.5,
+                        fontWeight: FontWeight.w600,
+                      ),
+                    ),
+                    onPressed: () => _showFuelRequestsManagerDialog(),
+                  ),
+                ),
+              ],
+            ),
+            const Divider(height: 20),
+            if (pendingList.isEmpty && approvedList.isEmpty)
+              Container(
+                width: double.infinity,
+                padding: const EdgeInsets.symmetric(
+                  horizontal: 12,
+                  vertical: 10,
+                ),
+                decoration: BoxDecoration(
+                  color: Colors.grey.shade50,
+                  borderRadius: BorderRadius.circular(4),
+                  border: Border.all(color: Colors.grey.shade200),
+                ),
+                child: Row(
+                  children: [
+                    Icon(
+                      Icons.check_circle_outline,
+                      size: 18,
+                      color: Colors.green.shade700,
+                    ),
+                    const SizedBox(width: 8),
+                    Expanded(
+                      child: Text(
+                        "Hiện không có đề xuất đổ dầu nào đang chờ duyệt. Đã nghiệm thu hoàn tất: $completedCount lượt.",
+                        style: TextStyle(
+                          fontSize: 12.5,
+                          color: Colors.grey.shade700,
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+              )
+            else
+              Column(
+                children: [
+                  ...pendingList.take(5).map((req) {
+                    final int reqId =
+                        int.tryParse((req['id'] ?? '').toString()) ?? 0;
+                    final String plate = (req['plate_number'] ?? 'N/A')
+                        .toString();
+                    final String driver =
+                        (req['resolved_driver_name'] ??
+                                req['driver_name'] ??
+                                'Tài xế')
+                            .toString();
+                    final String station =
+                        (req['resolved_gas_station_name'] ??
+                                req['gas_station_name'] ??
+                                'Chưa chọn trạm')
+                            .toString();
+                    final String beforeKm = (req['before_odo_km'] ?? '--')
+                        .toString();
+                    final String taploUrl = _resolveFullImageUrl(
+                      (req['before_taplo_photo_url'] ?? '').toString(),
+                    );
+
+                    return Container(
+                      margin: const EdgeInsets.only(bottom: 8),
+                      padding: const EdgeInsets.all(10),
+                      decoration: BoxDecoration(
+                        color: Colors.amber.shade50.withOpacity(0.6),
+                        borderRadius: BorderRadius.circular(4),
+                        border: Border.all(color: Colors.orange.shade300),
+                      ),
+                      child: Row(
+                        children: [
+                          InkWell(
+                            borderRadius: BorderRadius.circular(4),
+                            onTap: () =>
+                                _showFuelRequestPhotosPreviewDialog(req),
+                            child: Container(
+                              width: 52,
+                              height: 52,
+                              decoration: BoxDecoration(
+                                color: Colors.white,
+                                borderRadius: BorderRadius.circular(4),
+                                border: Border.all(
+                                  color: Colors.orange.shade300,
+                                ),
+                              ),
+                              child: ClipRRect(
+                                borderRadius: BorderRadius.circular(4),
+                                child: taploUrl.isEmpty
+                                    ? const Icon(Icons.speed, size: 24)
+                                    : Image.network(
+                                        taploUrl,
+                                        fit: BoxFit.cover,
+                                        errorBuilder: (_, __, ___) =>
+                                            const Icon(Icons.speed, size: 24),
+                                      ),
+                              ),
+                            ),
+                          ),
+                          const SizedBox(width: 12),
+                          Expanded(
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                Row(
+                                  children: [
+                                    Container(
+                                      padding: const EdgeInsets.symmetric(
+                                        horizontal: 7,
+                                        vertical: 2,
+                                      ),
+                                      decoration: BoxDecoration(
+                                        color: Colors.deepOrange.shade700,
+                                        borderRadius: BorderRadius.circular(4),
+                                      ),
+                                      child: Text(
+                                        plate,
+                                        style: const TextStyle(
+                                          color: Colors.white,
+                                          fontWeight: FontWeight.bold,
+                                          fontSize: 12,
+                                        ),
+                                      ),
+                                    ),
+                                    const SizedBox(width: 8),
+                                    Flexible(
+                                      child: Text(
+                                        "Tài xế: $driver • Cây dầu: $station",
+                                        overflow: TextOverflow.ellipsis,
+                                        style: const TextStyle(
+                                          fontWeight: FontWeight.bold,
+                                          fontSize: 13,
+                                        ),
+                                      ),
+                                    ),
+                                  ],
+                                ),
+                                const SizedBox(height: 4),
+                                Text(
+                                  "Chỉ số Km Đồng hồ Taplo: $beforeKm km${(req['request_note'] ?? '').toString().isNotEmpty ? ' • Ghi chú: ${req['request_note']}' : ''}",
+                                  style: TextStyle(
+                                    fontSize: 12,
+                                    color: Colors.blueGrey.shade800,
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ),
+                          const SizedBox(width: 8),
+                          SizedBox(
+                            height: 32,
+                            child: OutlinedButton.icon(
+                              style: OutlinedButton.styleFrom(
+                                foregroundColor: Colors.blue.shade800,
+                                side: BorderSide(color: Colors.blue.shade300),
+                                padding: const EdgeInsets.symmetric(
+                                  horizontal: 10,
+                                ),
+                                minimumSize: const Size(0, 32),
+                                tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                                shape: RoundedRectangleBorder(
+                                  borderRadius: BorderRadius.circular(4),
+                                ),
+                              ),
+                              icon: const Icon(
+                                Icons.photo_library_outlined,
+                                size: 14,
+                              ),
+                              label: const Text(
+                                "Xem ảnh Taplo",
+                                style: TextStyle(
+                                  fontSize: 12,
+                                  fontWeight: FontWeight.bold,
+                                ),
+                              ),
+                              onPressed: () =>
+                                  _showFuelRequestPhotosPreviewDialog(req),
+                            ),
+                          ),
+                          const SizedBox(width: 6),
+                          SizedBox(
+                            height: 32,
+                            child: ElevatedButton.icon(
+                              style: ElevatedButton.styleFrom(
+                                backgroundColor: Colors.green.shade700,
+                                foregroundColor: Colors.white,
+                                elevation: 0,
+                                padding: const EdgeInsets.symmetric(
+                                  horizontal: 12,
+                                ),
+                                minimumSize: const Size(0, 32),
+                                tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                                shape: RoundedRectangleBorder(
+                                  borderRadius: BorderRadius.circular(4),
+                                ),
+                              ),
+                              icon: const Icon(
+                                Icons.check_circle_outline,
+                                size: 15,
+                              ),
+                              label: const Text(
+                                "Duyệt (OK) - Mở Mã QR",
+                                style: TextStyle(
+                                  fontSize: 12,
+                                  fontWeight: FontWeight.bold,
+                                ),
+                              ),
+                              onPressed: () => _handleApproveOrRejectFuelRequest(
+                                req,
+                                approve: true,
+                              ),
+                            ),
+                          ),
+                          const SizedBox(width: 6),
+                          SizedBox(
+                            height: 32,
+                            child: OutlinedButton(
+                              style: OutlinedButton.styleFrom(
+                                foregroundColor: Colors.red.shade700,
+                                side: BorderSide(color: Colors.red.shade300),
+                                padding: const EdgeInsets.symmetric(
+                                  horizontal: 10,
+                                ),
+                                minimumSize: const Size(0, 32),
+                                tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                                shape: RoundedRectangleBorder(
+                                  borderRadius: BorderRadius.circular(4),
+                                ),
+                              ),
+                              onPressed: reqId == 0
+                                  ? null
+                                  : () => _handleApproveOrRejectFuelRequest(
+                                      req,
+                                      approve: false,
+                                    ),
+                              child: const Text(
+                                "Từ chối",
+                                style: TextStyle(
+                                  fontSize: 12,
+                                  fontWeight: FontWeight.bold,
+                                ),
+                              ),
+                            ),
+                          ),
+                        ],
+                      ),
+                    );
+                  }),
+                  ...approvedList.take(3).map((req) {
+                    final String plate = (req['plate_number'] ?? 'N/A')
+                        .toString();
+                    final String driver =
+                        (req['resolved_driver_name'] ??
+                                req['driver_name'] ??
+                                'Tài xế')
+                            .toString();
+                    final String station =
+                        (req['resolved_gas_station_name'] ??
+                                req['gas_station_name'] ??
+                                'Cây dầu')
+                            .toString();
+                    return Container(
+                      margin: const EdgeInsets.only(bottom: 6),
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 10,
+                        vertical: 8,
+                      ),
+                      decoration: BoxDecoration(
+                        color: Colors.green.shade50,
+                        borderRadius: BorderRadius.circular(4),
+                        border: Border.all(color: Colors.green.shade200),
+                      ),
+                      child: Row(
+                        children: [
+                          Icon(
+                            Icons.qr_code_scanner,
+                            size: 18,
+                            color: Colors.green.shade800,
+                          ),
+                          const SizedBox(width: 8),
+                          Expanded(
+                            child: Text(
+                              "Xe $plate ($driver) đang mở Mã QR 1 lần tại $station • Chờ tài xế chụp Taplo + Phiếu nhận dầu để đóng QR",
+                              style: TextStyle(
+                                fontSize: 12.5,
+                                fontWeight: FontWeight.w600,
+                                color: Colors.green.shade900,
+                              ),
+                            ),
+                          ),
+                        ],
+                      ),
+                    );
+                  }),
+                ],
+              ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Future<void> _handleApproveOrRejectFuelRequest(
+    Map<String, dynamic> req, {
+    required bool approve,
+    VoidCallback? onDone,
+  }) async {
+    final int? reqId = int.tryParse((req['id'] ?? '').toString());
+    if (reqId == null) return;
+    final String plate = (req['plate_number'] ?? 'N/A').toString();
+
+    final res = await AdminService.reviewFuelRequest(
+      reqId,
+      action: approve ? 'approve' : 'reject',
+    );
+    if (!mounted) return;
+    if (res['success'] == true) {
+      await _refreshRealtimeReportsSilently();
+      onDone?.call();
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          backgroundColor: approve
+              ? Colors.green.shade700
+              : Colors.orange.shade800,
+          content: Text(
+            approve
+                ? "Đã duyệt đề xuất đổ dầu cho xe $plate! Hệ thống đã mở Mã QR Cây dầu 1 lần trên App Tài xế."
+                : "Đã từ chối đề xuất đổ dầu của xe $plate.",
+          ),
+        ),
+      );
+    } else {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          backgroundColor: Colors.red.shade700,
+          content: Text(
+            (res['message'] ?? "Không thể xử lý đề xuất đổ dầu").toString(),
+          ),
+        ),
+      );
+    }
+  }
+
+  void _showFuelRequestPhotosPreviewDialog(
+    Map<String, dynamic> req, {
+    VoidCallback? onReviewed,
+  }) {
+    final String plate = (req['plate_number'] ?? 'N/A').toString();
+    final String driver =
+        (req['resolved_driver_name'] ?? req['driver_name'] ?? 'Tài xế')
+            .toString();
+    final String station =
+        (req['resolved_gas_station_name'] ??
+                req['gas_station_name'] ??
+                'Cây dầu')
+            .toString();
+    final String status = (req['status'] ?? 'pending').toString();
+    final String beforeTaploUrl = _resolveFullImageUrl(
+      (req['before_taplo_photo_url'] ?? '').toString(),
+    );
+    final String afterTaploUrl = _resolveFullImageUrl(
+      (req['after_taplo_photo_url'] ?? '').toString(),
+    );
+    final String receiptUrl = _resolveFullImageUrl(
+      (req['fuel_receipt_photo_url'] ?? '').toString(),
+    );
+
+    showDialog(
+      context: context,
+      builder: (ctx) {
+        final Size screenSize = MediaQuery.of(ctx).size;
+        final double targetWidth = math.min(860.0, screenSize.width * 0.95);
+        return Dialog(
+          backgroundColor: Colors.white,
+          surfaceTintColor: Colors.white,
+          constraints: BoxConstraints(minWidth: 320, maxWidth: targetWidth),
+          insetPadding: const EdgeInsets.all(16),
+          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(4)),
+          child: SingleChildScrollView(
+            padding: const EdgeInsets.all(20),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Row(
+                  children: [
+                    Icon(
+                      Icons.local_gas_station,
+                      color: Colors.orange.shade800,
+                      size: 22,
+                    ),
+                    const SizedBox(width: 8),
+                    Expanded(
+                      child: Text(
+                        "Chi tiết Đề xuất & Nghiệm thu Đổ dầu - Xe $plate ($driver)",
+                        style: const TextStyle(
+                          fontSize: 16,
+                          fontWeight: FontWeight.bold,
+                        ),
+                      ),
+                    ),
+                    IconButton(
+                      icon: const Icon(Icons.close, size: 20),
+                      onPressed: () => Navigator.pop(ctx),
+                    ),
+                  ],
+                ),
+                const Divider(height: 20),
+                Text(
+                  "Cây dầu: $station • Km Taplo trước khi đổ: ${req['before_odo_km'] ?? '--'} km • Km Taplo sau khi đổ: ${req['after_odo_km'] ?? '--'} km • Số lít: ${req['liters_filled'] ?? '--'} lít",
+                  style: const TextStyle(
+                    fontSize: 13,
+                    fontWeight: FontWeight.w600,
+                  ),
+                ),
+                const SizedBox(height: 12),
+                Row(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Expanded(
+                      child: _buildFuelPhotoBox(
+                        "1. Ảnh Đồng hồ Taplo (Trước khi đổ)",
+                        beforeTaploUrl,
+                      ),
+                    ),
+                    const SizedBox(width: 10),
+                    Expanded(
+                      child: _buildFuelPhotoBox(
+                        "2. Ảnh Đồng hồ Taplo (Sau khi đổ)",
+                        afterTaploUrl,
+                      ),
+                    ),
+                    const SizedBox(width: 10),
+                    Expanded(
+                      child: _buildFuelPhotoBox(
+                        "3. Ảnh Phiếu nhận dầu (Nghiệm thu)",
+                        receiptUrl,
+                      ),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 16),
+                Row(
+                  mainAxisAlignment: MainAxisAlignment.end,
+                  children: [
+                    if (status == 'pending') ...[
+                      SizedBox(
+                        height: 36,
+                        child: OutlinedButton(
+                          style: OutlinedButton.styleFrom(
+                            foregroundColor: Colors.red.shade700,
+                            side: BorderSide(color: Colors.red.shade300),
+                            shape: RoundedRectangleBorder(
+                              borderRadius: BorderRadius.circular(4),
+                            ),
+                          ),
+                          onPressed: () {
+                            Navigator.pop(ctx);
+                            _handleApproveOrRejectFuelRequest(
+                              req,
+                              approve: false,
+                              onDone: onReviewed,
+                            );
+                          },
+                          child: const Text("Từ chối"),
+                        ),
+                      ),
+                      const SizedBox(width: 8),
+                      SizedBox(
+                        height: 36,
+                        child: ElevatedButton.icon(
+                          style: ElevatedButton.styleFrom(
+                            backgroundColor: Colors.green.shade700,
+                            foregroundColor: Colors.white,
+                            shape: RoundedRectangleBorder(
+                              borderRadius: BorderRadius.circular(4),
+                            ),
+                          ),
+                          icon: const Icon(
+                            Icons.check_circle_outline,
+                            size: 16,
+                          ),
+                          label: const Text(
+                            "Duyệt (OK) - Mở Mã QR 1 lần",
+                            style: TextStyle(fontWeight: FontWeight.bold),
+                          ),
+                          onPressed: () {
+                            Navigator.pop(ctx);
+                            _handleApproveOrRejectFuelRequest(
+                              req,
+                              approve: true,
+                              onDone: onReviewed,
+                            );
+                          },
+                        ),
+                      ),
+                      const SizedBox(width: 8),
+                    ],
+                    SizedBox(
+                      height: 36,
+                      child: ElevatedButton(
+                        style: ElevatedButton.styleFrom(
+                          backgroundColor: Colors.blue.shade800,
+                          foregroundColor: Colors.white,
+                          shape: RoundedRectangleBorder(
+                            borderRadius: BorderRadius.circular(4),
+                          ),
+                        ),
+                        onPressed: () => Navigator.pop(ctx),
+                        child: const Text("Đóng"),
+                      ),
+                    ),
+                  ],
+                ),
+              ],
+            ),
+          ),
+        );
+      },
+    );
+  }
+
+  Widget _buildFuelPhotoBox(String title, String imageUrl) {
+    return Container(
+      padding: const EdgeInsets.all(10),
+      decoration: BoxDecoration(
+        color: Colors.grey.shade50,
+        borderRadius: BorderRadius.circular(4),
+        border: Border.all(color: Colors.grey.shade300),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(
+            title,
+            style: const TextStyle(fontSize: 12, fontWeight: FontWeight.bold),
+          ),
+          const SizedBox(height: 8),
+          Container(
+            width: double.infinity,
+            height: 220,
+            decoration: BoxDecoration(
+              color: Colors.white,
+              borderRadius: BorderRadius.circular(4),
+              border: Border.all(color: Colors.grey.shade200),
+            ),
+            child: imageUrl.isEmpty
+                ? Center(
+                    child: Text(
+                      "Chưa có ảnh",
+                      style: TextStyle(
+                        fontSize: 12,
+                        color: Colors.grey.shade500,
+                      ),
+                    ),
+                  )
+                : ClipRRect(
+                    borderRadius: BorderRadius.circular(4),
+                    child: InteractiveViewer(
+                      child: Image.network(
+                        imageUrl,
+                        fit: BoxFit.contain,
+                        errorBuilder: (_, __, ___) => const Center(
+                          child: Icon(Icons.broken_image_outlined, size: 36),
+                        ),
+                      ),
+                    ),
+                  ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  void _showFuelRequestsManagerDialog() {
+    String statusFilter = 'ALL';
+    String searchQuery = '';
+    final searchCtrl = TextEditingController();
+    List<Map<String, dynamic>> requests = [];
+    bool isLoading = true;
+    bool initialized = false;
+
+    showDialog(
+      context: context,
+      builder: (ctx) => StatefulBuilder(
+        builder: (ctx, setModalState) {
+          Future<void> reloadList() async {
+            setModalState(() => isLoading = true);
+            final raw = await AdminService.fetchFuelRequests(limit: 150);
+            if (mounted) {
+              setState(() {
+                _fuelRequests = raw;
+              });
+            }
+            setModalState(() {
+              requests = raw
+                  .whereType<Map>()
+                  .map((e) => Map<String, dynamic>.from(e))
+                  .toList();
+              isLoading = false;
+            });
+          }
+
+          if (!initialized) {
+            initialized = true;
+            Future.microtask(reloadList);
+          }
+
+          final q = searchQuery.trim().toLowerCase();
+          final filtered = requests.where((item) {
+            final st = (item['status'] ?? 'pending').toString().toLowerCase();
+            if (statusFilter != 'ALL' && st != statusFilter.toLowerCase()) {
+              return false;
+            }
+            if (q.isEmpty) return true;
+            final plate = (item['plate_number'] ?? '').toString().toLowerCase();
+            final drv =
+                (item['resolved_driver_name'] ?? item['driver_name'] ?? '')
+                    .toString()
+                    .toLowerCase();
+            final stName =
+                (item['resolved_gas_station_name'] ??
+                        item['gas_station_name'] ??
+                        '')
+                    .toString()
+                    .toLowerCase();
+            return plate.contains(q) || drv.contains(q) || stName.contains(q);
+          }).toList();
+
+          final Size screenSize = MediaQuery.of(ctx).size;
+          final double targetWidth = screenSize.width * 0.96;
+          final double targetHeight = screenSize.height * 0.90;
+
+          return Dialog(
+            backgroundColor: Colors.white,
+            surfaceTintColor: Colors.white,
+            constraints: BoxConstraints(
+              minWidth: 320,
+              maxWidth: targetWidth,
+              maxHeight: targetHeight,
+            ),
+            insetPadding: const EdgeInsets.all(16),
+            shape: RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(4),
+            ),
+            child: Container(
+              width: targetWidth,
+              height: targetHeight,
+              padding: const EdgeInsets.all(20),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Row(
+                    children: [
+                      Container(
+                        padding: const EdgeInsets.all(8),
+                        decoration: BoxDecoration(
+                          color: Colors.orange.shade50,
+                          borderRadius: BorderRadius.circular(4),
+                        ),
+                        child: Icon(
+                          Icons.local_gas_station,
+                          color: Colors.orange.shade800,
+                          size: 24,
+                        ),
+                      ),
+                      const SizedBox(width: 10),
+                      Expanded(
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            const Text(
+                              "Quản lý Đề xuất đổ dầu, Duyệt mở Mã QR 1 lần & Nghiệm thu",
+                              style: TextStyle(
+                                fontSize: 16.5,
+                                fontWeight: FontWeight.bold,
+                              ),
+                            ),
+                            Text(
+                              "Theo dõi toàn bộ đề xuất đổ dầu từ App Tài xế, phê duyệt mở Mã QR 1 lần và đối chiếu 2 ảnh nghiệm thu (Taplo + Phiếu nhận dầu)",
+                              style: TextStyle(
+                                fontSize: 12.5,
+                                color: Colors.grey.shade600,
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                      IconButton(
+                        icon: const Icon(Icons.close, size: 20),
+                        onPressed: () => Navigator.pop(ctx),
+                      ),
+                    ],
+                  ),
+                  const Divider(height: 20),
+                  Row(
+                    children: [
+                      SizedBox(
+                        width: 220,
+                        height: 36,
+                        child: DropdownButtonFormField<String>(
+                          value: statusFilter,
+                          isExpanded: true,
+                          style: const TextStyle(
+                            fontSize: 12.5,
+                            color: Colors.black87,
+                          ),
+                          decoration: InputDecoration(
+                            isDense: true,
+                            contentPadding: const EdgeInsets.symmetric(
+                              horizontal: 10,
+                              vertical: 0,
+                            ),
+                            constraints: const BoxConstraints(
+                              minHeight: 36,
+                              maxHeight: 36,
+                            ),
+                            border: OutlineInputBorder(
+                              borderRadius: BorderRadius.circular(4),
+                            ),
+                          ),
+                          items: const [
+                            DropdownMenuItem(
+                              value: 'ALL',
+                              child: Text("Tất cả trạng thái"),
+                            ),
+                            DropdownMenuItem(
+                              value: 'pending',
+                              child: Text("Chờ Điều phối duyệt"),
+                            ),
+                            DropdownMenuItem(
+                              value: 'approved',
+                              child: Text("Đang mở Mã QR 1 lần"),
+                            ),
+                            DropdownMenuItem(
+                              value: 'completed',
+                              child: Text("Đã nghiệm thu (Đã ẩn QR)"),
+                            ),
+                            DropdownMenuItem(
+                              value: 'rejected',
+                              child: Text("Đã từ chối"),
+                            ),
+                          ],
+                          onChanged: (val) {
+                            if (val != null) {
+                              setModalState(() => statusFilter = val);
+                            }
+                          },
+                        ),
+                      ),
+                      const SizedBox(width: 10),
+                      Expanded(
+                        child: SizedBox(
+                          height: 36,
+                          child: TextField(
+                            controller: searchCtrl,
+                            style: const TextStyle(fontSize: 12.5),
+                            onChanged: (val) =>
+                                setModalState(() => searchQuery = val),
+                            decoration: InputDecoration(
+                              isDense: true,
+                              constraints: const BoxConstraints(
+                                minHeight: 36,
+                                maxHeight: 36,
+                              ),
+                              hintText:
+                                  "Tìm theo biển số xe, tài xế, tên cây dầu...",
+                              prefixIcon: const Icon(Icons.search, size: 16),
+                              contentPadding: const EdgeInsets.symmetric(
+                                horizontal: 10,
+                                vertical: 0,
+                              ),
+                              border: OutlineInputBorder(
+                                borderRadius: BorderRadius.circular(4),
+                              ),
+                            ),
+                          ),
+                        ),
+                      ),
+                      const SizedBox(width: 8),
+                      SizedBox(
+                        height: 36,
+                        child: OutlinedButton.icon(
+                          style: OutlinedButton.styleFrom(
+                            shape: RoundedRectangleBorder(
+                              borderRadius: BorderRadius.circular(4),
+                            ),
+                          ),
+                          icon: const Icon(Icons.refresh, size: 16),
+                          label: const Text("Làm mới"),
+                          onPressed: reloadList,
+                        ),
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 12),
+                  Expanded(
+                    child: Container(
+                      width: double.infinity,
+                      decoration: BoxDecoration(
+                        borderRadius: BorderRadius.circular(4),
+                        border: Border.all(color: Colors.grey.shade300),
+                      ),
+                      child: isLoading
+                          ? const Center(child: CircularProgressIndicator())
+                          : filtered.isEmpty
+                          ? Center(
+                              child: Text(
+                                "Chưa có đề xuất đổ dầu nào theo bộ lọc hiện tại.",
+                                style: TextStyle(color: Colors.grey.shade600),
+                              ),
+                            )
+                          : LayoutBuilder(
+                              builder: (context, tableConstraints) {
+                                return SingleChildScrollView(
+                                  scrollDirection: Axis.vertical,
+                                  child: SingleChildScrollView(
+                                    scrollDirection: Axis.horizontal,
+                                    child: ConstrainedBox(
+                                      constraints: BoxConstraints(
+                                        minWidth: tableConstraints.maxWidth,
+                                      ),
+                                      child: DataTable(
+                                        headingRowColor:
+                                            MaterialStateProperty.all(
+                                              Colors.grey.shade100,
+                                            ),
+                                        headingRowHeight: 42,
+                                        dataRowMinHeight: 56,
+                                        dataRowMaxHeight: 64,
+                                        horizontalMargin: 16,
+                                        columnSpacing: 22,
+                                        columns: const [
+                                          DataColumn(
+                                            label: Text(
+                                              "Biển số xe",
+                                              style: TextStyle(
+                                                fontWeight: FontWeight.bold,
+                                                fontSize: 12.5,
+                                              ),
+                                            ),
+                                          ),
+                                          DataColumn(
+                                            label: Text(
+                                              "Tài xế",
+                                              style: TextStyle(
+                                                fontWeight: FontWeight.bold,
+                                                fontSize: 12.5,
+                                              ),
+                                            ),
+                                          ),
+                                          DataColumn(
+                                            label: Text(
+                                              "Cây dầu",
+                                              style: TextStyle(
+                                                fontWeight: FontWeight.bold,
+                                                fontSize: 12.5,
+                                              ),
+                                            ),
+                                          ),
+                                          DataColumn(
+                                            label: Text(
+                                              "Km Taplo (Trước -> Sau)",
+                                              style: TextStyle(
+                                                fontWeight: FontWeight.bold,
+                                                fontSize: 12.5,
+                                              ),
+                                            ),
+                                          ),
+                                          DataColumn(
+                                            label: Text(
+                                              "Chứng từ ảnh",
+                                              style: TextStyle(
+                                                fontWeight: FontWeight.bold,
+                                                fontSize: 12.5,
+                                              ),
+                                            ),
+                                          ),
+                                          DataColumn(
+                                            label: Text(
+                                              "Trạng thái & Mã QR",
+                                              style: TextStyle(
+                                                fontWeight: FontWeight.bold,
+                                                fontSize: 12.5,
+                                              ),
+                                            ),
+                                          ),
+                                          DataColumn(
+                                            label: Text(
+                                              "Thao tác",
+                                              style: TextStyle(
+                                                fontWeight: FontWeight.bold,
+                                                fontSize: 12.5,
+                                              ),
+                                            ),
+                                          ),
+                                        ],
+                                        rows: List.generate(filtered.length, (
+                                          idx,
+                                        ) {
+                                          final item = filtered[idx];
+                                          final plate =
+                                              (item['plate_number'] ?? 'N/A')
+                                                  .toString();
+                                          final drv =
+                                              (item['resolved_driver_name'] ??
+                                                      item['driver_name'] ??
+                                                      '--')
+                                                  .toString();
+                                          final stName =
+                                              (item['resolved_gas_station_name'] ??
+                                                      item['gas_station_name'] ??
+                                                      '--')
+                                                  .toString();
+                                          final beforeKm =
+                                              item['before_odo_km'] ?? '--';
+                                          final afterKm =
+                                              item['after_odo_km'] ?? '--';
+                                          final st =
+                                              (item['status'] ?? 'pending')
+                                                  .toString()
+                                                  .toLowerCase();
+                                          final hasAfterPhotos =
+                                              (item['after_taplo_photo_url'] ??
+                                                          '')
+                                                      .toString()
+                                                      .isNotEmpty &&
+                                              (item['fuel_receipt_photo_url'] ??
+                                                          '')
+                                                      .toString()
+                                                      .isNotEmpty;
+
+                                          String badgeLabel = "Chờ duyệt";
+                                          Color badgeBg = Colors.orange.shade50;
+                                          Color badgeFg =
+                                              Colors.orange.shade900;
+                                          if (st == 'approved') {
+                                            badgeLabel =
+                                                "Đang mở Mã QR 1 lần";
+                                            badgeBg = Colors.green.shade50;
+                                            badgeFg = Colors.green.shade900;
+                                          } else if (st == 'completed') {
+                                            badgeLabel =
+                                                "Đã nghiệm thu (Đã ẩn QR)";
+                                            badgeBg = Colors.teal.shade50;
+                                            badgeFg = Colors.teal.shade900;
+                                          } else if (st == 'rejected') {
+                                            badgeLabel = "Đã từ chối";
+                                            badgeBg = Colors.red.shade50;
+                                            badgeFg = Colors.red.shade800;
+                                          }
+
+                                          return DataRow(
+                                            cells: [
+                                              DataCell(
+                                                Text(
+                                                  plate,
+                                                  style: const TextStyle(
+                                                    fontWeight: FontWeight.bold,
+                                                    fontSize: 12.5,
+                                                  ),
+                                                ),
+                                              ),
+                                              DataCell(
+                                                Text(
+                                                  drv,
+                                                  style: const TextStyle(
+                                                    fontSize: 12.5,
+                                                  ),
+                                                ),
+                                              ),
+                                              DataCell(
+                                                Text(
+                                                  stName,
+                                                  style: const TextStyle(
+                                                    fontSize: 12.5,
+                                                  ),
+                                                ),
+                                              ),
+                                              DataCell(
+                                                Text(
+                                                  "$beforeKm km -> $afterKm km",
+                                                  style: const TextStyle(
+                                                    fontSize: 12,
+                                                  ),
+                                                ),
+                                              ),
+                                              DataCell(
+                                                InkWell(
+                                                  borderRadius:
+                                                      BorderRadius.circular(4),
+                                                  onTap: () =>
+                                                      _showFuelRequestPhotosPreviewDialog(
+                                                        item,
+                                                        onReviewed: reloadList,
+                                                      ),
+                                                  child: Text(
+                                                    hasAfterPhotos
+                                                        ? "Đủ 3 ảnh (Taplo trước/sau + Phiếu dầu)"
+                                                        : "1 ảnh Taplo trước khi đổ",
+                                                    style: TextStyle(
+                                                      fontSize: 12,
+                                                      color:
+                                                          Colors.blue.shade800,
+                                                      fontWeight:
+                                                          FontWeight.w600,
+                                                      decoration: TextDecoration
+                                                          .underline,
+                                                    ),
+                                                  ),
+                                                ),
+                                              ),
+                                              DataCell(
+                                                Container(
+                                                  padding:
+                                                      const EdgeInsets.symmetric(
+                                                        horizontal: 8,
+                                                        vertical: 3,
+                                                      ),
+                                                  decoration: BoxDecoration(
+                                                    color: badgeBg,
+                                                    borderRadius:
+                                                        BorderRadius.circular(
+                                                          4,
+                                                        ),
+                                                  ),
+                                                  child: Text(
+                                                    badgeLabel,
+                                                    style: TextStyle(
+                                                      fontSize: 11.5,
+                                                      fontWeight:
+                                                          FontWeight.bold,
+                                                      color: badgeFg,
+                                                    ),
+                                                  ),
+                                                ),
+                                              ),
+                                              DataCell(
+                                                Row(
+                                                  mainAxisSize:
+                                                      MainAxisSize.min,
+                                                  children: [
+                                                    OutlinedButton(
+                                                      style: OutlinedButton.styleFrom(
+                                                        minimumSize: const Size(
+                                                          0,
+                                                          32,
+                                                        ),
+                                                        padding:
+                                                            const EdgeInsets.symmetric(
+                                                              horizontal: 8,
+                                                            ),
+                                                        shape: RoundedRectangleBorder(
+                                                          borderRadius:
+                                                              BorderRadius.circular(
+                                                                4,
+                                                              ),
+                                                        ),
+                                                      ),
+                                                      onPressed: () =>
+                                                          _showFuelRequestPhotosPreviewDialog(
+                                                            item,
+                                                            onReviewed:
+                                                                reloadList,
+                                                          ),
+                                                      child: const Text(
+                                                        "Xem ảnh",
+                                                        style: TextStyle(
+                                                          fontSize: 11.5,
+                                                          fontWeight:
+                                                              FontWeight.bold,
+                                                        ),
+                                                      ),
+                                                    ),
+                                                    if (st == 'pending') ...[
+                                                      const SizedBox(width: 6),
+                                                      ElevatedButton(
+                                                        style: ElevatedButton.styleFrom(
+                                                          backgroundColor: Colors
+                                                              .green
+                                                              .shade700,
+                                                          foregroundColor:
+                                                              Colors.white,
+                                                          elevation: 0,
+                                                          minimumSize:
+                                                              const Size(0, 32),
+                                                          padding:
+                                                              const EdgeInsets.symmetric(
+                                                                horizontal: 10,
+                                                              ),
+                                                          shape: RoundedRectangleBorder(
+                                                            borderRadius:
+                                                                BorderRadius.circular(
+                                                                  4,
+                                                                ),
+                                                          ),
+                                                        ),
+                                                        onPressed: () =>
+                                                            _handleApproveOrRejectFuelRequest(
+                                                              item,
+                                                              approve: true,
+                                                              onDone:
+                                                                  reloadList,
+                                                            ),
+                                                        child: const Text(
+                                                          "Duyệt (OK)",
+                                                          style: TextStyle(
+                                                            fontSize: 11.5,
+                                                            fontWeight:
+                                                                FontWeight.bold,
+                                                          ),
+                                                        ),
+                                                      ),
+                                                    ],
+                                                  ],
+                                                ),
+                                              ),
+                                            ],
+                                          );
+                                        }),
+                                      ),
+                                    ),
+                                  ),
+                                );
+                              },
+                            ),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          );
+        },
+      ),
+    );
   }
 
   // ============ DIALOG THÊM/SỬA CÂY DẦU ============
@@ -10461,20 +14045,33 @@ class _DispatchSupervisorScreenState extends State<DispatchSupervisorScreen> {
 
   // DIALOG: CHỈNH SỬA THÔNG TIN PHƯƠNG TIỆN
   // ================== SELECT BOX TRẠNG THÁI XE ==================
-  // Quản lý / Điều phối đổi nhanh giữa "Sẵn sàng hoạt động" và "Báo nghỉ"
-  // (Điều phối báo nghỉ thay cho Tài xế khi tài xế không thao tác được trên app).
+  // Quản lý / Điều phối đổi nhanh giữa "Sẵn sàng hoạt động", "Báo nghỉ" và "Ngừng hoạt động"
   Widget _buildVehicleStatusSelector(dynamic v) {
     final plate = (v['plate_number'] ?? '').toString();
-    final inactive = _isVehicleInactive(v);
+    final curStatus = _vehicleStatusValue(v);
     final busy = _vehicleStatusBusy == plate;
+    final Color bgColor;
+    final Color borderColor;
+    final Color textColor;
+    if (curStatus == 'stopped') {
+      bgColor = Colors.red.shade50;
+      borderColor = Colors.red.shade200;
+      textColor = Colors.red.shade800;
+    } else if (curStatus == 'inactive') {
+      bgColor = Colors.grey.shade100;
+      borderColor = Colors.grey.shade400;
+      textColor = Colors.grey.shade700;
+    } else {
+      bgColor = Colors.green.shade50;
+      borderColor = Colors.green.shade200;
+      textColor = Colors.green.shade800;
+    }
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
       decoration: BoxDecoration(
-        color: inactive ? Colors.grey.shade100 : Colors.green.shade50,
+        color: bgColor,
         borderRadius: BorderRadius.circular(4),
-        border: Border.all(
-          color: inactive ? Colors.grey.shade400 : Colors.green.shade200,
-        ),
+        border: Border.all(color: borderColor),
       ),
       child: busy
           ? const SizedBox(
@@ -10484,11 +14081,11 @@ class _DispatchSupervisorScreenState extends State<DispatchSupervisorScreen> {
             )
           : DropdownButtonHideUnderline(
               child: DropdownButton<String>(
-                value: inactive ? 'inactive' : 'ready',
+                value: curStatus,
                 isDense: true,
-                borderRadius: BorderRadius.circular(8),
+                borderRadius: BorderRadius.circular(4),
                 style: TextStyle(
-                  color: inactive ? Colors.grey.shade700 : Colors.green.shade800,
+                  color: textColor,
                   fontSize: 11,
                   fontWeight: FontWeight.bold,
                 ),
@@ -10507,11 +14104,16 @@ class _DispatchSupervisorScreenState extends State<DispatchSupervisorScreen> {
                       style: TextStyle(fontSize: 12, color: Colors.black87),
                     ),
                   ),
+                  DropdownMenuItem(
+                    value: 'stopped',
+                    child: Text(
+                      "Ngừng hoạt động",
+                      style: TextStyle(fontSize: 12, color: Colors.black87),
+                    ),
+                  ),
                 ],
                 onChanged: (val) {
-                  if (val == null) return;
-                  final cur = inactive ? 'inactive' : 'ready';
-                  if (val == cur) return;
+                  if (val == null || val == curStatus) return;
                   _changeVehicleStatus(plate, val);
                 },
               ),
@@ -10521,19 +14123,39 @@ class _DispatchSupervisorScreenState extends State<DispatchSupervisorScreen> {
 
   Future<void> _changeVehicleStatus(String plate, String newStatus) async {
     if (_vehicleStatusBusy.isNotEmpty) return;
+    final String dialogTitle;
+    final String dialogContent;
+    final String actionLabel;
+    final Color actionColor;
+    final String toastMessage;
+    if (newStatus == 'stopped') {
+      dialogTitle = 'Ngừng hoạt động xe $plate?';
+      dialogContent =
+          'Xe sẽ chuyển sang trạng thái "Ngừng hoạt động": phương tiện ngừng vận hành và không thể nhận chuyến/đơn hàng mới cho đến khi được kích hoạt lại.';
+      actionLabel = 'Ngừng hoạt động';
+      actionColor = Colors.red.shade700;
+      toastMessage = 'Đã chuyển xe $plate sang trạng thái Ngừng hoạt động';
+    } else if (newStatus == 'inactive') {
+      dialogTitle = 'Báo nghỉ xe $plate?';
+      dialogContent =
+          'Xe sẽ chuyển sang "Tạm ngừng hoạt động": tài xế không thể nhận chuyến/đơn hàng cho đến khi được kích hoạt lại.';
+      actionLabel = 'Báo nghỉ';
+      actionColor = Colors.red.shade700;
+      toastMessage = 'Đã báo nghỉ xe $plate';
+    } else {
+      dialogTitle = 'Kích hoạt lại xe $plate?';
+      dialogContent =
+          'Xe sẽ quay lại trạng thái "Sẵn sàng hoạt động" và nhận chuyến bình thường.';
+      actionLabel = 'Kích hoạt';
+      actionColor = Colors.green.shade600;
+      toastMessage = 'Đã kích hoạt lại xe $plate';
+    }
     final confirmed = await showDialog<bool>(
       context: context,
       builder: (ctx) => AlertDialog(
-        title: Text(
-          newStatus == 'inactive'
-              ? 'Báo nghỉ xe $plate?'
-              : 'Kích hoạt lại xe $plate?',
-        ),
-        content: Text(
-          newStatus == 'inactive'
-              ? 'Xe sẽ chuyển sang "Tạm ngừng hoạt động": tài xế không thể nhận chuyến/đơn hàng cho đến khi được kích hoạt lại.'
-              : 'Xe sẽ quay lại trạng thái "Sẵn sàng hoạt động" và nhận chuyến bình thường.',
-        ),
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(4)),
+        title: Text(dialogTitle),
+        content: Text(dialogContent),
         actions: [
           TextButton(
             onPressed: () => Navigator.pop(ctx, false),
@@ -10541,13 +14163,14 @@ class _DispatchSupervisorScreenState extends State<DispatchSupervisorScreen> {
           ),
           ElevatedButton(
             style: ElevatedButton.styleFrom(
-              backgroundColor: newStatus == 'inactive'
-                  ? Colors.red.shade700
-                  : Colors.green.shade600,
+              backgroundColor: actionColor,
               foregroundColor: Colors.white,
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(4),
+              ),
             ),
             onPressed: () => Navigator.pop(ctx, true),
-            child: Text(newStatus == 'inactive' ? 'Báo nghỉ' : 'Kích hoạt'),
+            child: Text(actionLabel),
           ),
         ],
       ),
@@ -10560,14 +14183,8 @@ class _DispatchSupervisorScreenState extends State<DispatchSupervisorScreen> {
     if (res['success'] == true) {
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
-          content: Text(
-            newStatus == 'inactive'
-                ? 'Đã báo nghỉ xe $plate'
-                : 'Đã kích hoạt lại xe $plate',
-          ),
-          backgroundColor: newStatus == 'inactive'
-              ? Colors.red.shade700
-              : Colors.green.shade600,
+          content: Text(toastMessage),
+          backgroundColor: actionColor,
         ),
       );
       // Tải lại danh sách xe để đồng bộ toàn bộ màn hình (ô chọn xe, tổng quan...)

@@ -230,9 +230,19 @@ class _MapScreenState extends State<MapScreen> {
     final fleetStatuses = state.allFleetVehiclesStatus;
     final sortedPlates = fleetStatuses.keys.toList()..sort();
 
-    // Tap "Off": cac xe dang bao nghi (Quan ly/Dieu phoi bat tay, hoac khong con tren GPS)
+    // Tap "Off": cac xe dang bao nghi hoac ngung hoat dong (Quan ly/Dieu phoi bat tay, hoac khong con tren GPS)
+    final Set<String> stoppedPlates = _offDutyVehicles
+        .where((v) => v is Map && ((v['status'] ?? '') == 'stopped'))
+        .map((v) => (v['plate_number'] ?? v['plate'] ?? '').toString())
+        .toSet();
     final Set<String> offDutyPlates = _offDutyVehicles
-        .where((v) => v is Map && ((v['in_fleet'] == false) || ((v['status'] ?? '') == 'inactive')))
+        .where(
+          (v) =>
+              v is Map &&
+              ((v['in_fleet'] == false) ||
+                  ((v['status'] ?? '') == 'inactive') ||
+                  ((v['status'] ?? '') == 'stopped')),
+        )
         .map((v) => (v['plate_number'] ?? v['plate'] ?? '').toString())
         .toSet();
 
@@ -259,14 +269,18 @@ class _MapScreenState extends State<MapScreen> {
         statusText = timeStr.isNotEmpty ? 'Mất tín hiệu ($timeStr)' : 'Chưa có tọa độ GPS';
       }
 
-      // Xe báo nghỉ: ưu tiên hiển thị trạng thái nghỉ thay vì trạng thái GPS
-      if (offDutyPlates.contains(plate)) {
+      // Xe báo nghỉ / ngừng hoạt động: ưu tiên hiển thị trạng thái nghỉ thay vì trạng thái GPS
+      if (stoppedPlates.contains(plate)) {
+        statusText = 'Ngừng hoạt động';
+      } else if (offDutyPlates.contains(plate)) {
         statusText = 'Đang báo nghỉ';
       }
 
       return _VehicleMapItem(
         plate: plate,
-        manualStatus: offDutyPlates.contains(plate) ? 'inactive' : 'ready',
+        manualStatus: stoppedPlates.contains(plate)
+            ? 'stopped'
+            : (offDutyPlates.contains(plate) ? 'inactive' : 'ready'),
         position: hasValidCoords ? LatLng(status.latitude, status.longitude) : defaultCenter,
         hasValidCoords: hasValidCoords,
         speed: status.speed,
@@ -281,13 +295,14 @@ class _MapScreenState extends State<MapScreen> {
       );
     }).toList();
 
-    // Bổ sung các xe BÁO NGHỈ không còn trên GPS (GPS provider đã gỡ thiết bị):
+    // Bổ sung các xe BÁO NGHỈ / NGỪNG HOẠT ĐỘNG không còn trên GPS (GPS provider đã gỡ thiết bị):
     // các xe này không có trong fleetStatuses nên phải thêm thủ công để tab "Off" đếm đúng.
     {
       final existingPlates = allVehicles.map((v) => _normalizePlate(v.plate)).toSet();
       for (final v in _offDutyVehicles) {
         if (v is! Map) continue;
-        final bool isOff = (v['in_fleet'] == false) || ((v['status'] ?? '') == 'inactive');
+        final String st = (v['status'] ?? '').toString();
+        final bool isOff = (v['in_fleet'] == false) || st == 'inactive' || st == 'stopped';
         if (!isOff) continue;
         final String plate = (v['plate_number'] ?? v['plate'] ?? '').toString().trim();
         if (plate.isEmpty) continue;
@@ -299,7 +314,7 @@ class _MapScreenState extends State<MapScreen> {
         final bool hasCoords = dLat > 0 && dLng > 0;
         allVehicles.add(_VehicleMapItem(
           plate: plate,
-          manualStatus: 'inactive',
+          manualStatus: st == 'stopped' ? 'stopped' : 'inactive',
           position: hasCoords ? LatLng(dLat, dLng) : defaultCenter,
           hasValidCoords: hasCoords,
           speed: 0,
@@ -310,9 +325,9 @@ class _MapScreenState extends State<MapScreen> {
               : 'Chưa gắn thẻ',
           odoKm: v['odometer_km'] is int ? v['odometer_km'] as int : 0,
           isOnline: false,
-          statusText: 'Đang báo nghỉ',
+          statusText: st == 'stopped' ? 'Ngừng hoạt động' : 'Đang báo nghỉ',
           providerCode: '',
-          providerLabel: 'Nghỉ',
+          providerLabel: st == 'stopped' ? 'Ngừng' : 'Nghỉ',
         ));
       }
     }
