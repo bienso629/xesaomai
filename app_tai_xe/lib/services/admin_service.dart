@@ -1282,6 +1282,10 @@ class AdminService {
         'POST',
         Uri.parse('$baseUrl/upload/image'),
       );
+      final token = await AuthService.getToken();
+      if (token != null && token.isNotEmpty) {
+        request.headers['Authorization'] = 'Bearer $token';
+      }
       request.files.add(await http.MultipartFile.fromPath('file', filePath));
       final streamedResponse = await request.send().timeout(
         const Duration(seconds: 15),
@@ -1313,6 +1317,10 @@ class AdminService {
         'POST',
         Uri.parse('$baseUrl/upload/image'),
       );
+      final token = await AuthService.getToken();
+      if (token != null && token.isNotEmpty) {
+        request.headers['Authorization'] = 'Bearer $token';
+      }
       request.files.add(
         http.MultipartFile.fromBytes('file', bytes, filename: filename),
       );

@@ -59,10 +59,15 @@ def create_access_token(data: dict, expires_delta: Optional[timedelta] = None):
 from fastapi.middleware.cors import CORSMiddleware
 
 # ----------------- FASTAPI INIT -----------------
+_ENABLE_API_DOCS = os.getenv("ENABLE_API_DOCS", "false").strip().lower() in ("1", "true", "yes")
+
 app = FastAPI(
     title="Hệ thống Quản lý Vận tải & App Tài xế (Taxi Logistics API)",
     description="API nghiệp vụ: Xác thực JWT cho mọi phiên đăng nhập, Kiểm tra xe 5 ảnh, Cây dầu đối soát nhiên liệu, Mốc giờ chuyến, Sản phẩm & RBAC động",
-    version="2.1.0"
+    version="2.1.0",
+    docs_url="/docs" if _ENABLE_API_DOCS else None,
+    redoc_url="/redoc" if _ENABLE_API_DOCS else None,
+    openapi_url="/openapi.json" if _ENABLE_API_DOCS else None,
 )
 
 app.add_middleware(
@@ -72,6 +77,14 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+@app.middleware("http")
+async def _security_headers_middleware(request: Request, call_next):
+    response = await call_next(request)
+    response.headers["X-Content-Type-Options"] = "nosniff"
+    response.headers["X-Frame-Options"] = "DENY"
+    response.headers["Referrer-Policy"] = "strict-origin-when-cross-origin"
+    return response
 
 UPLOAD_DIR = os.getenv("UPLOAD_DIR", "/app/uploads")
 os.makedirs(UPLOAD_DIR, exist_ok=True)
@@ -1132,14 +1145,25 @@ def register_device(dev: DeviceRegister, current_user: dict = Depends(get_curren
 
 @app.websocket("/api/v1/ws/{user_id}")
 async def ws_endpoint(ws: WebSocket, user_id: int, token: Optional[str] = None):
-    # Xac thuc JWT truoc khi chap nhan ket noi
+    # Xac thuc JWT va doi chieu chu so huu user_id truoc khi chap nhan ket noi
     try:
+        if not token:
+            raise JWTError()
         payload_jwt = jwt.decode(token, SECRET_KEY, algorithms=[ALGORITHM])
         if payload_jwt.get("sub") is None:
             raise JWTError()
+        token_uid = payload_jwt.get("user_id")
+        token_roles = [str(r).lower() for r in (payload_jwt.get("roles") or [])]
+        is_privileged = payload_jwt.get("sub") == "admin" or any(
+            r in ("admin", "manager", "dispatcher") for r in token_roles
+        )
+        if token_uid is not None and int(token_uid) != int(user_id) and not is_privileged:
+            await ws.close(code=4403)
+            return
     except JWTError:
         await ws.close(code=4401)
         return
+    bound_uid = int(token_uid) if token_uid is not None else int(user_id)
     await manager.connect(user_id, ws)
     try:
         while True:
@@ -1152,7 +1176,7 @@ async def ws_endpoint(ws: WebSocket, user_id: int, token: Optional[str] = None):
                 try:
                     conn = get_db()
                     cur = conn.cursor()
-                    cur.execute(_DEVICE_UPSERT_SQL, (user_id, msg.get("device_token"), msg.get("platform"), msg.get("device_name"), msg.get("app_version")))
+                    cur.execute(_DEVICE_UPSERT_SQL, (bound_uid, msg.get("device_token"), msg.get("platform"), msg.get("device_name"), msg.get("app_version")))
                     conn.commit()
                     cur.close()
                     conn.close()
@@ -1170,6 +1194,45 @@ async def ws_endpoint(ws: WebSocket, user_id: int, token: Optional[str] = None):
         manager.disconnect(user_id, ws)
 
 # ----------------- API ENDPOINTS -----------------
+
+MAX_UPLOAD_IMAGE_BYTES = 10 * 1024 * 1024  # Giới hạn tối đa 10MB mỗi ảnh
+_UPLOAD_RATE_LOCK = threading.Lock()
+_UPLOAD_RATE_BUCKETS: dict[str, list[float]] = {}
+_LOGIN_FAIL_LOCK = threading.Lock()
+_LOGIN_FAIL_BUCKETS: dict[str, list[float]] = {}
+_LOGIN_MAX_ATTEMPTS = 8
+_LOGIN_WINDOW_SECONDS = 300
+
+
+def _get_client_ip(request: Optional[Request]) -> str:
+    if request is None:
+        return "unknown"
+    cf_ip = request.headers.get("cf-connecting-ip")
+    if cf_ip:
+        return cf_ip.strip()
+    xff = request.headers.get("x-forwarded-for")
+    if xff:
+        return xff.split(",")[0].strip()
+    return request.client.host if request.client else "unknown"
+
+
+def _detect_image_extension(header_bytes: bytes) -> Optional[str]:
+    if len(header_bytes) < 12:
+        return None
+    if header_bytes.startswith(b"\xff\xd8\xff"):
+        return ".jpg"
+    if header_bytes.startswith(b"\x89PNG\r\n\x1a\n"):
+        return ".png"
+    if header_bytes[:4] == b"RIFF" and header_bytes[8:12] == b"WEBP":
+        return ".webp"
+    if header_bytes[:6] in (b"GIF87a", b"GIF89a"):
+        return ".gif"
+    if header_bytes[4:8] == b"ftyp" and header_bytes[8:12] in (
+        b"heic", b"heix", b"hevc", b"hevx", b"mif1", b"msf1"
+    ):
+        return ".heic"
+    return None
+
 
 @app.get("/")
 def health_check():
@@ -1193,16 +1256,63 @@ def health_check():
     }
 
 @app.post("/api/v1/upload/image")
-async def upload_image(file: UploadFile = File(...)):
+async def upload_image(request: Request, file: UploadFile = File(...)):
+    client_ip = _get_client_ip(request)
+    now_ts = time.time()
+    with _UPLOAD_RATE_LOCK:
+        bucket = [t for t in _UPLOAD_RATE_BUCKETS.get(client_ip, []) if now_ts - t < 60.0]
+        if len(bucket) >= 40:
+            raise HTTPException(
+                status_code=429,
+                detail="Bạn đang tải ảnh lên quá nhanh. Vui lòng thử lại sau ít giây.",
+            )
+        bucket.append(now_ts)
+        _UPLOAD_RATE_BUCKETS[client_ip] = bucket
+
+    auth_header = (request.headers.get("Authorization") or "").strip()
+    require_upload_auth = os.getenv("REQUIRE_UPLOAD_AUTH", "false").strip().lower() in ("1", "true", "yes")
+    if auth_header.lower().startswith("bearer "):
+        raw_tok = auth_header[7:].strip()
+        try:
+            jwt.decode(raw_tok, SECRET_KEY, algorithms=[ALGORITHM])
+        except JWTError:
+            raise HTTPException(status_code=401, detail="Token tải ảnh không hợp lệ hoặc đã hết hạn")
+    elif require_upload_auth:
+        raise HTTPException(status_code=401, detail="Yêu cầu đăng nhập để tải ảnh lên hệ thống")
+
     try:
-        ext = os.path.splitext(file.filename)[1].lower() if file.filename else ".jpg"
-        if not ext or ext not in [".jpg", ".jpeg", ".png", ".webp"]:
-            ext = ".jpg"
-        unique_name = f"{uuid.uuid4().hex}{ext}"
+        first_chunk = await file.read(65536)
+        if not first_chunk:
+            raise HTTPException(status_code=400, detail="Tệp ảnh trống hoặc không hợp lệ")
+
+        detected_ext = _detect_image_extension(first_chunk[:16])
+        if not detected_ext:
+            raise HTTPException(
+                status_code=400,
+                detail="Định dạng tệp không hợp lệ. Hệ thống chỉ chấp nhận tệp hình ảnh (JPG, PNG, WEBP, HEIC).",
+            )
+
+        unique_name = f"{uuid.uuid4().hex}{detected_ext}"
         target_path = os.path.join(UPLOAD_DIR, unique_name)
+        total_bytes = len(first_chunk)
+        if total_bytes > MAX_UPLOAD_IMAGE_BYTES:
+            raise HTTPException(status_code=413, detail="Kích thước ảnh vượt quá giới hạn 10MB")
 
         with open(target_path, "wb") as buffer:
-            shutil.copyfileobj(file.file, buffer)
+            buffer.write(first_chunk)
+            while True:
+                chunk = await file.read(65536)
+                if not chunk:
+                    break
+                total_bytes += len(chunk)
+                if total_bytes > MAX_UPLOAD_IMAGE_BYTES:
+                    buffer.close()
+                    try:
+                        os.remove(target_path)
+                    except OSError:
+                        pass
+                    raise HTTPException(status_code=413, detail="Kích thước ảnh vượt quá giới hạn 10MB")
+                buffer.write(chunk)
 
         # Trả về đường dẫn truy cập ảnh qua static files
         url = f"/uploads/{unique_name}"
@@ -1212,15 +1322,29 @@ async def upload_image(file: UploadFile = File(...)):
             "url": url,
             "message": "Tải ảnh lên máy chủ thành công"
         }
+    except HTTPException:
+        raise
     except Exception as e:
         raise HTTPException(status_code=400, detail=f"Lỗi tải ảnh: {str(e)}")
 
 # 1. API Đăng nhập cấp Token cho mỗi phiên
 @app.post("/api/v1/auth/login", response_model=Token)
-def login(creds: LoginRequest):
+def login(creds: LoginRequest, request: Request = None):
+    client_ip = _get_client_ip(request)
+    rate_key = f"{client_ip}:{(creds.username or '').strip().lower()}"
+    now_ts = time.time()
+    with _LOGIN_FAIL_LOCK:
+        attempts = [t for t in _LOGIN_FAIL_BUCKETS.get(rate_key, []) if now_ts - t < _LOGIN_WINDOW_SECONDS]
+        _LOGIN_FAIL_BUCKETS[rate_key] = attempts
+        if len(attempts) >= _LOGIN_MAX_ATTEMPTS:
+            raise HTTPException(
+                status_code=429,
+                detail="Tài khoản tạm thời bị khóa đăng nhập 5 phút do nhập sai mật khẩu quá nhiều lần.",
+            )
+
     extra_info = creds.__pydantic_extra__ if creds.__pydantic_extra__ else {}
     print(
-        f"[AUTH_LOGIN] Attempt login for username='{creds.username}' | "
+        f"[AUTH_LOGIN] Attempt login for username='{creds.username}' | ip='{client_ip}' | "
         f"device_token={'YES (' + creds.device_token[:15] + '...)' if creds.device_token else 'NONE'} | "
         f"platform='{creds.platform}' | device_name='{creds.device_name}' | app_version='{creds.app_version}' | "
         f"extra_keys={list(extra_info.keys())}",
@@ -1234,11 +1358,18 @@ def login(creds: LoginRequest):
     if not user or not verify_password(creds.password, user["password_hash"]):
         cur.close()
         conn.close()
-        print(f"[AUTH_LOGIN] FAILED login for username='{creds.username}' (invalid credentials)", flush=True)
+        with _LOGIN_FAIL_LOCK:
+            attempts = [t for t in _LOGIN_FAIL_BUCKETS.get(rate_key, []) if now_ts - t < _LOGIN_WINDOW_SECONDS]
+            attempts.append(now_ts)
+            _LOGIN_FAIL_BUCKETS[rate_key] = attempts
+        print(f"[AUTH_LOGIN] FAILED login for username='{creds.username}' ip='{client_ip}' (invalid credentials)", flush=True)
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Tên đăng nhập hoặc mật khẩu không chính xác"
         )
+
+    with _LOGIN_FAIL_LOCK:
+        _LOGIN_FAIL_BUCKETS.pop(rate_key, None)
 
     # Lấy danh sách roles
     cur.execute("""
@@ -5254,6 +5385,7 @@ def get_gas_station_qr_codes(
     active_only: bool = False,
     current_user: dict = Depends(get_current_user),
 ):
+    _require_qr_manager(current_user)
     conn = get_db()
     cur = conn.cursor()
     try:
@@ -5269,6 +5401,7 @@ def get_gas_station_qr_by_vehicle(
     gas_station_id: Optional[int] = None,
     current_user: dict = Depends(get_current_user),
 ):
+    _require_qr_manager(current_user)
     conn = get_db()
     cur = conn.cursor()
     try:
