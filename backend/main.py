@@ -221,6 +221,11 @@ class CustomerCreate(BaseModel):
     note: Optional[str] = None
     zalo_group_id: Optional[str] = None
     zalo_group_name: Optional[str] = None
+    pickup_location_name: Optional[str] = None
+    delivery_location_name: Optional[str] = None
+    product_code: Optional[str] = None
+    pickup_location_ids: Optional[List[int]] = None
+    delivery_location_ids: Optional[List[int]] = None
 
 class CustomerUpdate(BaseModel):
     code: Optional[str] = None
@@ -233,30 +238,52 @@ class CustomerUpdate(BaseModel):
     note: Optional[str] = None
     zalo_group_id: Optional[str] = None
     zalo_group_name: Optional[str] = None
+    pickup_location_name: Optional[str] = None
+    delivery_location_name: Optional[str] = None
+    product_code: Optional[str] = None
+    pickup_location_ids: Optional[List[int]] = None
+    delivery_location_ids: Optional[List[int]] = None
 
 CUSTOMER_FIELDS = [
     "code", "name", "tax_code", "contact_person", "phone",
     "email", "address", "note", "zalo_group_id", "zalo_group_name",
+    "pickup_location_name", "delivery_location_name", "product_code",
 ]
 
 class LocationCreate(BaseModel):
+    stt: Optional[int] = None
+    vietmap_id: Optional[str] = None
+    category: Optional[str] = None
     name: str
     address: Optional[str] = None
     kind: Optional[str] = "BOTH"  # PICKUP | DELIVERY | BOTH
     latitude: Optional[float] = None
     longitude: Optional[float] = None
+    phone: Optional[str] = None
     radius_m: Optional[int] = None
+    contact_person: Optional[str] = None
+    mobile: Optional[str] = None
+    email: Optional[str] = None
+    allow_stop: Optional[bool] = False
     note: Optional[str] = None
     # Danh sách khách hàng liên kết (multiselect): rỗng / bỏ trống = điểm dùng chung cho mọi khách hàng
     customer_ids: Optional[List[int]] = None
 
 class LocationUpdate(BaseModel):
+    stt: Optional[int] = None
+    vietmap_id: Optional[str] = None
+    category: Optional[str] = None
     name: Optional[str] = None
     address: Optional[str] = None
     kind: Optional[str] = None
     latitude: Optional[float] = None
     longitude: Optional[float] = None
+    phone: Optional[str] = None
     radius_m: Optional[int] = None
+    contact_person: Optional[str] = None
+    mobile: Optional[str] = None
+    email: Optional[str] = None
+    allow_stop: Optional[bool] = None
     note: Optional[str] = None
     customer_ids: Optional[List[int]] = None
 
@@ -536,6 +563,9 @@ ZALO_OA_DDL = [
     "ALTER TABLE customers ADD COLUMN IF NOT EXISTS source VARCHAR(20) DEFAULT 'manual'",
     "ALTER TABLE customers ADD COLUMN IF NOT EXISTS zalo_group_id VARCHAR(100)",
     "ALTER TABLE customers ADD COLUMN IF NOT EXISTS zalo_group_name VARCHAR(255)",
+    "ALTER TABLE customers ADD COLUMN IF NOT EXISTS pickup_location_name VARCHAR(255)",
+    "ALTER TABLE customers ADD COLUMN IF NOT EXISTS delivery_location_name VARCHAR(255)",
+    "ALTER TABLE customers ADD COLUMN IF NOT EXISTS product_code VARCHAR(150)",
     "CREATE UNIQUE INDEX IF NOT EXISTS ux_customers_zalo_user_id ON customers(zalo_user_id) WHERE zalo_user_id IS NOT NULL",
     """CREATE TABLE IF NOT EXISTS zalo_oa_tokens (
         id INT PRIMARY KEY DEFAULT 1,
@@ -882,10 +912,20 @@ LOCATIONS_DDL = [
     )
     """,
     "CREATE INDEX IF NOT EXISTS ix_location_suggestions_status ON location_suggestions(status)",
-    # Bán kính nhận diện mặc định của điểm nhận / giao: 50 m
+    # Bán kính nhận diện mặc định của điểm nhận / giao: 100 m
     "ALTER TABLE locations ALTER COLUMN radius_m SET DEFAULT 100",
     # Khách hàng liên kết với điểm nhận / giao (multiselect): INT[] rỗng = dùng chung cho mọi khách hàng
     "ALTER TABLE locations ADD COLUMN IF NOT EXISTS customer_ids INTEGER[] DEFAULT '{}' NOT NULL",
+    # Đầy đủ các cột theo file mẫu DS DIEM VIETMAP.xlsx:
+    # #, Id, Danh Mục, Tên, Vĩ Độ, Kinh Độ, Địa Chỉ, Số ĐT, Bán Kính, Người Liên Hệ, Di Động, Email, Cho Phép Dừng Xe, Ghi Chú
+    "ALTER TABLE locations ADD COLUMN IF NOT EXISTS stt INTEGER",
+    "ALTER TABLE locations ADD COLUMN IF NOT EXISTS vietmap_id VARCHAR(64)",
+    "ALTER TABLE locations ADD COLUMN IF NOT EXISTS category VARCHAR(150)",
+    "ALTER TABLE locations ADD COLUMN IF NOT EXISTS phone VARCHAR(50)",
+    "ALTER TABLE locations ADD COLUMN IF NOT EXISTS contact_person VARCHAR(150)",
+    "ALTER TABLE locations ADD COLUMN IF NOT EXISTS mobile VARCHAR(50)",
+    "ALTER TABLE locations ADD COLUMN IF NOT EXISTS email VARCHAR(150)",
+    "ALTER TABLE locations ADD COLUMN IF NOT EXISTS allow_stop BOOLEAN DEFAULT FALSE",
 ]
 
 def ensure_order_vehicle_free_text():
@@ -1880,10 +1920,10 @@ IMPORT_EXCEL_HEADERS = ["MÃ KH CHI TIẾT", "Mảng", "Tên KH", "Điểm giao"
 
 
 def _import_excel_normalize_header(value) -> str:
-    """Chuẩn hóa tiêu đề cột: bỏ dấu, bỏ khoảng trắng thừa để đối chiếu linh hoạt."""
+    """Chuẩn hóa tiêu đề cột: bỏ dấu (kể cả đ/Đ), bỏ khoảng trắng thừa để đối chiếu linh hoạt."""
     if value is None:
         return ""
-    text = unicodedata.normalize("NFD", str(value))
+    text = unicodedata.normalize("NFD", str(value).replace("đ", "d").replace("Đ", "D"))
     text = "".join(c for c in text if unicodedata.category(c) != "Mn")
     return " ".join(text.lower().split())
 
@@ -2037,6 +2077,348 @@ def _import_excel_resolve_and_learn_group(cur, group_id, group_name):
     return gid, gname, learned
 
 
+def _sync_customer_location_links(
+    cur,
+    customer_id: int,
+    pickup_location_ids: Optional[List[int]] = None,
+    delivery_location_ids: Optional[List[int]] = None,
+):
+    """Đồng bộ hai chiều giữa Khách hàng và Điểm nhận/giao (locations.customer_ids)."""
+    cid = int(customer_id)
+    if pickup_location_ids is not None:
+        pids = sorted({int(x) for x in pickup_location_ids if int(x) > 0})
+        cur.execute(
+            """UPDATE locations
+               SET customer_ids = array_remove(customer_ids, %s),
+                   updated_at = CURRENT_TIMESTAMP
+               WHERE is_active = TRUE AND kind IN ('PICKUP', 'BOTH')
+                 AND %s = ANY(customer_ids) AND NOT (id = ANY(%s))""",
+            (cid, cid, pids),
+        )
+        if pids:
+            cur.execute(
+                """UPDATE locations
+                   SET customer_ids = ARRAY(SELECT DISTINCT unnest(customer_ids || ARRAY[%s]::INTEGER[]) ORDER BY 1),
+                       updated_at = CURRENT_TIMESTAMP
+                   WHERE is_active = TRUE AND id = ANY(%s) AND NOT (%s = ANY(customer_ids))""",
+                (cid, pids, cid),
+            )
+            cur.execute(
+                "SELECT name FROM locations WHERE is_active = TRUE AND id = ANY(%s) ORDER BY COALESCE(stt, 999999) ASC, id ASC LIMIT 1",
+                (pids,),
+            )
+            prow = cur.fetchone()
+            if prow and prow.get("name"):
+                cur.execute(
+                    "UPDATE customers SET pickup_location_name = %s WHERE id = %s AND (pickup_location_name IS NULL OR pickup_location_name = '')",
+                    (prow["name"], cid),
+                )
+    if delivery_location_ids is not None:
+        dids = sorted({int(x) for x in delivery_location_ids if int(x) > 0})
+        cur.execute(
+            """UPDATE locations
+               SET customer_ids = array_remove(customer_ids, %s),
+                   updated_at = CURRENT_TIMESTAMP
+               WHERE is_active = TRUE AND kind IN ('DELIVERY', 'BOTH')
+                 AND %s = ANY(customer_ids) AND NOT (id = ANY(%s))""",
+            (cid, cid, dids),
+        )
+        if dids:
+            cur.execute(
+                """UPDATE locations
+                   SET customer_ids = ARRAY(SELECT DISTINCT unnest(customer_ids || ARRAY[%s]::INTEGER[]) ORDER BY 1),
+                       updated_at = CURRENT_TIMESTAMP
+                   WHERE is_active = TRUE AND id = ANY(%s) AND NOT (%s = ANY(customer_ids))""",
+                (cid, dids, cid),
+            )
+            cur.execute(
+                "SELECT name FROM locations WHERE is_active = TRUE AND id = ANY(%s) ORDER BY COALESCE(stt, 999999) ASC, id ASC LIMIT 1",
+                (dids,),
+            )
+            drow = cur.fetchone()
+            if drow and drow.get("name"):
+                cur.execute(
+                    "UPDATE customers SET delivery_location_name = %s WHERE id = %s AND (delivery_location_name IS NULL OR delivery_location_name = '')",
+                    (drow["name"], cid),
+                )
+
+
+def _strip_vn_accents(s: str) -> str:
+    if not s:
+        return ""
+    text = unicodedata.normalize("NFC", str(s)).lower().strip()
+    text = text.replace("đ", "d")
+    return "".join(ch for ch in unicodedata.normalize("NFD", text) if unicodedata.category(ch) != "Mn")
+
+
+def _norm_match_token(s: str) -> str:
+    return re.sub(r"[^a-z0-9]+", " ", _strip_vn_accents(s)).strip()
+
+
+def _code_prefix_and_site(code_str: str):
+    s = (code_str or "").strip()
+    if "(" in s:
+        p1, rest = s.split("(", 1)
+        site = rest.split("/")[0].rstrip(")")
+        p1_clean = re.sub(r"^m[\s_]+", "", _norm_match_token(p1)).strip()
+        return p1_clean, _norm_match_token(site)
+    return re.sub(r"^m[\s_]+", "", _norm_match_token(s)).strip(), ""
+
+
+def _extract_customer_site_and_product(code_str: str, addr_str: str = ""):
+    s = (code_str or "").strip()
+    site = ""
+    prod = ""
+    if "(" in s:
+        p1, rest = s.split("(", 1)
+        if "/" in rest:
+            site_part, prod_part = rest.split("/", 1)
+            site = site_part.rstrip(")").strip()
+            prod = prod_part.rstrip(")").strip()
+            prod = re.sub(r"^[A-Za-z]+[.\-]", "", prod).strip()
+        else:
+            site = rest.rstrip(")").strip()
+            if site.upper() == "M":
+                site = re.sub(r"^[TVM]+_", "", p1).strip()
+    elif "/" in s:
+        p1, prod_part = s.split("/", 1)
+        site = re.sub(r"^M_", "", p1).strip()
+        prod = re.sub(r"^[A-Za-z]+[.\-]", "", prod_part).strip()
+    if not prod and addr_str and addr_str.strip().lower() not in ("tro bay", "xi măng", "xi mang", "xỉ tro", "xỉ"):
+        prod = addr_str.strip()
+    return site, prod
+
+
+def _infer_pickup_names_for_customer(c: dict, pickup_names_available: set) -> List[str]:
+    code = (c.get("code") or "").strip()
+    note = (c.get("note") or "").strip().lower()
+    saved_pickup = (c.get("pickup_location_name") or "").strip()
+    code_low = code.lower()
+
+    res: List[str] = []
+    if saved_pickup and saved_pickup in pickup_names_available:
+        res.append(saved_pickup)
+
+    brand = None
+    if "/" in code:
+        after_slash = code.split("/", 1)[1].strip()
+        m = re.match(r"^([A-Za-z]+)[.\-]", after_slash)
+        if m:
+            brand = m.group(1).upper()
+
+    inferred: List[str] = []
+    if brand == "H":
+        if any(k in code_low for k in ("khánh hòa", "cam ranh")):
+            inferred = ["NM_Hà Tiên CR", "Ht_P.Hữu"]
+        elif any(k in code_low for k in ("tân an", "đức hòa", "long an", "tiền giang", "an hữu", "mỹ an", "c.lãnh", "cao lãnh", "cà mau", "bến lức")):
+            inferred = ["Ht_B.Lức", "Ht_P.Hữu"]
+        else:
+            inferred = ["Ht_P.Hữu", "Ht_B.Lức"]
+    elif brand == "I":
+        if any(k in code_low for k in ("bà rịa", "châu đức", "vũng tàu", "đất đỏ", "phú mỹ")):
+            inferred = ["In_Thị Vải", "In_H.Phước"]
+        elif any(k in code_low for k in ("khánh an", "cà mau", "kỷ an", "an giang", "kiên lương")):
+            inferred = ["NM Insee _Hòn Chông", "In_H.Phước"]
+        else:
+            inferred = ["In_H.Phước", "In_Thị Vải"]
+    elif brand == "F":
+        inferred = ["Fc_H.Phước"]
+    elif brand == "S":
+        inferred = ["SCG"]
+    elif brand == "C":
+        inferred = ["Cẩm Phả"]
+    elif brand == "L":
+        if any(k in code_low for k in ("trần đề", "sóc trăng", "cần thơ", "cà mau")):
+            inferred = ["Ls_Sóc Trăng", "NM Long Sơn_BLuc"]
+        else:
+            inferred = ["NM Long Sơn_BLuc", "Ls_Sóc Trăng"]
+    elif code.startswith("T_") or note == "tro bay":
+        if "cẩm phả" in code_low:
+            inferred = ["Cẩm Phả", "Vĩnh Tân"]
+        else:
+            inferred = ["Vĩnh Tân", "NM2_Vĩnh Tân"]
+    elif code.startswith("VC_") or "xỉ" in note:
+        inferred = ["Cẩm Phả", "In_Thị Vải", "Ht_P.Hữu"]
+
+    for p in inferred:
+        if p in pickup_names_available and p not in res:
+            res.append(p)
+    return res
+
+
+def _auto_link_locations_and_customers(cur) -> dict:
+    """Tự động đối sánh và gắn kết hai chiều giữa Khách hàng (customers) và Điểm nhận/giao (locations)."""
+    cur.execute(
+        """SELECT id, code, name, address, note, pickup_location_name, delivery_location_name, product_code
+           FROM customers
+           WHERE is_active = TRUE AND COALESCE(source, 'manual') <> 'zalo_oa'
+           ORDER BY id ASC"""
+    )
+    custs = [dict(r) for r in cur.fetchall()]
+    cur.execute(
+        """SELECT id, stt, vietmap_id, name, address, kind, customer_ids
+           FROM locations
+           WHERE is_active = TRUE
+           ORDER BY COALESCE(stt, 999999) ASC, id ASC"""
+    )
+    locs = [dict(r) for r in cur.fetchall()]
+    if not custs or not locs:
+        return {"linked_locations": 0, "linked_customers": 0}
+
+    loc_cust_sets = {loc["id"]: set(int(x) for x in (loc.get("customer_ids") or []) if int(x) > 0) for loc in locs}
+    pickup_by_name = {loc["name"].strip(): loc for loc in locs if (loc.get("kind") or "").upper() in ("PICKUP", "BOTH")}
+    pickup_names_available = set(pickup_by_name.keys())
+
+    cust_matched_deliveries = {c["id"]: [] for c in custs}
+
+    for loc in locs:
+        if (loc.get("kind") or "").upper() not in ("DELIVERY", "BOTH"):
+            continue
+        ln = (loc.get("name") or "").strip()
+        ln_norm = _norm_match_token(ln)
+        lp1, lsite = _code_prefix_and_site(ln)
+        matched = []
+
+        for c in custs:
+            cc_n = _norm_match_token(c["code"])
+            cp1, csite = _code_prefix_and_site(c["code"])
+            if cc_n == ln_norm:
+                matched.append(c)
+            elif lp1 and lsite and cp1 == lp1 and csite and (csite == lsite or lsite in csite or csite in lsite):
+                matched.append(c)
+
+        for c in custs:
+            if c in matched:
+                continue
+            cc_n = _norm_match_token(c["code"])
+            if "trung hieu" in ln_norm and "trung hieu" in cc_n:
+                matched.append(c)
+            elif "mecofood" in ln_norm and "mecofood" in cc_n:
+                matched.append(c)
+            elif "tthchinh" in ln_norm and "thu thiem" in cc_n:
+                matched.append(c)
+            elif "nui day" in ln_norm and "nui day" in cc_n:
+                matched.append(c)
+            elif re.search(r"\buni\b", ln_norm) and re.search(r"\buni\b", cc_n):
+                matched.append(c)
+            elif "trung nam" in ln_norm and "trung nam" in cc_n:
+                if ("t nam" in ln_norm and "thuan nam" in cc_n) or ("c ranh" in ln_norm and "cam ranh" in cc_n) or ("t hai" in ln_norm and "thap cham" in cc_n):
+                    matched.append(c)
+            elif "khoi huy" in ln_norm and "khoi huy" in cc_n:
+                if ("b chanh" in ln_norm and "binh chanh" in cc_n) or ("nha be" in ln_norm and "nha be" in cc_n):
+                    matched.append(c)
+            elif "mekong thuong tin" in ln_norm and "mktt ben luc" in cc_n:
+                matched.append(c)
+            elif "fecon hoa phat" in ln_norm and "hoa phat" in cc_n:
+                matched.append(c)
+            elif "nhu cuong" in ln_norm and "nhu cuong" in cc_n:
+                matched.append(c)
+            elif "khanh an" in ln_norm and "khanh an" in cc_n:
+                matched.append(c)
+            elif "kii an" in ln_norm and "ky an" in cc_n:
+                matched.append(c)
+            elif "lize2" in ln_norm and "lizen" in cc_n:
+                matched.append(c)
+            elif "metro2" in ln_norm and "metro line 2" in cc_n:
+                matched.append(c)
+            elif "gia viet" in ln_norm and "gia viet" in cc_n:
+                if ("thap cham" in ln_norm and "thap cham" in cc_n) or ("phuoc trung" in ln_norm and "phuoc trung" in cc_n):
+                    matched.append(c)
+            elif "hung vuong" in ln_norm and "hung vuong" in cc_n:
+                if ("b phuoc" in ln_norm and "b phuoc" in cc_n) or ("l thanh" in ln_norm and "l thanh" in cc_n) or ("v cuu" in ln_norm):
+                    matched.append(c)
+            elif "ctrinh 68" in ln_norm and "tm 68 vd3" in cc_n:
+                matched.append(c)
+            elif "hung dong" in ln_norm and ("hung dong" in cc_n or ("bau bang" in ln_norm and "lgk" in cc_n)):
+                if ("binh phuoc" in ln_norm and ("binh phuoc" in cc_n or "chon thanh" in cc_n)) or \
+                   ("vinh tan" in ln_norm and "vinh tan" in cc_n) or \
+                   ("bau bang" in ln_norm and "bau bang" in cc_n):
+                    matched.append(c)
+            elif "dloc phat" in ln_norm and ("dloc phat" in cc_n or "dgiang phat" in cc_n):
+                if ("di an" in ln_norm and "di an" in cc_n) or ("bau bang" in ln_norm and "dloc phat" in cc_n):
+                    matched.append(c)
+            elif "dgiang phat" in ln_norm and "tan khanh" in ln_norm and "tan khanh" in cc_n:
+                matched.append(c)
+            elif "minh quan" in ln_norm and "minh quan" in cc_n:
+                matched.append(c)
+            elif "dong tam" in ln_norm and "dong tam" in cc_n and "lagi" in cc_n:
+                matched.append(c)
+            elif "dt an binh" in ln_norm and "dt an binh" in cc_n:
+                matched.append(c)
+            elif "t an binh" in ln_norm and "vinh cuu" in cc_n and "an binh" in cc_n:
+                matched.append(c)
+            elif "xuan pd" in ln_norm and ("xuan pd" in cc_n or "hdh" in cc_n):
+                matched.append(c)
+            elif "duc linh" in ln_norm and "duc linh" in cc_n:
+                matched.append(c)
+            elif "da teh" in ln_norm and "da teh" in cc_n:
+                matched.append(c)
+            elif "chop vung" in ln_norm and "tazon" not in ln_norm and "chop vung" in cc_n and "tazon" not in cc_n:
+                matched.append(c)
+            elif "trieu khanh" in ln_norm and "trieu khanh" in cc_n:
+                matched.append(c)
+            elif "thien an" in ln_norm and "cao lanh" in ln_norm and "my an c lanh" in cc_n:
+                matched.append(c)
+            elif "hong an can duoc" in ln_norm and "tnam" in cc_n:
+                matched.append(c)
+
+        for c in matched:
+            loc_cust_sets[loc["id"]].add(c["id"])
+            cust_matched_deliveries[c["id"]].append(ln)
+
+    linked_customers_count = 0
+    for c in custs:
+        cid = c["id"]
+        p_names = _infer_pickup_names_for_customer(c, pickup_names_available)
+        for pname in p_names:
+            ploc = pickup_by_name.get(pname)
+            if ploc:
+                loc_cust_sets[ploc["id"]].add(cid)
+
+        site, prod = _extract_customer_site_and_product(c.get("code") or "", c.get("address") or "")
+        new_pickup = (c.get("pickup_location_name") or "").strip() or (p_names[0] if p_names else "")
+        d_matches = cust_matched_deliveries.get(cid) or []
+        new_delivery = (c.get("delivery_location_name") or "").strip()
+        if d_matches and (not new_delivery or new_delivery == site):
+            new_delivery = d_matches[0]
+        elif not new_delivery:
+            new_delivery = site
+        new_prod = (c.get("product_code") or "").strip() or prod
+
+        if new_pickup or new_delivery:
+            linked_customers_count += 1
+
+        if (
+            new_pickup != (c.get("pickup_location_name") or "")
+            or new_delivery != (c.get("delivery_location_name") or "")
+            or new_prod != (c.get("product_code") or "")
+        ):
+            cur.execute(
+                """UPDATE customers
+                   SET pickup_location_name = %s,
+                       delivery_location_name = %s,
+                       product_code = %s,
+                       updated_at = CURRENT_TIMESTAMP
+                   WHERE id = %s""",
+                (new_pickup or None, new_delivery or None, new_prod or None, cid),
+            )
+
+    linked_locations_count = 0
+    for loc in locs:
+        lid = loc["id"]
+        sorted_ids = sorted(loc_cust_sets[lid])
+        if sorted_ids:
+            linked_locations_count += 1
+        old_ids = sorted(int(x) for x in (loc.get("customer_ids") or []) if int(x) > 0)
+        if sorted_ids != old_ids:
+            cur.execute(
+                "UPDATE locations SET customer_ids = %s, updated_at = CURRENT_TIMESTAMP WHERE id = %s",
+                (sorted_ids, lid),
+            )
+
+    return {"linked_locations": linked_locations_count, "linked_customers": linked_customers_count}
+
+
 @app.post("/api/v1/customers/import-excel")
 def import_customers_excel(file: UploadFile = File(...), current_user: dict = Depends(require_dispatch_staff)):
     """Import danh sách khách hàng từ file Excel theo cấu trúc "cấu trúc khách hàng.xlsx"."""
@@ -2085,7 +2467,11 @@ def import_customers_excel(file: UploadFile = File(...), current_user: dict = De
             cur.execute("SAVEPOINT import_row")
             try:
                 resolved_gid, resolved_gname, learned = _import_excel_resolve_and_learn_group(cur, group_id, group_name)
-                address = " - ".join(x for x in (diem_giao, diem_di, san_pham) if x)
+                site_fallback, prod_fallback = _extract_customer_site_and_product(code, san_pham or "")
+                pickup_val = _clean(diem_di)
+                delivery_val = _clean(diem_giao) or _clean(site_fallback)
+                product_val = _clean(san_pham) or _clean(prod_fallback)
+                address = " - ".join(x for x in (delivery_val, pickup_val, product_val) if x)
                 extra = {
                     "tax_code": None,
                     "contact_person": None,
@@ -2095,6 +2481,9 @@ def import_customers_excel(file: UploadFile = File(...), current_user: dict = De
                     "note": mang,
                     "zalo_group_id": resolved_gid,      # Cột G: Group ID
                     "zalo_group_name": resolved_gname,  # Cột H: Tên nhóm Zalo thực tế
+                    "pickup_location_name": pickup_val,
+                    "delivery_location_name": delivery_val,
+                    "product_code": product_val,
                 }
                 kind = _import_excel_upsert_customer(cur, code, ten_kh, extra)
                 cur.execute("RELEASE SAVEPOINT import_row")
@@ -2109,6 +2498,7 @@ def import_customers_excel(file: UploadFile = File(...), current_user: dict = De
             except Exception as e:
                 cur.execute("ROLLBACK TO SAVEPOINT import_row")
                 errors.append(f"{code}: {str(e)[:120]}")
+        link_stats = _auto_link_locations_and_customers(cur)
         conn.commit()
     except Exception as e:
         conn.rollback()
@@ -2121,6 +2511,8 @@ def import_customers_excel(file: UploadFile = File(...), current_user: dict = De
         "updated": updated,
         "groups_learned": groups_learned,
         "with_group": with_group,
+        "linked_customers": link_stats.get("linked_customers", 0),
+        "linked_locations": link_stats.get("linked_locations", 0),
         "missing_group_columns": [
             label for key, label in (("group_id", "Group ID"), ("group_name", "Tên nhóm Zalo thực tế"))
             if key not in col_map
@@ -2154,7 +2546,40 @@ def get_customers(current_user: dict = Depends(require_dispatch_staff)):
     except Exception:
         conn.rollback()
 
+    all_locs = []
+    try:
+        cur.execute(
+            """SELECT id, stt, vietmap_id, name, address, kind, latitude, longitude, radius_m, customer_ids
+               FROM locations
+               WHERE is_active = TRUE
+               ORDER BY COALESCE(stt, 999999) ASC, id ASC"""
+        )
+        all_locs = [dict(l) for l in cur.fetchall()]
+    except Exception:
+        conn.rollback()
+
+    pickups_by_cust: dict = {}
+    deliveries_by_cust: dict = {}
+    for loc in all_locs:
+        lkind = (loc.get("kind") or "BOTH").upper()
+        loc_info = {
+            "id": loc["id"],
+            "name": loc.get("name") or "",
+            "address": loc.get("address") or "",
+            "latitude": loc.get("latitude"),
+            "longitude": loc.get("longitude"),
+            "radius_m": loc.get("radius_m"),
+            "kind": lkind,
+        }
+        for cid in (loc.get("customer_ids") or []):
+            cid_int = int(cid)
+            if lkind in ("PICKUP", "BOTH"):
+                pickups_by_cust.setdefault(cid_int, []).append(loc_info)
+            if lkind in ("DELIVERY", "BOTH"):
+                deliveries_by_cust.setdefault(cid_int, []).append(loc_info)
+
     for r in rows:
+        cid = int(r["id"])
         gid = (r.get("zalo_group_id") or "").strip()
         gname_saved = (r.get("zalo_group_name") or "").strip()
         chat_groups = []
@@ -2178,6 +2603,17 @@ def get_customers(current_user: dict = Depends(require_dispatch_staff)):
         r["zalo_oa_groups"] = []
         r["zalo_chat_groups"] = chat_groups
         r["zalo_group_updated_at"] = latest_group_at
+
+        p_locs = pickups_by_cust.get(cid, [])
+        d_locs = deliveries_by_cust.get(cid, [])
+        r["linked_pickup_locations"] = p_locs
+        r["linked_delivery_locations"] = d_locs
+        r["pickup_location_ids"] = [x["id"] for x in p_locs]
+        r["delivery_location_ids"] = [x["id"] for x in d_locs]
+        if not (r.get("pickup_location_name") or "").strip() and p_locs:
+            r["pickup_location_name"] = p_locs[0]["name"]
+        if not (r.get("delivery_location_name") or "").strip() and d_locs:
+            r["delivery_location_name"] = d_locs[0]["name"]
     cur.close()
     conn.close()
     return rows
@@ -2224,6 +2660,15 @@ def create_customer(customer: CustomerCreate, current_user: dict = Depends(requi
                 values
             )
         created = cur.fetchone()
+        if created and (customer.pickup_location_ids is not None or customer.delivery_location_ids is not None):
+            _sync_customer_location_links(
+                cur,
+                created["id"],
+                customer.pickup_location_ids,
+                customer.delivery_location_ids,
+            )
+            cur.execute("SELECT * FROM customers WHERE id = %s", (created["id"],))
+            created = cur.fetchone()
         conn.commit()
         cur.close()
         conn.close()
@@ -2286,6 +2731,15 @@ def update_customer(customer_id: int, customer: CustomerUpdate, current_user: di
                 params
             )
         updated = cur.fetchone()
+        if customer.pickup_location_ids is not None or customer.delivery_location_ids is not None:
+            _sync_customer_location_links(
+                cur,
+                customer_id,
+                customer.pickup_location_ids,
+                customer.delivery_location_ids,
+            )
+            cur.execute("SELECT * FROM customers WHERE id = %s", (customer_id,))
+            updated = cur.fetchone()
         conn.commit()
         cur.close()
         conn.close()
@@ -4637,11 +5091,17 @@ def get_locations(kind: Optional[str] = None, current_user: dict = Depends(requi
     if kind:
         k = _clean_kind(kind)
         cur.execute(
-            "SELECT * FROM locations WHERE is_active = TRUE AND (kind = %s OR kind = 'BOTH') ORDER BY name ASC, id ASC",
+            """SELECT * FROM locations
+               WHERE is_active = TRUE AND (kind = %s OR kind = 'BOTH')
+               ORDER BY COALESCE(stt, 999999) ASC, id ASC""",
             (k,),
         )
     else:
-        cur.execute("SELECT * FROM locations WHERE is_active = TRUE ORDER BY name ASC, id ASC")
+        cur.execute(
+            """SELECT * FROM locations
+               WHERE is_active = TRUE
+               ORDER BY COALESCE(stt, 999999) ASC, id ASC"""
+        )
     rows = cur.fetchall()
     cur.close()
     conn.close()
@@ -4654,27 +5114,33 @@ def get_locations_by_customer(
     current_user: dict = Depends(require_dispatch_staff),
 ):
     """Gợi ý điểm nhận / giao theo khách hàng: trả về các điểm liên kết trực tiếp
-    với khách hàng (customer_ids) hoặc điểm dùng chung (không liên kết khách hàng nào)."""
+    với khách hàng (customer_ids) ưu tiên lên đầu, kèm điểm dùng chung."""
     conn = get_db()
     cur = conn.cursor()
     try:
         params: list = []
+        cid_val: Optional[int] = None
         sql = "SELECT * FROM locations WHERE is_active = TRUE"
         if customer_code and str(customer_code).strip():
             code_val = str(customer_code).strip()
             cur.execute(
-                "SELECT id FROM customers WHERE LOWER(code) = LOWER(%s) OR LOWER(name) = LOWER(%s) LIMIT 1",
+                "SELECT id FROM customers WHERE is_active = TRUE AND (LOWER(code) = LOWER(%s) OR LOWER(name) = LOWER(%s)) LIMIT 1",
                 (code_val, code_val),
             )
             row = cur.fetchone()
             if row:
-                sql += " AND (%s = ANY(customer_ids) OR cardinality(customer_ids) = 0)"
-                params.append(int(row["id"]))
+                cid_val = int(row["id"])
+                sql += " AND (%s = ANY(customer_ids) OR cardinality(customer_ids) = 0 OR kind = 'PICKUP')"
+                params.append(cid_val)
         if kind:
             k = _clean_kind(kind)
             sql += " AND (kind = %s OR kind = 'BOTH')"
             params.append(k)
-        sql += " ORDER BY name ASC, id ASC"
+        if cid_val is not None:
+            sql += " ORDER BY (%s = ANY(customer_ids)) DESC, COALESCE(stt, 999999) ASC, name ASC, id ASC"
+            params.append(cid_val)
+        else:
+            sql += " ORDER BY COALESCE(stt, 999999) ASC, name ASC, id ASC"
         cur.execute(sql, tuple(params))
         rows = cur.fetchall()
         cur.close()
@@ -4686,6 +5152,240 @@ def get_locations_by_customer(
         conn.rollback(); conn.close()
         raise HTTPException(status_code=400, detail=str(e))
 
+
+LOCATION_EXCEL_COLUMN_ALIASES = {
+    "stt": ("#", "stt", "so thu tu", "no"),
+    "vietmap_id": ("id", "ma diem", "id vietmap", "vietmap id"),
+    "category": ("danh muc", "phan loai", "nhom"),
+    "name": ("ten", "ten diem", "diem", "ten tram"),
+    "latitude": ("vi do", "lat", "latitude", "y"),
+    "longitude": ("kinh do", "lng", "lon", "longitude", "x"),
+    "address": ("dia chi", "address"),
+    "phone": ("so dt", "sdt", "dien thoai", "phone"),
+    "radius_m": ("ban kinh", "radius", "ban kinh m"),
+    "contact_person": ("nguoi lien he", "lien he", "contact"),
+    "mobile": ("di dong", "mobile"),
+    "email": ("email", "mail"),
+    "allow_stop": ("cho phep dung xe", "dung xe", "allow stop"),
+    "note": ("ghi chu", "note"),
+}
+
+
+def _location_excel_header_key(text: Optional[str]) -> Optional[str]:
+    if not text:
+        return None
+    raw = str(text).strip()
+    if raw == "#":
+        return "stt"
+    norm = _import_excel_normalize_header(raw)
+    if not norm:
+        return None
+    for key, aliases in LOCATION_EXCEL_COLUMN_ALIASES.items():
+        if norm in aliases:
+            return key
+    return None
+
+
+def _location_excel_find_header_row(ws):
+    for r_idx in range(1, min(15, ws.max_row + 1)):
+        mapping = {}
+        for c_idx in range(1, min(25, ws.max_column + 1)):
+            val = ws.cell(r_idx, c_idx).value
+            key = _location_excel_header_key(str(val) if val is not None else None)
+            if key and key not in mapping:
+                mapping[key] = c_idx
+        if "name" in mapping and ("latitude" in mapping or "address" in mapping or "vietmap_id" in mapping):
+            return r_idx, mapping
+    return None, None
+
+
+def _is_excel_row_yellow(ws, row_idx: int, max_col: int = 14) -> bool:
+    """Kiểm tra dòng trong file Excel có được tô nền màu vàng (Điểm nhận - PICKUP) hay không."""
+    for c_idx in range(1, max_col + 1):
+        cell = ws.cell(row_idx, c_idx)
+        fill = getattr(cell, "fill", None)
+        if not fill or getattr(fill, "fill_type", None) in (None, "none"):
+            continue
+        for color_attr in ("start_color", "fgColor"):
+            col_obj = getattr(fill, color_attr, None)
+            if not col_obj:
+                continue
+            rgb = str(getattr(col_obj, "rgb", "") or "").strip().upper()
+            if rgb.endswith("FFFF00") or rgb in ("FFFFFF00", "00FFFF00", "FFFF00", "FFFFF200", "FFFFEB3B"):
+                return True
+    return False
+
+
+def _parse_bool_cell(val) -> bool:
+    if isinstance(val, bool):
+        return val
+    if val is None:
+        return False
+    s = str(val).strip().lower()
+    return s in ("true", "1", "yes", "có", "co", "x", "cho phép", "cho phep")
+
+
+def _import_locations_from_workbook(cur, wb, replace_all: bool = True) -> dict:
+    ws = wb.active
+    header_row, col_map = _location_excel_find_header_row(ws)
+    if header_row is None:
+        raise HTTPException(
+            status_code=400,
+            detail='Không tìm thấy dòng tiêu đề hợp lệ. File cần có các cột theo mẫu DS DIEM VIETMAP.xlsx: '
+                   '"#", "Id", "Danh Mục", "Tên", "Vĩ Độ", "Kinh Độ", "Địa Chỉ", ...',
+        )
+
+    if replace_all:
+        cur.execute("DELETE FROM location_suggestions")
+        cur.execute("DELETE FROM locations")
+
+    inserted = updated = skipped = pickup_count = delivery_count = 0
+    errors: List[str] = []
+    max_col = max(col_map.values()) if col_map else 14
+
+    for r_idx in range(header_row + 1, ws.max_row + 1):
+        def cell_val(key):
+            c_idx = col_map.get(key)
+            return ws.cell(r_idx, c_idx).value if c_idx else None
+
+        name = _clean(cell_val("name"))
+        if not name:
+            continue
+
+        cur.execute("SAVEPOINT loc_import_row")
+        try:
+            is_yellow = _is_excel_row_yellow(ws, r_idx, max_col=max_col)
+            kind = "PICKUP" if is_yellow else "DELIVERY"
+
+            stt_raw = cell_val("stt")
+            try:
+                stt = int(float(stt_raw)) if stt_raw is not None and str(stt_raw).strip() != "" else (r_idx - header_row)
+            except Exception:
+                stt = r_idx - header_row
+
+            vietmap_id = _import_excel_cell_text(cell_val("vietmap_id"))
+            category = _clean(cell_val("category"))
+            lat = _as_float(cell_val("latitude"))
+            lng = _as_float(cell_val("longitude"))
+            address = _clean(cell_val("address"))
+            phone = _import_excel_cell_text(cell_val("phone"))
+            rad_raw = cell_val("radius_m")
+            try:
+                radius_m = max(0, int(float(rad_raw))) if rad_raw is not None and str(rad_raw).strip() != "" else 100
+            except Exception:
+                radius_m = 100
+            contact_person = _clean(cell_val("contact_person"))
+            mobile = _import_excel_cell_text(cell_val("mobile"))
+            email = _clean(cell_val("email"))
+            allow_stop = _parse_bool_cell(cell_val("allow_stop"))
+            note = _clean(cell_val("note"))
+
+            existing = None
+            if not replace_all:
+                if vietmap_id:
+                    cur.execute("SELECT id FROM locations WHERE vietmap_id = %s LIMIT 1", (vietmap_id,))
+                    existing = cur.fetchone()
+                if not existing:
+                    cur.execute("SELECT id FROM locations WHERE LOWER(name) = LOWER(%s) LIMIT 1", (name,))
+                    existing = cur.fetchone()
+
+            if existing:
+                cur.execute(
+                    """UPDATE locations
+                       SET stt = %s, vietmap_id = %s, category = %s, name = %s,
+                           latitude = %s, longitude = %s, address = %s, phone = %s,
+                           radius_m = %s, contact_person = %s, mobile = %s, email = %s,
+                           allow_stop = %s, note = %s, kind = %s, source = 'EXCEL',
+                           is_active = TRUE, updated_at = CURRENT_TIMESTAMP
+                       WHERE id = %s""",
+                    (
+                        stt, vietmap_id, category, name, lat, lng, address, phone,
+                        radius_m, contact_person, mobile, email, allow_stop, note,
+                        kind, existing["id"],
+                    ),
+                )
+                updated += 1
+            else:
+                cur.execute(
+                    """INSERT INTO locations (
+                           stt, vietmap_id, category, name, latitude, longitude,
+                           address, phone, radius_m, contact_person, mobile, email,
+                           allow_stop, note, kind, source, is_active, customer_ids
+                       ) VALUES (
+                           %s, %s, %s, %s, %s, %s,
+                           %s, %s, %s, %s, %s, %s,
+                           %s, %s, %s, 'EXCEL', TRUE, '{}'
+                       )""",
+                    (
+                        stt, vietmap_id, category, name, lat, lng,
+                        address, phone, radius_m, contact_person, mobile, email,
+                        allow_stop, note, kind,
+                    ),
+                )
+                inserted += 1
+
+            if kind == "PICKUP":
+                pickup_count += 1
+            else:
+                delivery_count += 1
+            cur.execute("RELEASE SAVEPOINT loc_import_row")
+        except Exception as e:
+            cur.execute("ROLLBACK TO SAVEPOINT loc_import_row")
+            errors.append(f"Dòng {r_idx} ({name}): {str(e)[:120]}")
+
+    link_stats = _auto_link_locations_and_customers(cur)
+    return {
+        "inserted": inserted,
+        "updated": updated,
+        "skipped": skipped,
+        "pickup_count": pickup_count,
+        "delivery_count": delivery_count,
+        "linked_locations": link_stats.get("linked_locations", 0),
+        "linked_customers": link_stats.get("linked_customers", 0),
+        "errors": errors,
+        "total": inserted + updated + skipped,
+    }
+
+
+@app.post("/api/v1/locations/import-excel")
+def import_locations_excel(
+    file: UploadFile = File(...),
+    replace_all: bool = True,
+    current_user: dict = Depends(require_dispatch_staff),
+):
+    """Import danh sách Điểm nhận/Giao hàng từ file Excel theo mẫu 'DS DIEM VIETMAP.xlsx'.
+    - Dòng bôi vàng -> Điểm nhận (PICKUP).
+    - Các dòng còn lại -> Điểm giao (DELIVERY).
+    - Mặc định replace_all=True: xóa dữ liệu cũ của Điểm nhận/Giao và cập nhật dữ liệu mới đầy đủ các cột."""
+    try:
+        openpyxl = import_module("openpyxl")
+    except ImportError:
+        raise HTTPException(status_code=503, detail="Máy chủ chưa cài openpyxl. Chạy: pip install openpyxl")
+    raw = file.file.read()
+    if not raw:
+        raise HTTPException(status_code=400, detail="File rỗng")
+    try:
+        wb = openpyxl.load_workbook(BytesIO(raw), data_only=True)
+    except Exception:
+        raise HTTPException(status_code=400, detail="Không đọc được file Excel. Yêu cầu file .xlsx theo mẫu DS DIEM VIETMAP.xlsx")
+
+    conn = get_db()
+    cur = conn.cursor(cursor_factory=RealDictCursor)
+    try:
+        stats = _import_locations_from_workbook(cur, wb, replace_all=replace_all)
+        conn.commit()
+        return stats
+    except HTTPException:
+        conn.rollback()
+        raise
+    except Exception as e:
+        conn.rollback()
+        raise HTTPException(status_code=400, detail=f"Lỗi import Điểm nhận/Giao: {str(e)[:200]}")
+    finally:
+        cur.close()
+        conn.close()
+
+
 @app.post("/api/v1/locations", status_code=status.HTTP_201_CREATED)
 def create_location(loc: LocationCreate, current_user: dict = Depends(require_dispatch_staff)):
     name = _clean(loc.name)
@@ -4696,14 +5396,38 @@ def create_location(loc: LocationCreate, current_user: dict = Depends(require_di
     conn = get_db()
     cur = conn.cursor()
     try:
-        cur.execute("SELECT id FROM locations WHERE is_active = TRUE AND LOWER(name) = LOWER(%s)", (name,))
-        if cur.fetchone():
-            raise HTTPException(status_code=400, detail=f"Điểm '{name}' đã có trong danh mục")
         cust_ids = sorted({int(i) for i in (loc.customer_ids or []) if int(i) > 0})
+        stt_val = loc.stt
+        if stt_val is None:
+            cur.execute("SELECT COALESCE(MAX(stt), 0) + 1 AS next_stt FROM locations WHERE is_active = TRUE")
+            stt_val = int((cur.fetchone() or {}).get("next_stt") or 1)
+        radius_val = int(loc.radius_m) if loc.radius_m is not None else 100
         cur.execute(
-            """INSERT INTO locations (name, address, kind, latitude, longitude, radius_m, note, source, customer_ids)
-               VALUES (%s, %s, %s, %s, %s, %s, %s, 'MANUAL', %s) RETURNING *""",
-            (name, _clean(loc.address), kind, loc.latitude, loc.longitude, loc.radius_m or DEFAULT_ORDER_POINT_RADIUS_M, _clean(loc.note), cust_ids),
+            """INSERT INTO locations (
+                   stt, vietmap_id, category, name, address, kind,
+                   latitude, longitude, phone, radius_m, contact_person,
+                   mobile, email, allow_stop, note, source, customer_ids
+               )
+               VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, 'MANUAL', %s)
+               RETURNING *""",
+            (
+                stt_val,
+                _clean(loc.vietmap_id),
+                _clean(loc.category) or "Chưa phân loại",
+                name,
+                _clean(loc.address),
+                kind,
+                loc.latitude,
+                loc.longitude,
+                _clean(loc.phone),
+                max(0, radius_val),
+                _clean(loc.contact_person),
+                _clean(loc.mobile),
+                _clean(loc.email),
+                bool(loc.allow_stop),
+                _clean(loc.note),
+                cust_ids,
+            ),
         )
         row = cur.fetchone()
         conn.commit()
@@ -4726,16 +5450,16 @@ def update_location(location_id: int, loc: LocationUpdate, current_user: dict = 
         if not current:
             raise HTTPException(status_code=404, detail="Không tìm thấy điểm")
         fields, params = [], []
+        if loc.stt is not None:
+            fields.append("stt = %s"); params.append(int(loc.stt))
+        if loc.vietmap_id is not None:
+            fields.append("vietmap_id = %s"); params.append(_clean(loc.vietmap_id))
+        if loc.category is not None:
+            fields.append("category = %s"); params.append(_clean(loc.category))
         if loc.name is not None:
             name = _clean(loc.name)
             if not name:
                 raise HTTPException(status_code=400, detail="Tên điểm không được để trống")
-            cur.execute(
-                "SELECT id FROM locations WHERE is_active = TRUE AND LOWER(name) = LOWER(%s) AND id <> %s",
-                (name, location_id),
-            )
-            if cur.fetchone():
-                raise HTTPException(status_code=400, detail=f"Điểm '{name}' đã có trong danh mục")
             fields.append("name = %s"); params.append(name)
         if loc.address is not None:
             fields.append("address = %s"); params.append(_clean(loc.address))
@@ -4747,8 +5471,18 @@ def update_location(location_id: int, loc: LocationUpdate, current_user: dict = 
             _check_lat_lng(lat, lng)
             fields.append("latitude = %s"); params.append(lat)
             fields.append("longitude = %s"); params.append(lng)
+        if loc.phone is not None:
+            fields.append("phone = %s"); params.append(_clean(loc.phone))
         if loc.radius_m is not None:
-            fields.append("radius_m = %s"); params.append(max(50, int(loc.radius_m)))
+            fields.append("radius_m = %s"); params.append(max(0, int(loc.radius_m)))
+        if loc.contact_person is not None:
+            fields.append("contact_person = %s"); params.append(_clean(loc.contact_person))
+        if loc.mobile is not None:
+            fields.append("mobile = %s"); params.append(_clean(loc.mobile))
+        if loc.email is not None:
+            fields.append("email = %s"); params.append(_clean(loc.email))
+        if loc.allow_stop is not None:
+            fields.append("allow_stop = %s"); params.append(bool(loc.allow_stop))
         if loc.note is not None:
             fields.append("note = %s"); params.append(_clean(loc.note))
         if loc.customer_ids is not None:

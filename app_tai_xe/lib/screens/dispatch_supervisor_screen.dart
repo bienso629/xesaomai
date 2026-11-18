@@ -20,6 +20,7 @@ import '../widgets/inline_autocomplete_field.dart';
 import '../widgets/assign_order_approve_dialog.dart';
 import '../widgets/driver_activity_history_dialog.dart';
 import '../widgets/order_attachments_section.dart';
+import '../widgets/virtualized_load_more_table.dart';
 import '../models/reminder_model.dart';
 import '../models/breakdown_model.dart';
 import '../config/api_config.dart';
@@ -128,7 +129,7 @@ class _DispatchSupervisorScreenState extends State<DispatchSupervisorScreen> {
   String _selectedRoleFilter = 'ALL';
   final TextEditingController _userSearchCtrl = TextEditingController();
   int _userCurrentPage = 1;
-  int _userPageSize = 10;
+  int _userPageSize = 20;
 
   // Tìm kiếm, Lọc và Phân trang đội xe & phương tiện
   String _vehicleSearchQuery = '';
@@ -136,19 +137,19 @@ class _DispatchSupervisorScreenState extends State<DispatchSupervisorScreen> {
   String _selectedVehicleStatusFilter = 'ready';
   final TextEditingController _vehicleSearchCtrl = TextEditingController();
   int _vehicleCurrentPage = 1;
-  int _vehiclePageSize = 10;
+  int _vehiclePageSize = 20;
 
   // Tìm kiếm và Phân trang Cây dầu & Đối soát nhiên liệu
   String _gasStationSearchQuery = '';
   final TextEditingController _gasStationSearchCtrl = TextEditingController();
   int _gasStationCurrentPage = 1;
-  int _gasStationPageSize = 10;
+  int _gasStationPageSize = 20;
 
   // Tìm kiếm và Phân trang Sản phẩm & Vật liệu
   String _productSearchQuery = '';
   final TextEditingController _productSearchCtrl = TextEditingController();
   int _productCurrentPage = 1;
-  int _productPageSize = 10;
+  int _productPageSize = 20;
 
   // Tìm kiếm, Lọc và Phân trang Đơn hàng vận tải
   String _orderSearchQuery = '';
@@ -169,7 +170,7 @@ class _DispatchSupervisorScreenState extends State<DispatchSupervisorScreen> {
   final TextEditingController _orderDeliveryFilterCtrl =
       TextEditingController();
   int _orderCurrentPage = 1;
-  int _orderPageSize = 10;
+  int _orderPageSize = 20;
 
   // Cấu hình Proxy AI
   final TextEditingController _proxyEndpointCtrl = TextEditingController(
@@ -1069,15 +1070,10 @@ class _DispatchSupervisorScreenState extends State<DispatchSupervisorScreen> {
         final totalItems = filteredOrders.length;
         final totalPages = (totalItems / _orderPageSize).ceil().clamp(1, 99999);
         final validPage = _orderCurrentPage.clamp(1, totalPages);
-        final startIndex = totalItems == 0
-            ? 0
-            : (validPage - 1) * _orderPageSize;
-        final endIndex = (startIndex + _orderPageSize > totalItems)
-            ? totalItems
-            : startIndex + _orderPageSize;
+        final endIndex = (validPage * _orderPageSize).clamp(0, totalItems);
         final paginatedOrders = totalItems == 0
             ? []
-            : filteredOrders.sublist(startIndex, endIndex);
+            : filteredOrders.sublist(0, endIndex);
 
         if (widget.onOrderCountChanged != null) {
           WidgetsBinding.instance.addPostFrameCallback((_) {
@@ -1934,110 +1930,111 @@ class _DispatchSupervisorScreenState extends State<DispatchSupervisorScreen> {
                         ],
                       ),
                     )
-                  : LayoutBuilder(
-                      builder: (context, constraints) {
-                        return SingleChildScrollView(
-                          scrollDirection: Axis.vertical,
-                          child: SingleChildScrollView(
-                            scrollDirection: Axis.horizontal,
-                            child: ConstrainedBox(
-                              constraints: BoxConstraints(
-                                minWidth: constraints.maxWidth,
+                  : VirtualizedDataTable(
+                      headingRowHeight: 44,
+                      rowHeight: 64,
+                      horizontalMargin: 16,
+                      columnSpacing: 20,
+                      minTableWidth: 1320,
+                      columnFlexes: [
+                        15,
+                        14,
+                        22,
+                        18,
+                        13,
+                        15,
+                        13,
+                        if (canManageOrders) 18,
+                      ],
+                      hasMore: endIndex < totalItems,
+                      onLoadMore: () {
+                        if (validPage < totalPages) {
+                          setState(() => _orderCurrentPage = validPage + 1);
+                        }
+                      },
+                      columns: [
+                        const DataColumn(
+                          label: Text(
+                            "Mã đơn hàng",
+                            style: TextStyle(
+                              fontWeight: FontWeight.bold,
+                              fontSize: 13,
+                            ),
+                          ),
+                        ),
+                        const DataColumn(
+                          label: Text(
+                            "Sản phẩm",
+                            style: TextStyle(
+                              fontWeight: FontWeight.bold,
+                              fontSize: 13,
+                            ),
+                          ),
+                        ),
+                        const DataColumn(
+                          label: Text(
+                            "Điểm nhận & Giao",
+                            style: TextStyle(
+                              fontWeight: FontWeight.bold,
+                              fontSize: 13,
+                            ),
+                          ),
+                        ),
+                        const DataColumn(
+                          label: Text(
+                            "Phương tiện & Tài xế",
+                            style: TextStyle(
+                              fontWeight: FontWeight.bold,
+                              fontSize: 13,
+                            ),
+                          ),
+                        ),
+                        const DataColumn(
+                          label: Text(
+                            "Hình thức",
+                            style: TextStyle(
+                              fontWeight: FontWeight.bold,
+                              fontSize: 13,
+                            ),
+                          ),
+                        ),
+                        const DataColumn(
+                          label: Text(
+                            "Hình chụp liên quan",
+                            style: TextStyle(
+                              fontWeight: FontWeight.bold,
+                              fontSize: 13,
+                            ),
+                          ),
+                        ),
+                        const DataColumn(
+                          label: Text(
+                            "Trạng thái",
+                            style: TextStyle(
+                              fontWeight: FontWeight.bold,
+                              fontSize: 13,
+                            ),
+                          ),
+                        ),
+                        if (canManageOrders)
+                          const DataColumn(
+                            label: Text(
+                              "Thao tác",
+                              style: TextStyle(
+                                fontWeight: FontWeight.bold,
+                                fontSize: 13,
                               ),
-                              child: DataTable(
-                                headingRowColor: MaterialStateProperty.all(
-                                  Colors.grey.shade100,
-                                ),
-                                headingRowHeight: 44,
-                                dividerThickness: 0,
-                                dataRowMaxHeight: 64,
-                                dataRowMinHeight: 56,
-                                horizontalMargin: 16,
-                                columnSpacing: 20,
-                                columns: [
-                                  const DataColumn(
-                                    label: Text(
-                                      "Mã đơn hàng",
-                                      style: TextStyle(
-                                        fontWeight: FontWeight.bold,
-                                        fontSize: 13,
-                                      ),
-                                    ),
-                                  ),
-                                  const DataColumn(
-                                    label: Text(
-                                      "Sản phẩm",
-                                      style: TextStyle(
-                                        fontWeight: FontWeight.bold,
-                                        fontSize: 13,
-                                      ),
-                                    ),
-                                  ),
-                                  const DataColumn(
-                                    label: Text(
-                                      "Điểm nhận & Giao",
-                                      style: TextStyle(
-                                        fontWeight: FontWeight.bold,
-                                        fontSize: 13,
-                                      ),
-                                    ),
-                                  ),
-                                  const DataColumn(
-                                    label: Text(
-                                      "Phương tiện & Tài xế",
-                                      style: TextStyle(
-                                        fontWeight: FontWeight.bold,
-                                        fontSize: 13,
-                                      ),
-                                    ),
-                                  ),
-                                  const DataColumn(
-                                    label: Text(
-                                      "Hình thức",
-                                      style: TextStyle(
-                                        fontWeight: FontWeight.bold,
-                                        fontSize: 13,
-                                      ),
-                                    ),
-                                  ),
-                                  const DataColumn(
-                                    label: Text(
-                                      "Hình chụp liên quan",
-                                      style: TextStyle(
-                                        fontWeight: FontWeight.bold,
-                                        fontSize: 13,
-                                      ),
-                                    ),
-                                  ),
-                                  const DataColumn(
-                                    label: Text(
-                                      "Trạng thái",
-                                      style: TextStyle(
-                                        fontWeight: FontWeight.bold,
-                                        fontSize: 13,
-                                      ),
-                                    ),
-                                  ),
-                                  if (canManageOrders)
-                                    const DataColumn(
-                                      label: Text(
-                                        "Thao tác",
-                                        style: TextStyle(
-                                          fontWeight: FontWeight.bold,
-                                          fontSize: 13,
-                                        ),
-                                      ),
-                                    ),
-                                ],
-                                rows: List.generate(paginatedOrders.length, (
-                                  idx,
-                                ) {
-                                  final o = paginatedOrders[idx];
-                                  final rowColor = idx % 2 == 0
-                                      ? Colors.white
-                                      : Colors.grey.shade50;
-                                  final orderCode =
-                                      (o['order_code'] ?? 'MÃ ĐƠN').toString();
+                            ),
+                          ),
+                      ],
+                      itemCount: paginatedOrders.length,
+                      rowBuilder: (idx) {
+                        final o = paginatedOrders[idx];
+                        final rowColor = idx % 2 == 0
+                            ? Colors.white
+                            : Colors.grey.shade50;
+                        final orderCode =
+                            (o['order_code'] ?? 'MÃ ĐƠN').toString();
                                   final orderDate = _extractOrderDate(o);
                                   final dateStr = _formatOrderDateLabel(
                                     orderDate,
@@ -2113,49 +2110,59 @@ class _DispatchSupervisorScreenState extends State<DispatchSupervisorScreen> {
                                                 ),
                                               ),
                                               const SizedBox(width: 8),
-                                              Column(
-                                                mainAxisAlignment:
-                                                    MainAxisAlignment.center,
-                                                crossAxisAlignment:
-                                                    CrossAxisAlignment.start,
-                                                children: [
-                                                  Text(
-                                                    orderCode,
-                                                    style: TextStyle(
-                                                      fontWeight:
-                                                          FontWeight.bold,
-                                                      fontSize: 13,
-                                                      color:
-                                                          Colors.blue.shade900,
-                                                    ),
-                                                  ),
-                                                  const SizedBox(height: 2),
-                                                  Row(
-                                                    mainAxisSize:
-                                                        MainAxisSize.min,
-                                                    children: [
-                                                      Icon(
-                                                        Icons.calendar_today,
-                                                        size: 11,
-                                                        color: Colors
-                                                            .grey
-                                                            .shade500,
+                                              Flexible(
+                                                child: Column(
+                                                  mainAxisAlignment:
+                                                      MainAxisAlignment.center,
+                                                  crossAxisAlignment:
+                                                      CrossAxisAlignment.start,
+                                                  children: [
+                                                    Text(
+                                                      orderCode,
+                                                      maxLines: 1,
+                                                      overflow:
+                                                          TextOverflow.ellipsis,
+                                                      style: TextStyle(
+                                                        fontWeight:
+                                                            FontWeight.bold,
+                                                        fontSize: 13,
+                                                        color:
+                                                            Colors.blue.shade900,
                                                       ),
-                                                      const SizedBox(width: 4),
-                                                      Text(
-                                                        dateStr,
-                                                        style: TextStyle(
-                                                          fontSize: 11,
+                                                    ),
+                                                    const SizedBox(height: 2),
+                                                    Row(
+                                                      mainAxisSize:
+                                                          MainAxisSize.min,
+                                                      children: [
+                                                        Icon(
+                                                          Icons.calendar_today,
+                                                          size: 11,
                                                           color: Colors
                                                               .grey
-                                                              .shade600,
-                                                          fontWeight:
-                                                              FontWeight.normal,
+                                                              .shade500,
                                                         ),
-                                                      ),
-                                                    ],
-                                                  ),
-                                                ],
+                                                        const SizedBox(width: 4),
+                                                        Flexible(
+                                                          child: Text(
+                                                            dateStr,
+                                                            maxLines: 1,
+                                                            overflow: TextOverflow
+                                                                .ellipsis,
+                                                            style: TextStyle(
+                                                              fontSize: 11,
+                                                              color: Colors
+                                                                  .grey
+                                                                  .shade600,
+                                                              fontWeight:
+                                                                  FontWeight.normal,
+                                                            ),
+                                                          ),
+                                                        ),
+                                                      ],
+                                                    ),
+                                                  ],
+                                                ),
                                               ),
                                             ],
                                           ),
@@ -2267,17 +2274,22 @@ class _DispatchSupervisorScreenState extends State<DispatchSupervisorScreen> {
                                                   color: Colors.blueGrey,
                                                 ),
                                                 const SizedBox(width: 4),
-                                                Text(
-                                                  vehiclePlate.isNotEmpty
-                                                      ? vehiclePlate
-                                                      : "Chưa gán xe",
-                                                  style: TextStyle(
-                                                    fontSize: 12,
-                                                    fontWeight: FontWeight.bold,
-                                                    color:
-                                                        vehiclePlate.isNotEmpty
-                                                        ? Colors.black87
-                                                        : Colors.grey.shade500,
+                                                Flexible(
+                                                  child: Text(
+                                                    vehiclePlate.isNotEmpty
+                                                        ? vehiclePlate
+                                                        : "Chưa gán xe",
+                                                    maxLines: 1,
+                                                    overflow:
+                                                        TextOverflow.ellipsis,
+                                                    style: TextStyle(
+                                                      fontSize: 12,
+                                                      fontWeight: FontWeight.bold,
+                                                      color:
+                                                          vehiclePlate.isNotEmpty
+                                                          ? Colors.black87
+                                                          : Colors.grey.shade500,
+                                                    ),
                                                   ),
                                                 ),
                                               ],
@@ -2292,16 +2304,21 @@ class _DispatchSupervisorScreenState extends State<DispatchSupervisorScreen> {
                                                   color: Colors.teal,
                                                 ),
                                                 const SizedBox(width: 4),
-                                                Text(
-                                                  driverName.isNotEmpty
-                                                      ? driverName
-                                                      : "Chưa gán tài xế",
-                                                  style: TextStyle(
-                                                    fontSize: 11.5,
-                                                    color: driverName.isNotEmpty
-                                                        ? Colors.teal.shade800
-                                                        : Colors.grey.shade500,
-                                                    fontWeight: FontWeight.w600,
+                                                Flexible(
+                                                  child: Text(
+                                                    driverName.isNotEmpty
+                                                        ? driverName
+                                                        : "Chưa gán tài xế",
+                                                    maxLines: 1,
+                                                    overflow:
+                                                        TextOverflow.ellipsis,
+                                                    style: TextStyle(
+                                                      fontSize: 11.5,
+                                                      color: driverName.isNotEmpty
+                                                          ? Colors.teal.shade800
+                                                          : Colors.grey.shade500,
+                                                      fontWeight: FontWeight.w600,
+                                                    ),
                                                   ),
                                                 ),
                                               ],
@@ -2482,183 +2499,9 @@ class _DispatchSupervisorScreenState extends State<DispatchSupervisorScreen> {
                                         ),
                                     ],
                                   );
-                                }),
-                              ),
-                            ),
-                          ),
-                        );
                       },
                     ),
             ),
-            // THANH ĐIỀU HƯỚNG PHÂN TRANG (PAGINATION BAR)
-            if (filteredOrders.isNotEmpty)
-              Container(
-                height: 40,
-                padding: const EdgeInsets.symmetric(horizontal: 16),
-                decoration: BoxDecoration(
-                  color: Colors.white,
-                  border: Border(
-                    top: BorderSide(color: Colors.grey.shade300, width: 1),
-                  ),
-                ),
-                child: Row(
-                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                  children: [
-                    Flexible(
-                      child: Text(
-                        "Hiển thị ${startIndex + 1} - $endIndex trên tổng số $totalItems đơn hàng",
-                        style: TextStyle(
-                          fontSize: 12,
-                          color: Colors.grey.shade700,
-                          fontWeight: FontWeight.w500,
-                        ),
-                        overflow: TextOverflow.ellipsis,
-                      ),
-                    ),
-                    Row(
-                      mainAxisSize: MainAxisSize.min,
-                      children: [
-                        const Text(
-                          "Số dòng/trang: ",
-                          style: TextStyle(fontSize: 12, color: Colors.black87),
-                        ),
-                        const SizedBox(width: 4),
-                        PopupMenuButton<int>(
-                          tooltip: "Số dòng mỗi trang",
-                          initialValue: _orderPageSize,
-                          position: PopupMenuPosition.over,
-                          constraints: const BoxConstraints(minWidth: 64),
-                          onSelected: (val) => setState(() {
-                            _orderPageSize = val;
-                            _orderCurrentPage = 1;
-                          }),
-                          itemBuilder: (_) => const [5, 10, 20, 50]
-                              .map(
-                                (n) => PopupMenuItem<int>(
-                                  value: n,
-                                  height: 36,
-                                  child: Text(
-                                    "$n",
-                                    style: const TextStyle(fontSize: 12.5),
-                                  ),
-                                ),
-                              )
-                              .toList(),
-                          child: Padding(
-                            padding: const EdgeInsets.symmetric(
-                              horizontal: 4,
-                              vertical: 2,
-                            ),
-                            child: Row(
-                              mainAxisSize: MainAxisSize.min,
-                              children: [
-                                Text(
-                                  "$_orderPageSize",
-                                  style: const TextStyle(
-                                    fontSize: 12,
-                                    color: Colors.blueGrey,
-                                    fontWeight: FontWeight.bold,
-                                  ),
-                                ),
-                                const Icon(
-                                  Icons.arrow_drop_down,
-                                  size: 18,
-                                  color: Colors.blueGrey,
-                                ),
-                              ],
-                            ),
-                          ),
-                        ),
-                        const SizedBox(width: 14),
-                        IconButton(
-                          icon: const Icon(Icons.first_page, size: 18),
-                          padding: EdgeInsets.zero,
-                          constraints: const BoxConstraints(
-                            minWidth: 28,
-                            minHeight: 28,
-                          ),
-                          tooltip: "Trang đầu",
-                          onPressed: validPage > 1
-                              ? () {
-                                  setState(() {
-                                    _orderCurrentPage = 1;
-                                  });
-                                }
-                              : null,
-                        ),
-                        IconButton(
-                          icon: const Icon(Icons.chevron_left, size: 18),
-                          padding: EdgeInsets.zero,
-                          constraints: const BoxConstraints(
-                            minWidth: 28,
-                            minHeight: 28,
-                          ),
-                          tooltip: "Trang trước",
-                          onPressed: validPage > 1
-                              ? () {
-                                  setState(() {
-                                    _orderCurrentPage = validPage - 1;
-                                  });
-                                }
-                              : null,
-                        ),
-                        const SizedBox(width: 4),
-                        Container(
-                          padding: const EdgeInsets.symmetric(
-                            horizontal: 10,
-                            vertical: 3,
-                          ),
-                          decoration: BoxDecoration(
-                            color: Colors.blue.shade50,
-                            borderRadius: BorderRadius.circular(4),
-                          ),
-                          child: Text(
-                            "$validPage / $totalPages",
-                            style: TextStyle(
-                              fontSize: 12,
-                              fontWeight: FontWeight.bold,
-                              color: Colors.blue.shade800,
-                            ),
-                          ),
-                        ),
-                        const SizedBox(width: 4),
-                        IconButton(
-                          icon: const Icon(Icons.chevron_right, size: 18),
-                          padding: EdgeInsets.zero,
-                          constraints: const BoxConstraints(
-                            minWidth: 28,
-                            minHeight: 28,
-                          ),
-                          tooltip: "Trang sau",
-                          onPressed: validPage < totalPages
-                              ? () {
-                                  setState(() {
-                                    _orderCurrentPage = validPage + 1;
-                                  });
-                                }
-                              : null,
-                        ),
-                        IconButton(
-                          icon: const Icon(Icons.last_page, size: 18),
-                          padding: EdgeInsets.zero,
-                          constraints: const BoxConstraints(
-                            minWidth: 28,
-                            minHeight: 28,
-                          ),
-                          tooltip: "Trang cuối",
-                          onPressed: validPage < totalPages
-                              ? () {
-                                  setState(() {
-                                    _orderCurrentPage = totalPages;
-                                  });
-                                }
-                              : null,
-                        ),
-                      ],
-                    ),
-                  ],
-                ),
-              ),
           ],
         );
       },
@@ -2714,15 +2557,10 @@ class _DispatchSupervisorScreenState extends State<DispatchSupervisorScreen> {
           99999,
         );
         final validPage = _vehicleCurrentPage.clamp(1, totalPages);
-        final startIndex = totalItems == 0
-            ? 0
-            : (validPage - 1) * _vehiclePageSize;
-        final endIndex = (startIndex + _vehiclePageSize > totalItems)
-            ? totalItems
-            : startIndex + _vehiclePageSize;
+        final endIndex = (validPage * _vehiclePageSize).clamp(0, totalItems);
         final paginatedVehicles = totalItems == 0
             ? []
-            : filteredVehicles.sublist(startIndex, endIndex);
+            : filteredVehicles.sublist(0, endIndex);
 
         if (widget.onVehicleCountChanged != null) {
           WidgetsBinding.instance.addPostFrameCallback((_) {
@@ -2987,102 +2825,93 @@ class _DispatchSupervisorScreenState extends State<DispatchSupervisorScreen> {
                         ],
                       ),
                     )
-                  : LayoutBuilder(
-                      builder: (context, constraints) {
-                        return SingleChildScrollView(
-                          scrollDirection: Axis.vertical,
-                          child: SingleChildScrollView(
-                            scrollDirection: Axis.horizontal,
-                            child: ConstrainedBox(
-                              constraints: BoxConstraints(
-                                minWidth: constraints.maxWidth,
-                              ),
-                              child: DataTable(
-                                headingRowColor: MaterialStateProperty.all(
-                                  Colors.grey.shade100,
-                                ),
-                                headingRowHeight: 44,
-                                dividerThickness: 0,
-                                dataRowMaxHeight: 64,
-                                dataRowMinHeight: 58,
-                                horizontalMargin: 16,
-                                columnSpacing: 24,
-                                columns: const [
-                                  DataColumn(
-                                    label: Text(
-                                      "Biển số xe",
-                                      style: TextStyle(
-                                        fontWeight: FontWeight.bold,
-                                        fontSize: 13,
-                                      ),
-                                    ),
-                                  ),
-                                  DataColumn(
-                                    label: Text(
-                                      "Loại phương tiện",
-                                      style: TextStyle(
-                                        fontWeight: FontWeight.bold,
-                                        fontSize: 13,
-                                      ),
-                                    ),
-                                  ),
-                                  DataColumn(
-                                    label: Text(
-                                      "Hình thức sở hữu",
-                                      style: TextStyle(
-                                        fontWeight: FontWeight.bold,
-                                        fontSize: 13,
-                                      ),
-                                    ),
-                                  ),
-                                  DataColumn(
-                                    label: Text(
-                                      "Tài xế chỉ định",
-                                      style: TextStyle(
-                                        fontWeight: FontWeight.bold,
-                                        fontSize: 13,
-                                      ),
-                                    ),
-                                  ),
-                                  DataColumn(
-                                    label: Text(
-                                      "Đơn vị quản lý",
-                                      style: TextStyle(
-                                        fontWeight: FontWeight.bold,
-                                        fontSize: 13,
-                                      ),
-                                    ),
-                                  ),
-                                  DataColumn(
-                                    label: Text(
-                                      "Trạng thái & Thiết bị Token",
-                                      style: TextStyle(
-                                        fontWeight: FontWeight.bold,
-                                        fontSize: 13,
-                                      ),
-                                    ),
-                                  ),
-                                  DataColumn(
-                                    label: Text(
-                                      "Thao tác",
-                                      style: TextStyle(
-                                        fontWeight: FontWeight.bold,
-                                        fontSize: 13,
-                                      ),
-                                    ),
-                                  ),
-                                ],
-                                rows: List.generate(paginatedVehicles.length, (
-                                  idx,
-                                ) {
-                                  final v = paginatedVehicles[idx];
-                                  final rowColor = idx % 2 == 0
-                                      ? Colors.white
-                                      : Colors.grey.shade50;
-                                  final plate = (v['plate_number'] ?? 'N/A')
-                                      .toString();
-                                  final vtype = (v['vehicle_type'] ?? 'Xe tải')
-                                      .toString();
+                  : VirtualizedDataTable(
+                      headingRowHeight: 44,
+                      rowHeight: 64,
+                      horizontalMargin: 16,
+                      columnSpacing: 20,
+                      minTableWidth: 1220,
+                      columnFlexes: const [18, 13, 14, 20, 15, 19, 15],
+                      hasMore: endIndex < totalItems,
+                      onLoadMore: () {
+                        if (validPage < totalPages) {
+                          setState(() => _vehicleCurrentPage = validPage + 1);
+                        }
+                      },
+                      columns: const [
+                        DataColumn(
+                          label: Text(
+                            "Biển số xe",
+                            style: TextStyle(
+                              fontWeight: FontWeight.bold,
+                              fontSize: 13,
+                            ),
+                          ),
+                        ),
+                        DataColumn(
+                          label: Text(
+                            "Loại phương tiện",
+                            style: TextStyle(
+                              fontWeight: FontWeight.bold,
+                              fontSize: 13,
+                            ),
+                          ),
+                        ),
+                        DataColumn(
+                          label: Text(
+                            "Hình thức sở hữu",
+                            style: TextStyle(
+                              fontWeight: FontWeight.bold,
+                              fontSize: 13,
+                            ),
+                          ),
+                        ),
+                        DataColumn(
+                          label: Text(
+                            "Tài xế chỉ định",
+                            style: TextStyle(
+                              fontWeight: FontWeight.bold,
+                              fontSize: 13,
+                            ),
+                          ),
+                        ),
+                        DataColumn(
+                          label: Text(
+                            "Đơn vị quản lý",
+                            style: TextStyle(
+                              fontWeight: FontWeight.bold,
+                              fontSize: 13,
+                            ),
+                          ),
+                        ),
+                        DataColumn(
+                          label: Text(
+                            "Trạng thái & Thiết bị Token",
+                            style: TextStyle(
+                              fontWeight: FontWeight.bold,
+                              fontSize: 13,
+                            ),
+                          ),
+                        ),
+                        DataColumn(
+                          label: Text(
+                            "Thao tác",
+                            style: TextStyle(
+                              fontWeight: FontWeight.bold,
+                              fontSize: 13,
+                            ),
+                          ),
+                        ),
+                      ],
+                      itemCount: paginatedVehicles.length,
+                      rowBuilder: (idx) {
+                        final v = paginatedVehicles[idx];
+                        final rowColor = idx % 2 == 0
+                            ? Colors.white
+                            : Colors.grey.shade50;
+                        final plate = (v['plate_number'] ?? 'N/A').toString();
+                        final vtype = (v['vehicle_type'] ?? 'Xe tải')
+                            .toString();
                                   final ownType =
                                       (v['ownership_type'] ?? 'INTERNAL')
                                           .toString();
@@ -3141,12 +2970,16 @@ class _DispatchSupervisorScreenState extends State<DispatchSupervisorScreen> {
                                               ),
                                             ),
                                             const SizedBox(width: 10),
-                                            Text(
-                                              plate,
-                                              style: TextStyle(
-                                                fontWeight: FontWeight.bold,
-                                                fontSize: 13.5,
-                                                color: Colors.blueGrey.shade900,
+                                            Flexible(
+                                              child: Text(
+                                                plate,
+                                                maxLines: 1,
+                                                overflow: TextOverflow.ellipsis,
+                                                style: TextStyle(
+                                                  fontWeight: FontWeight.bold,
+                                                  fontSize: 13.5,
+                                                  color: Colors.blueGrey.shade900,
+                                                ),
                                               ),
                                             ),
                                             if (v['gps_provider'] ==
@@ -3303,68 +3136,51 @@ class _DispatchSupervisorScreenState extends State<DispatchSupervisorScreen> {
                                                           const SizedBox(
                                                             width: 4,
                                                           ),
-                                                          Text(
-                                                            driverName,
-                                                            style: const TextStyle(
-                                                              fontSize: 12.5,
-                                                              fontWeight:
-                                                                  FontWeight
-                                                                      .bold,
-                                                              color:
-                                                                  Colors.teal,
-                                                              decoration:
-                                                                  TextDecoration
-                                                                      .underline,
-                                                              decorationColor:
-                                                                  Colors.teal,
+                                                          Flexible(
+                                                            child: Text(
+                                                              driverName,
+                                                              maxLines: 1,
+                                                              overflow:
+                                                                  TextOverflow
+                                                                      .ellipsis,
+                                                              style: const TextStyle(
+                                                                fontSize: 12.5,
+                                                                fontWeight:
+                                                                    FontWeight
+                                                                        .bold,
+                                                                color:
+                                                                    Colors.teal,
+                                                                decoration:
+                                                                    TextDecoration
+                                                                        .underline,
+                                                                decorationColor:
+                                                                    Colors.teal,
+                                                              ),
                                                             ),
                                                           ),
                                                         ],
                                                       ),
                                                       const SizedBox(height: 2),
-                                                      Row(
-                                                        mainAxisSize:
-                                                            MainAxisSize.min,
-                                                        children: [
+                                                      Text(
+                                                        [
                                                           if (driverUsername
                                                               .isNotEmpty)
-                                                            Text(
-                                                              "@$driverUsername",
-                                                              style: TextStyle(
-                                                                fontSize: 11,
-                                                                color: Colors
-                                                                    .blueGrey
-                                                                    .shade700,
-                                                                fontWeight:
-                                                                    FontWeight
-                                                                        .w500,
-                                                              ),
-                                                            ),
-                                                          if (driverUsername
-                                                                  .isNotEmpty &&
-                                                              driverPhone
-                                                                  .isNotEmpty)
-                                                            Text(
-                                                              " • ",
-                                                              style: TextStyle(
-                                                                fontSize: 11,
-                                                                color: Colors
-                                                                    .grey
-                                                                    .shade400,
-                                                              ),
-                                                            ),
+                                                            "@$driverUsername",
                                                           if (driverPhone
                                                               .isNotEmpty)
-                                                            Text(
-                                                              driverPhone,
-                                                              style: TextStyle(
-                                                                fontSize: 11,
-                                                                color: Colors
-                                                                    .grey
-                                                                    .shade600,
-                                                              ),
-                                                            ),
-                                                        ],
+                                                            driverPhone,
+                                                        ].join(" • "),
+                                                        maxLines: 1,
+                                                        overflow:
+                                                            TextOverflow.ellipsis,
+                                                        style: TextStyle(
+                                                          fontSize: 11,
+                                                          color: Colors
+                                                              .blueGrey
+                                                              .shade700,
+                                                          fontWeight:
+                                                              FontWeight.w500,
+                                                        ),
                                                       ),
                                                     ],
                                                   ),
@@ -3438,186 +3254,9 @@ class _DispatchSupervisorScreenState extends State<DispatchSupervisorScreen> {
                                       ),
                                     ],
                                   );
-                                }),
-                              ),
-                            ),
-                          ),
-                        );
                       },
                     ),
             ),
-            // THANH ĐIỀU HƯỚNG PHÂN TRANG (PAGINATION BAR)
-            if (filteredVehicles.isNotEmpty)
-              Container(
-                height: 40,
-                padding: const EdgeInsets.symmetric(horizontal: 16),
-                decoration: BoxDecoration(
-                  color: Colors.white,
-                  border: Border(
-                    top: BorderSide(color: Colors.grey.shade400, width: 1),
-                  ),
-                ),
-                child: Row(
-                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                  children: [
-                    // Thông tin số bản ghi hiển thị
-                    Text(
-                      "Hiển thị ${startIndex + 1} - $endIndex trên tổng số $totalItems phương tiện",
-                      style: TextStyle(
-                        fontSize: 12,
-                        color: Colors.grey.shade700,
-                        fontWeight: FontWeight.w500,
-                      ),
-                    ),
-                    // Cụm điều khiển: Chọn PageSize + Các nút chuyển trang
-                    Row(
-                      children: [
-                        const Text(
-                          "Số dòng/trang: ",
-                          style: TextStyle(fontSize: 12, color: Colors.black87),
-                        ),
-                        const SizedBox(width: 4),
-                        PopupMenuButton<int>(
-                          tooltip: "Số dòng mỗi trang",
-                          initialValue: _vehiclePageSize,
-                          position: PopupMenuPosition.over,
-                          constraints: const BoxConstraints(minWidth: 64),
-                          onSelected: (val) => setState(() {
-                            _vehiclePageSize = val;
-                            _vehicleCurrentPage = 1;
-                          }),
-                          itemBuilder: (_) => const [5, 10, 20, 50]
-                              .map(
-                                (n) => PopupMenuItem<int>(
-                                  value: n,
-                                  height: 36,
-                                  child: Text(
-                                    "$n",
-                                    style: const TextStyle(fontSize: 12.5),
-                                  ),
-                                ),
-                              )
-                              .toList(),
-                          child: Padding(
-                            padding: const EdgeInsets.symmetric(
-                              horizontal: 4,
-                              vertical: 2,
-                            ),
-                            child: Row(
-                              mainAxisSize: MainAxisSize.min,
-                              children: [
-                                Text(
-                                  "$_vehiclePageSize",
-                                  style: const TextStyle(
-                                    fontSize: 12,
-                                    color: Colors.blueGrey,
-                                    fontWeight: FontWeight.bold,
-                                  ),
-                                ),
-                                const Icon(
-                                  Icons.arrow_drop_down,
-                                  size: 18,
-                                  color: Colors.blueGrey,
-                                ),
-                              ],
-                            ),
-                          ),
-                        ),
-                        const SizedBox(width: 14),
-                        // Nút về trang đầu
-                        IconButton(
-                          icon: const Icon(Icons.first_page, size: 18),
-                          padding: EdgeInsets.zero,
-                          constraints: const BoxConstraints(
-                            minWidth: 28,
-                            minHeight: 28,
-                          ),
-                          tooltip: "Trang đầu",
-                          onPressed: validPage > 1
-                              ? () {
-                                  setState(() {
-                                    _vehicleCurrentPage = 1;
-                                  });
-                                }
-                              : null,
-                        ),
-                        // Nút trang trước
-                        IconButton(
-                          icon: const Icon(Icons.chevron_left, size: 18),
-                          padding: EdgeInsets.zero,
-                          constraints: const BoxConstraints(
-                            minWidth: 28,
-                            minHeight: 28,
-                          ),
-                          tooltip: "Trang trước",
-                          onPressed: validPage > 1
-                              ? () {
-                                  setState(() {
-                                    _vehicleCurrentPage = validPage - 1;
-                                  });
-                                }
-                              : null,
-                        ),
-                        const SizedBox(width: 4),
-                        // Nhãn hiển thị trang hiện tại
-                        Container(
-                          padding: const EdgeInsets.symmetric(
-                            horizontal: 10,
-                            vertical: 3,
-                          ),
-                          decoration: BoxDecoration(
-                            color: Colors.blue.shade50,
-                            borderRadius: BorderRadius.circular(4),
-                          ),
-                          child: Text(
-                            "$validPage / $totalPages",
-                            style: TextStyle(
-                              fontSize: 12,
-                              fontWeight: FontWeight.bold,
-                              color: Colors.blue.shade800,
-                            ),
-                          ),
-                        ),
-                        const SizedBox(width: 4),
-                        // Nút trang kế tiếp
-                        IconButton(
-                          icon: const Icon(Icons.chevron_right, size: 18),
-                          padding: EdgeInsets.zero,
-                          constraints: const BoxConstraints(
-                            minWidth: 28,
-                            minHeight: 28,
-                          ),
-                          tooltip: "Trang sau",
-                          onPressed: validPage < totalPages
-                              ? () {
-                                  setState(() {
-                                    _vehicleCurrentPage = validPage + 1;
-                                  });
-                                }
-                              : null,
-                        ),
-                        // Nút đến trang cuối
-                        IconButton(
-                          icon: const Icon(Icons.last_page, size: 18),
-                          padding: EdgeInsets.zero,
-                          constraints: const BoxConstraints(
-                            minWidth: 28,
-                            minHeight: 28,
-                          ),
-                          tooltip: "Trang cuối",
-                          onPressed: validPage < totalPages
-                              ? () {
-                                  setState(() {
-                                    _vehicleCurrentPage = totalPages;
-                                  });
-                                }
-                              : null,
-                        ),
-                      ],
-                    ),
-                  ],
-                ),
-              ),
           ],
         );
       },
@@ -3690,15 +3329,10 @@ class _DispatchSupervisorScreenState extends State<DispatchSupervisorScreen> {
         final totalItems = filteredUsers.length;
         final totalPages = (totalItems / _userPageSize).ceil().clamp(1, 99999);
         final validPage = _userCurrentPage.clamp(1, totalPages);
-        final startIndex = totalItems == 0
-            ? 0
-            : (validPage - 1) * _userPageSize;
-        final endIndex = (startIndex + _userPageSize > totalItems)
-            ? totalItems
-            : startIndex + _userPageSize;
+        final endIndex = (validPage * _userPageSize).clamp(0, totalItems);
         final paginatedUsers = totalItems == 0
             ? []
-            : filteredUsers.sublist(startIndex, endIndex);
+            : filteredUsers.sublist(0, endIndex);
 
         if (widget.onUserCountChanged != null) {
           WidgetsBinding.instance.addPostFrameCallback((_) {
@@ -3883,131 +3517,114 @@ class _DispatchSupervisorScreenState extends State<DispatchSupervisorScreen> {
                         ],
                       ),
                     )
-                  : LayoutBuilder(
-                      builder: (context, constraints) {
-                        return SingleChildScrollView(
-                          scrollDirection: Axis.vertical,
-                          child: SingleChildScrollView(
-                            scrollDirection: Axis.horizontal,
-                            child: ConstrainedBox(
-                              constraints: BoxConstraints(
-                                minWidth: constraints.maxWidth,
-                              ),
-                              child: DataTable(
-                                headingRowColor: MaterialStateProperty.all(
-                                  Colors.grey.shade100,
-                                ),
-                                headingRowHeight: 44,
-                                dividerThickness: 0,
-                                dataRowMaxHeight: 76,
-                                dataRowMinHeight: 72,
-                                horizontalMargin: 16,
-                                columnSpacing: 20,
-                                columns: const [
-                                  DataColumn(
-                                    label: Text(
-                                      "Ảnh",
-                                      style: TextStyle(
-                                        fontWeight: FontWeight.bold,
-                                        fontSize: 13,
-                                      ),
-                                    ),
-                                  ),
-                                  DataColumn(
-                                    label: Text(
-                                      "Tài khoản & Họ tên",
-                                      style: TextStyle(
-                                        fontWeight: FontWeight.bold,
-                                        fontSize: 13,
-                                      ),
-                                    ),
-                                  ),
-                                  DataColumn(
-                                    label: Text(
-                                      "Số điện thoại",
-                                      style: TextStyle(
-                                        fontWeight: FontWeight.bold,
-                                        fontSize: 13,
-                                      ),
-                                    ),
-                                  ),
-                                  DataColumn(
-                                    label: Text(
-                                      "Vai trò & Phân loại",
-                                      style: TextStyle(
-                                        fontWeight: FontWeight.bold,
-                                        fontSize: 13,
-                                      ),
-                                    ),
-                                  ),
-                                  DataColumn(
-                                    label: Text(
-                                      "Trạng thái",
-                                      style: TextStyle(
-                                        fontWeight: FontWeight.bold,
-                                        fontSize: 13,
-                                      ),
-                                    ),
-                                  ),
-                                  DataColumn(
-                                    label: Text(
-                                      "Lịch sử",
-                                      style: TextStyle(
-                                        fontWeight: FontWeight.bold,
-                                        fontSize: 13,
-                                      ),
-                                    ),
-                                  ),
-                                  DataColumn(
-                                    label: Text(
-                                      "Thao tác",
-                                      style: TextStyle(
-                                        fontWeight: FontWeight.bold,
-                                        fontSize: 13,
-                                      ),
-                                    ),
-                                  ),
-                                ],
-                                rows: List.generate(paginatedUsers.length, (
-                                  rowIndex,
-                                ) {
-                                  final u = paginatedUsers[rowIndex];
-                                  final roles =
-                                      (u['role_names'] as List<dynamic>?)?.join(
-                                        ', ',
-                                      ) ??
-                                      'Chưa gán vai trò';
-                                  final isSystemAdmin =
-                                      u['username'] == 'admin';
-                                  final isLastRow =
-                                      rowIndex == paginatedUsers.length - 1;
-                                  final cellBorder = isLastRow
-                                      ? null
-                                      : Border(
-                                          bottom: BorderSide(
-                                            color: Colors.grey.shade300,
-                                            width: 1,
-                                          ),
-                                        );
+                  : VirtualizedDataTable(
+                      headingRowHeight: 44,
+                      rowHeight: 74,
+                      horizontalMargin: 16,
+                      columnSpacing: 20,
+                      minTableWidth: 1220,
+                      fixedColumnWidths: const [
+                        48,
+                        null,
+                        null,
+                        null,
+                        null,
+                        null,
+                        null,
+                      ],
+                      columnFlexes: const [1, 22, 13, 22, 16, 15, 18],
+                      hasMore: endIndex < totalItems,
+                      onLoadMore: () {
+                        if (validPage < totalPages) {
+                          setState(() => _userCurrentPage = validPage + 1);
+                        }
+                      },
+                      columns: const [
+                        DataColumn(
+                          label: Text(
+                            "Ảnh",
+                            style: TextStyle(
+                              fontWeight: FontWeight.bold,
+                              fontSize: 13,
+                            ),
+                          ),
+                        ),
+                        DataColumn(
+                          label: Text(
+                            "Tài khoản & Họ tên",
+                            style: TextStyle(
+                              fontWeight: FontWeight.bold,
+                              fontSize: 13,
+                            ),
+                          ),
+                        ),
+                        DataColumn(
+                          label: Text(
+                            "Số điện thoại",
+                            style: TextStyle(
+                              fontWeight: FontWeight.bold,
+                              fontSize: 13,
+                            ),
+                          ),
+                        ),
+                        DataColumn(
+                          label: Text(
+                            "Vai trò & Phân loại",
+                            style: TextStyle(
+                              fontWeight: FontWeight.bold,
+                              fontSize: 13,
+                            ),
+                          ),
+                        ),
+                        DataColumn(
+                          label: Text(
+                            "Trạng thái",
+                            style: TextStyle(
+                              fontWeight: FontWeight.bold,
+                              fontSize: 13,
+                            ),
+                          ),
+                        ),
+                        DataColumn(
+                          label: Text(
+                            "Lịch sử",
+                            style: TextStyle(
+                              fontWeight: FontWeight.bold,
+                              fontSize: 13,
+                            ),
+                          ),
+                        ),
+                        DataColumn(
+                          label: Text(
+                            "Thao tác",
+                            style: TextStyle(
+                              fontWeight: FontWeight.bold,
+                              fontSize: 13,
+                            ),
+                          ),
+                        ),
+                      ],
+                      itemCount: paginatedUsers.length,
+                      rowBuilder: (rowIndex) {
+                        final u = paginatedUsers[rowIndex];
+                        final roles =
+                            (u['role_names'] as List<dynamic>?)?.join(
+                              ', ',
+                            ) ??
+                            'Chưa gán vai trò';
+                        final isSystemAdmin = u['username'] == 'admin';
 
-                                  DataCell makeCell(
-                                    Widget child, {
-                                    AlignmentGeometry alignment =
-                                        Alignment.centerLeft,
-                                  }) {
-                                    return DataCell(
-                                      Container(
-                                        alignment: alignment,
-                                        decoration: BoxDecoration(
-                                          border: cellBorder,
-                                        ),
-                                        child: child,
-                                      ),
-                                    );
-                                  }
+                        DataCell makeCell(
+                          Widget child, {
+                          AlignmentGeometry alignment = Alignment.centerLeft,
+                        }) {
+                          return DataCell(
+                            Container(alignment: alignment, child: child),
+                          );
+                        }
 
-                                  return DataRow(
-                                    cells: [
+                        return DataRow(
+                          cells: [
                                       // Cột 1: Avatar 1:1 bo góc 4px
                                       makeCell(
                                         Padding(
@@ -4378,21 +3995,27 @@ class _DispatchSupervisorScreenState extends State<DispatchSupervisorScreen> {
                                                                   .shade500,
                                                       ),
                                                       const SizedBox(width: 4),
-                                                      Text(
-                                                        hasToken
-                                                            ? "Token: ${matchedDeviceId!.length > 14 ? '${matchedDeviceId.substring(0, 14)}...' : matchedDeviceId}"
-                                                            : "Chưa có Token",
-                                                        style: TextStyle(
-                                                          fontSize: 10,
-                                                          fontWeight:
-                                                              FontWeight.w600,
-                                                          color: hasToken
-                                                              ? Colors
-                                                                    .blue
-                                                                    .shade900
-                                                              : Colors
-                                                                    .grey
-                                                                    .shade600,
+                                                      Flexible(
+                                                        child: Text(
+                                                          hasToken
+                                                              ? "Token: ${matchedDeviceId!.length > 14 ? '${matchedDeviceId.substring(0, 14)}...' : matchedDeviceId}"
+                                                              : "Chưa có Token",
+                                                          maxLines: 1,
+                                                          overflow:
+                                                              TextOverflow
+                                                                  .ellipsis,
+                                                          style: TextStyle(
+                                                            fontSize: 10,
+                                                            fontWeight:
+                                                                FontWeight.w600,
+                                                            color: hasToken
+                                                                ? Colors
+                                                                      .blue
+                                                                      .shade900
+                                                                : Colors
+                                                                      .grey
+                                                                      .shade600,
+                                                          ),
                                                         ),
                                                       ),
                                                     ],
@@ -4609,181 +4232,9 @@ class _DispatchSupervisorScreenState extends State<DispatchSupervisorScreen> {
                                       ),
                                     ],
                                   );
-                                }),
-                              ),
-                            ),
-                          ),
-                        );
                       },
                     ),
             ),
-            // THANH ĐIỀU HƯỚNG PHÂN TRANG (PAGINATION BAR)
-            if (filteredUsers.isNotEmpty)
-              Container(
-                height: 40,
-                padding: const EdgeInsets.symmetric(horizontal: 16),
-                decoration: BoxDecoration(
-                  color: Colors.white,
-                  border: Border(
-                    top: BorderSide(color: Colors.grey.shade400, width: 1),
-                  ),
-                ),
-                child: Row(
-                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                  children: [
-                    // Thông tin số bản ghi hiển thị
-                    Text(
-                      "Hiển thị ${startIndex + 1} - ${endIndex} trên tổng số ${totalItems} tài khoản",
-                      style: TextStyle(
-                        fontSize: 12,
-                        color: Colors.grey.shade700,
-                        fontWeight: FontWeight.w500,
-                      ),
-                    ),
-                    // Cụm điều khiển: Chọn PageSize + Các nút chuyển trang
-                    Row(
-                      children: [
-                        const Text(
-                          "Số dòng/trang: ",
-                          style: TextStyle(fontSize: 12, color: Colors.black87),
-                        ),
-                        const SizedBox(width: 4),
-                        PopupMenuButton<int>(
-                          tooltip: "Số dòng mỗi trang",
-                          initialValue: _userPageSize,
-                          position: PopupMenuPosition.over,
-                          constraints: const BoxConstraints(minWidth: 64),
-                          onSelected: (val) => setState(() {
-                            _userPageSize = val;
-                            _userCurrentPage = 1;
-                          }),
-                          itemBuilder: (_) => const [5, 10, 20, 50]
-                              .map(
-                                (n) => PopupMenuItem<int>(
-                                  value: n,
-                                  height: 36,
-                                  child: Text(
-                                    "$n",
-                                    style: const TextStyle(fontSize: 12.5),
-                                  ),
-                                ),
-                              )
-                              .toList(),
-                          child: Padding(
-                            padding: const EdgeInsets.symmetric(
-                              horizontal: 4,
-                              vertical: 2,
-                            ),
-                            child: Row(
-                              mainAxisSize: MainAxisSize.min,
-                              children: [
-                                Text(
-                                  "$_userPageSize",
-                                  style: const TextStyle(
-                                    fontSize: 12,
-                                    color: Colors.blueGrey,
-                                    fontWeight: FontWeight.bold,
-                                  ),
-                                ),
-                                const Icon(
-                                  Icons.arrow_drop_down,
-                                  size: 18,
-                                  color: Colors.blueGrey,
-                                ),
-                              ],
-                            ),
-                          ),
-                        ),
-                        const SizedBox(width: 12),
-                        // Nút về trang đầu
-                        IconButton(
-                          icon: const Icon(Icons.first_page, size: 18),
-                          tooltip: "Trang đầu",
-                          padding: EdgeInsets.zero,
-                          constraints: const BoxConstraints(
-                            minWidth: 28,
-                            minHeight: 28,
-                          ),
-                          splashRadius: 16,
-                          onPressed: validPage > 1
-                              ? () => setState(() => _userCurrentPage = 1)
-                              : null,
-                        ),
-                        // Nút trang trước
-                        IconButton(
-                          icon: const Icon(Icons.chevron_left, size: 18),
-                          tooltip: "Trang trước",
-                          padding: EdgeInsets.zero,
-                          constraints: const BoxConstraints(
-                            minWidth: 28,
-                            minHeight: 28,
-                          ),
-                          splashRadius: 16,
-                          onPressed: validPage > 1
-                              ? () => setState(
-                                  () => _userCurrentPage = validPage - 1,
-                                )
-                              : null,
-                        ),
-                        const SizedBox(width: 4),
-                        // Hiển thị số trang hiện tại / tổng số trang
-                        Container(
-                          padding: const EdgeInsets.symmetric(
-                            horizontal: 8,
-                            vertical: 3,
-                          ),
-                          decoration: BoxDecoration(
-                            color: Colors.blue.shade50,
-                            borderRadius: BorderRadius.circular(4),
-                            border: Border.all(color: Colors.blue.shade200),
-                          ),
-                          child: Text(
-                            "Trang $validPage / $totalPages",
-                            style: TextStyle(
-                              fontSize: 11,
-                              fontWeight: FontWeight.bold,
-                              color: Colors.blue.shade800,
-                            ),
-                          ),
-                        ),
-                        const SizedBox(width: 4),
-                        // Nút trang sau
-                        IconButton(
-                          icon: const Icon(Icons.chevron_right, size: 18),
-                          tooltip: "Trang sau",
-                          padding: EdgeInsets.zero,
-                          constraints: const BoxConstraints(
-                            minWidth: 28,
-                            minHeight: 28,
-                          ),
-                          splashRadius: 16,
-                          onPressed: validPage < totalPages
-                              ? () => setState(
-                                  () => _userCurrentPage = validPage + 1,
-                                )
-                              : null,
-                        ),
-                        // Nút tới trang cuối
-                        IconButton(
-                          icon: const Icon(Icons.last_page, size: 18),
-                          tooltip: "Trang cuối",
-                          padding: EdgeInsets.zero,
-                          constraints: const BoxConstraints(
-                            minWidth: 28,
-                            minHeight: 28,
-                          ),
-                          splashRadius: 16,
-                          onPressed: validPage < totalPages
-                              ? () => setState(
-                                  () => _userCurrentPage = totalPages,
-                                )
-                              : null,
-                        ),
-                      ],
-                    ),
-                  ],
-                ),
-              ),
           ],
         );
       },
@@ -5166,15 +4617,10 @@ class _DispatchSupervisorScreenState extends State<DispatchSupervisorScreen> {
           99999,
         );
         final validPage = _gasStationCurrentPage.clamp(1, totalPages);
-        final startIndex = totalItems == 0
-            ? 0
-            : (validPage - 1) * _gasStationPageSize;
-        final endIndex = (startIndex + _gasStationPageSize > totalItems)
-            ? totalItems
-            : startIndex + _gasStationPageSize;
+        final endIndex = (validPage * _gasStationPageSize).clamp(0, totalItems);
         final paginatedStations = totalItems == 0
             ? []
-            : filteredStations.sublist(startIndex, endIndex);
+            : filteredStations.sublist(0, endIndex);
 
         if (widget.onGasStationCountChanged != null) {
           WidgetsBinding.instance.addPostFrameCallback((_) {
@@ -5280,63 +4726,6 @@ class _DispatchSupervisorScreenState extends State<DispatchSupervisorScreen> {
                     ),
                   ),
                   const SizedBox(width: 8),
-                  // Nút quản lý danh sách Mã QR Cây dầu theo từng xe
-                  SizedBox(
-                    height: 36,
-                    child: OutlinedButton.icon(
-                      style: OutlinedButton.styleFrom(
-                        backgroundColor: Colors.indigo.shade50,
-                        foregroundColor: Colors.indigo.shade800,
-                        side: BorderSide(color: Colors.indigo.shade300),
-                        elevation: 0,
-                        minimumSize: const Size(0, 36),
-                        fixedSize: const Size.fromHeight(36),
-                        tapTargetSize: MaterialTapTargetSize.shrinkWrap,
-                        padding: const EdgeInsets.symmetric(horizontal: 12),
-                        shape: RoundedRectangleBorder(
-                          borderRadius: BorderRadius.circular(4),
-                        ),
-                      ),
-                      icon: const Icon(Icons.qr_code_2, size: 16),
-                      label: const Text(
-                        "Quản lý Mã QR theo xe",
-                        style: TextStyle(
-                          fontWeight: FontWeight.w600,
-                          fontSize: 12.5,
-                        ),
-                      ),
-                      onPressed: () => _showGasStationQrManagerDialog(),
-                    ),
-                  ),
-                  const SizedBox(width: 8),
-                  // Nút tải lên trực tiếp ảnh Mã QR Cây dầu gắn cho xe
-                  SizedBox(
-                    height: 36,
-                    child: ElevatedButton.icon(
-                      style: ElevatedButton.styleFrom(
-                        backgroundColor: Colors.teal.shade700,
-                        foregroundColor: Colors.white,
-                        elevation: 0,
-                        minimumSize: const Size(0, 36),
-                        fixedSize: const Size.fromHeight(36),
-                        tapTargetSize: MaterialTapTargetSize.shrinkWrap,
-                        padding: const EdgeInsets.symmetric(horizontal: 12),
-                        shape: RoundedRectangleBorder(
-                          borderRadius: BorderRadius.circular(4),
-                        ),
-                      ),
-                      icon: const Icon(Icons.cloud_upload_outlined, size: 16),
-                      label: const Text(
-                        "Tải lên Mã QR xe",
-                        style: TextStyle(
-                          fontWeight: FontWeight.w600,
-                          fontSize: 12.5,
-                        ),
-                      ),
-                      onPressed: () => _showUpsertGasStationQrDialog(),
-                    ),
-                  ),
-                  const SizedBox(width: 8),
                   // Nút thêm mới trạm dầu
                   SizedBox(
                     height: 36,
@@ -5392,92 +4781,83 @@ class _DispatchSupervisorScreenState extends State<DispatchSupervisorScreen> {
                         ],
                       ),
                     )
-                  : LayoutBuilder(
-                      builder: (context, constraints) {
-                        return SingleChildScrollView(
-                          scrollDirection: Axis.vertical,
-                          child: SingleChildScrollView(
-                            scrollDirection: Axis.horizontal,
-                            child: ConstrainedBox(
-                              constraints: BoxConstraints(
-                                minWidth: constraints.maxWidth,
-                              ),
-                              child: DataTable(
-                                headingRowColor: MaterialStateProperty.all(
-                                  Colors.grey.shade100,
-                                ),
-                                headingRowHeight: 44,
-                                dividerThickness: 0,
-                                dataRowMaxHeight: 64,
-                                dataRowMinHeight: 58,
-                                horizontalMargin: 16,
-                                columnSpacing: 24,
-                                columns: const [
-                                  DataColumn(
-                                    label: Text(
-                                      "Tên trạm",
-                                      style: TextStyle(
-                                        fontWeight: FontWeight.bold,
-                                        fontSize: 13,
-                                      ),
-                                    ),
-                                  ),
-                                  DataColumn(
-                                    label: Text(
-                                      "Địa chỉ",
-                                      style: TextStyle(
-                                        fontWeight: FontWeight.bold,
-                                        fontSize: 13,
-                                      ),
-                                    ),
-                                  ),
-                                  DataColumn(
-                                    label: Text(
-                                      "Tọa độ GPS",
-                                      style: TextStyle(
-                                        fontWeight: FontWeight.bold,
-                                        fontSize: 13,
-                                      ),
-                                    ),
-                                  ),
-                                  DataColumn(
-                                    label: Text(
-                                      "Bán kính đối soát",
-                                      style: TextStyle(
-                                        fontWeight: FontWeight.bold,
-                                        fontSize: 13,
-                                      ),
-                                    ),
-                                  ),
-                                  DataColumn(
-                                    label: Text(
-                                      "Mã QR theo xe",
-                                      style: TextStyle(
-                                        fontWeight: FontWeight.bold,
-                                        fontSize: 13,
-                                      ),
-                                    ),
-                                  ),
-                                  DataColumn(
-                                    label: Text(
-                                      "Thao tác",
-                                      style: TextStyle(
-                                        fontWeight: FontWeight.bold,
-                                        fontSize: 13,
-                                      ),
-                                    ),
-                                  ),
-                                ],
-                                rows: List.generate(paginatedStations.length, (
-                                  idx,
-                                ) {
-                                  final gs = paginatedStations[idx];
-                                  final rowColor = idx % 2 == 0
-                                      ? Colors.white
-                                      : Colors.grey.shade50;
-                                  final name = (gs['name'] ?? 'N/A').toString();
-                                  final address = (gs['address'] ?? '')
-                                      .toString();
+                  : VirtualizedDataTable(
+                      headingRowHeight: 44,
+                      rowHeight: 64,
+                      horizontalMargin: 16,
+                      columnSpacing: 16,
+                      minTableWidth: 0,
+                      columnFlexes: const [14, 21, 18, 10, 18, 25],
+                      hasMore: endIndex < totalItems,
+                      onLoadMore: () {
+                        if (validPage < totalPages) {
+                          setState(() => _gasStationCurrentPage = validPage + 1);
+                        }
+                      },
+                      columns: const [
+                        DataColumn(
+                          label: Text(
+                            "Tên trạm",
+                            style: TextStyle(
+                              fontWeight: FontWeight.bold,
+                              fontSize: 13,
+                            ),
+                          ),
+                        ),
+                        DataColumn(
+                          label: Text(
+                            "Địa chỉ",
+                            style: TextStyle(
+                              fontWeight: FontWeight.bold,
+                              fontSize: 13,
+                            ),
+                          ),
+                        ),
+                        DataColumn(
+                          label: Text(
+                            "Tọa độ GPS",
+                            style: TextStyle(
+                              fontWeight: FontWeight.bold,
+                              fontSize: 13,
+                            ),
+                          ),
+                        ),
+                        DataColumn(
+                          label: Text(
+                            "Bán kính đối soát",
+                            style: TextStyle(
+                              fontWeight: FontWeight.bold,
+                              fontSize: 13,
+                            ),
+                          ),
+                        ),
+                        DataColumn(
+                          label: Text(
+                            "Mã QR theo xe",
+                            style: TextStyle(
+                              fontWeight: FontWeight.bold,
+                              fontSize: 13,
+                            ),
+                          ),
+                        ),
+                        DataColumn(
+                          label: Text(
+                            "Thao tác",
+                            style: TextStyle(
+                              fontWeight: FontWeight.bold,
+                              fontSize: 13,
+                            ),
+                          ),
+                        ),
+                      ],
+                      itemCount: paginatedStations.length,
+                      rowBuilder: (idx) {
+                        final gs = paginatedStations[idx];
+                        final rowColor = idx % 2 == 0
+                            ? Colors.white
+                            : Colors.grey.shade50;
+                        final name = (gs['name'] ?? 'N/A').toString();
+                        final address = (gs['address'] ?? '').toString();
                                   final lat = (gs['lat'] ?? '').toString();
                                   final lng = (gs['lng'] ?? '').toString();
                                   final radius =
@@ -5524,12 +4904,16 @@ class _DispatchSupervisorScreenState extends State<DispatchSupervisorScreen> {
                                               ),
                                             ),
                                             const SizedBox(width: 10),
-                                            Text(
-                                              name,
-                                              style: TextStyle(
-                                                fontWeight: FontWeight.bold,
-                                                fontSize: 13.5,
-                                                color: Colors.blueGrey.shade900,
+                                            Flexible(
+                                              child: Text(
+                                                name,
+                                                maxLines: 1,
+                                                overflow: TextOverflow.ellipsis,
+                                                style: TextStyle(
+                                                  fontWeight: FontWeight.bold,
+                                                  fontSize: 13.5,
+                                                  color: Colors.blueGrey.shade900,
+                                                ),
                                               ),
                                             ),
                                           ],
@@ -5539,6 +4923,8 @@ class _DispatchSupervisorScreenState extends State<DispatchSupervisorScreen> {
                                       makeCell(
                                         Text(
                                           address,
+                                          maxLines: 2,
+                                          overflow: TextOverflow.ellipsis,
                                           style: const TextStyle(
                                             fontSize: 12.5,
                                           ),
@@ -5580,14 +4966,18 @@ class _DispatchSupervisorScreenState extends State<DispatchSupervisorScreen> {
                                                   color: Colors.teal,
                                                 ),
                                                 const SizedBox(width: 6),
-                                                Text(
-                                                  "Lat $lat - Lng $lng",
-                                                  style: TextStyle(
-                                                    fontSize: 12.5,
-                                                    color: Colors
-                                                        .blueGrey
-                                                        .shade700,
-                                                    fontWeight: FontWeight.w500,
+                                                Flexible(
+                                                  child: Text(
+                                                    "Lat $lat - Lng $lng",
+                                                    maxLines: 1,
+                                                    overflow: TextOverflow.ellipsis,
+                                                    style: TextStyle(
+                                                      fontSize: 12.5,
+                                                      color: Colors
+                                                          .blueGrey
+                                                          .shade700,
+                                                      fontWeight: FontWeight.w500,
+                                                    ),
                                                   ),
                                                 ),
                                               ],
@@ -5613,6 +5003,8 @@ class _DispatchSupervisorScreenState extends State<DispatchSupervisorScreen> {
                                           ),
                                           child: Text(
                                             "$radius mét",
+                                            maxLines: 1,
+                                            overflow: TextOverflow.ellipsis,
                                             style: TextStyle(
                                               color: Colors.deepOrange.shade900,
                                               fontSize: 11,
@@ -5661,16 +5053,20 @@ class _DispatchSupervisorScreenState extends State<DispatchSupervisorScreen> {
                                                       : Colors.grey.shade600,
                                                 ),
                                                 const SizedBox(width: 5),
-                                                Text(
-                                                  qrCount > 0
-                                                      ? "$qrCount xe (${qrPlates.take(2).join(', ')}${qrPlates.length > 2 ? '...' : ''})"
-                                                      : "Chưa gắn mã QR",
-                                                  style: TextStyle(
-                                                    color: qrCount > 0
-                                                        ? Colors.indigo.shade900
-                                                        : Colors.grey.shade700,
-                                                    fontSize: 11.5,
-                                                    fontWeight: FontWeight.bold,
+                                                Flexible(
+                                                  child: Text(
+                                                    qrCount > 0
+                                                        ? "$qrCount xe (${qrPlates.take(2).join(', ')}${qrPlates.length > 2 ? '...' : ''})"
+                                                        : "Chưa gắn mã QR",
+                                                    maxLines: 1,
+                                                    overflow: TextOverflow.ellipsis,
+                                                    style: TextStyle(
+                                                      color: qrCount > 0
+                                                          ? Colors.indigo.shade900
+                                                          : Colors.grey.shade700,
+                                                      fontSize: 11.5,
+                                                      fontWeight: FontWeight.bold,
+                                                    ),
                                                   ),
                                                 ),
                                               ],
@@ -5838,186 +5234,9 @@ class _DispatchSupervisorScreenState extends State<DispatchSupervisorScreen> {
                                       ),
                                     ],
                                   );
-                                }),
-                              ),
-                            ),
-                          ),
-                        );
                       },
                     ),
             ),
-            // THANH DIEU HUONG PHAN TRANG (PAGINATION BAR)
-            if (filteredStations.isNotEmpty)
-              Container(
-                height: 40,
-                padding: const EdgeInsets.symmetric(horizontal: 16),
-                decoration: BoxDecoration(
-                  color: Colors.white,
-                  border: Border(
-                    top: BorderSide(color: Colors.grey.shade400, width: 1),
-                  ),
-                ),
-                child: Row(
-                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                  children: [
-                    // Thong tin so ban ghi hien thi
-                    Text(
-                      "Hiển thị ${startIndex + 1} - $endIndex trên tổng số $totalItems trạm dầu",
-                      style: TextStyle(
-                        fontSize: 12,
-                        color: Colors.grey.shade700,
-                        fontWeight: FontWeight.w500,
-                      ),
-                    ),
-                    // Cum dieu khien: Chon PageSize + cac nut chuyen trang
-                    Row(
-                      children: [
-                        const Text(
-                          "Số dòng/trang: ",
-                          style: TextStyle(fontSize: 12, color: Colors.black87),
-                        ),
-                        const SizedBox(width: 4),
-                        PopupMenuButton<int>(
-                          tooltip: "Số dòng mỗi trang",
-                          initialValue: _gasStationPageSize,
-                          position: PopupMenuPosition.over,
-                          constraints: const BoxConstraints(minWidth: 64),
-                          onSelected: (val) => setState(() {
-                            _gasStationPageSize = val;
-                            _gasStationCurrentPage = 1;
-                          }),
-                          itemBuilder: (_) => const [5, 10, 20, 50]
-                              .map(
-                                (n) => PopupMenuItem<int>(
-                                  value: n,
-                                  height: 36,
-                                  child: Text(
-                                    "$n",
-                                    style: const TextStyle(fontSize: 12.5),
-                                  ),
-                                ),
-                              )
-                              .toList(),
-                          child: Padding(
-                            padding: const EdgeInsets.symmetric(
-                              horizontal: 4,
-                              vertical: 2,
-                            ),
-                            child: Row(
-                              mainAxisSize: MainAxisSize.min,
-                              children: [
-                                Text(
-                                  "$_gasStationPageSize",
-                                  style: const TextStyle(
-                                    fontSize: 12,
-                                    color: Colors.blueGrey,
-                                    fontWeight: FontWeight.bold,
-                                  ),
-                                ),
-                                const Icon(
-                                  Icons.arrow_drop_down,
-                                  size: 18,
-                                  color: Colors.blueGrey,
-                                ),
-                              ],
-                            ),
-                          ),
-                        ),
-                        const SizedBox(width: 14),
-                        // Nút về trang đầu
-                        IconButton(
-                          icon: const Icon(Icons.first_page, size: 18),
-                          padding: EdgeInsets.zero,
-                          constraints: const BoxConstraints(
-                            minWidth: 28,
-                            minHeight: 28,
-                          ),
-                          tooltip: "Trang đầu",
-                          onPressed: validPage > 1
-                              ? () {
-                                  setState(() {
-                                    _gasStationCurrentPage = 1;
-                                  });
-                                }
-                              : null,
-                        ),
-                        // Nút trang trước
-                        IconButton(
-                          icon: const Icon(Icons.chevron_left, size: 18),
-                          padding: EdgeInsets.zero,
-                          constraints: const BoxConstraints(
-                            minWidth: 28,
-                            minHeight: 28,
-                          ),
-                          tooltip: "Trang trước",
-                          onPressed: validPage > 1
-                              ? () {
-                                  setState(() {
-                                    _gasStationCurrentPage = validPage - 1;
-                                  });
-                                }
-                              : null,
-                        ),
-                        const SizedBox(width: 4),
-                        // Nhãn hiển thị trang hiện tại
-                        Container(
-                          padding: const EdgeInsets.symmetric(
-                            horizontal: 10,
-                            vertical: 3,
-                          ),
-                          decoration: BoxDecoration(
-                            color: Colors.blue.shade50,
-                            borderRadius: BorderRadius.circular(4),
-                          ),
-                          child: Text(
-                            "$validPage / $totalPages",
-                            style: TextStyle(
-                              fontSize: 12,
-                              fontWeight: FontWeight.bold,
-                              color: Colors.blue.shade800,
-                            ),
-                          ),
-                        ),
-                        const SizedBox(width: 4),
-                        // Nút trang kế tiếp
-                        IconButton(
-                          icon: const Icon(Icons.chevron_right, size: 18),
-                          padding: EdgeInsets.zero,
-                          constraints: const BoxConstraints(
-                            minWidth: 28,
-                            minHeight: 28,
-                          ),
-                          tooltip: "Trang sau",
-                          onPressed: validPage < totalPages
-                              ? () {
-                                  setState(() {
-                                    _gasStationCurrentPage = validPage + 1;
-                                  });
-                                }
-                              : null,
-                        ),
-                        // Nút đến trang cuối
-                        IconButton(
-                          icon: const Icon(Icons.last_page, size: 18),
-                          padding: EdgeInsets.zero,
-                          constraints: const BoxConstraints(
-                            minWidth: 28,
-                            minHeight: 28,
-                          ),
-                          tooltip: "Trang cuối",
-                          onPressed: validPage < totalPages
-                              ? () {
-                                  setState(() {
-                                    _gasStationCurrentPage = totalPages;
-                                  });
-                                }
-                              : null,
-                        ),
-                      ],
-                    ),
-                  ],
-                ),
-              ),
           ],
         );
       },
@@ -7326,9 +6545,12 @@ class _DispatchSupervisorScreenState extends State<DispatchSupervisorScreen> {
                         child: DropdownButtonFormField<int?>(
                           value: filterStationId,
                           isExpanded: true,
+                          isDense: true,
+                          iconSize: 18,
                           style: const TextStyle(
                             fontSize: 12.5,
                             color: Colors.black87,
+                            fontFamily: 'Nunito',
                           ),
                           decoration: InputDecoration(
                             isDense: true,
@@ -8902,9 +8124,12 @@ class _DispatchSupervisorScreenState extends State<DispatchSupervisorScreen> {
                         child: DropdownButtonFormField<String>(
                           value: statusFilter,
                           isExpanded: true,
+                          isDense: true,
+                          iconSize: 18,
                           style: const TextStyle(
                             fontSize: 12.5,
                             color: Colors.black87,
+                            fontFamily: 'Nunito',
                           ),
                           decoration: InputDecoration(
                             isDense: true,
@@ -8913,6 +8138,15 @@ class _DispatchSupervisorScreenState extends State<DispatchSupervisorScreen> {
                               vertical: 0,
                             ),
                             constraints: const BoxConstraints(
+                              minHeight: 36,
+                              maxHeight: 36,
+                            ),
+                            prefixIcon: const Icon(
+                              Icons.filter_alt_outlined,
+                              size: 16,
+                            ),
+                            prefixIconConstraints: const BoxConstraints(
+                              minWidth: 34,
                               minHeight: 36,
                               maxHeight: 36,
                             ),
@@ -8956,6 +8190,7 @@ class _DispatchSupervisorScreenState extends State<DispatchSupervisorScreen> {
                           child: TextField(
                             controller: searchCtrl,
                             style: const TextStyle(fontSize: 12.5),
+                            textAlignVertical: TextAlignVertical.center,
                             onChanged: (val) =>
                                 setModalState(() => searchQuery = val),
                             decoration: InputDecoration(
@@ -8966,7 +8201,28 @@ class _DispatchSupervisorScreenState extends State<DispatchSupervisorScreen> {
                               ),
                               hintText:
                                   "Tìm theo biển số xe, tài xế, tên cây dầu...",
+                              hintStyle: const TextStyle(fontSize: 12.5),
                               prefixIcon: const Icon(Icons.search, size: 16),
+                              prefixIconConstraints: const BoxConstraints(
+                                minWidth: 34,
+                                minHeight: 36,
+                                maxHeight: 36,
+                              ),
+                              suffixIcon: searchQuery.isNotEmpty
+                                  ? IconButton(
+                                      padding: EdgeInsets.zero,
+                                      constraints: const BoxConstraints(
+                                        minWidth: 32,
+                                        minHeight: 36,
+                                        maxHeight: 36,
+                                      ),
+                                      icon: const Icon(Icons.clear, size: 15),
+                                      onPressed: () {
+                                        searchCtrl.clear();
+                                        setModalState(() => searchQuery = '');
+                                      },
+                                    )
+                                  : null,
                               contentPadding: const EdgeInsets.symmetric(
                                 horizontal: 10,
                                 vertical: 0,
@@ -8983,12 +8239,22 @@ class _DispatchSupervisorScreenState extends State<DispatchSupervisorScreen> {
                         height: 36,
                         child: OutlinedButton.icon(
                           style: OutlinedButton.styleFrom(
+                            minimumSize: const Size(0, 36),
+                            fixedSize: const Size.fromHeight(36),
+                            tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                            padding: const EdgeInsets.symmetric(horizontal: 12),
                             shape: RoundedRectangleBorder(
                               borderRadius: BorderRadius.circular(4),
                             ),
                           ),
                           icon: const Icon(Icons.refresh, size: 16),
-                          label: const Text("Làm mới"),
+                          label: const Text(
+                            "Làm mới",
+                            style: TextStyle(
+                              fontSize: 12.5,
+                              fontWeight: FontWeight.w600,
+                            ),
+                          ),
                           onPressed: reloadList,
                         ),
                       ),
@@ -10118,15 +9384,10 @@ class _DispatchSupervisorScreenState extends State<DispatchSupervisorScreen> {
           99999,
         );
         final validPage = _productCurrentPage.clamp(1, totalPages);
-        final startIndex = totalItems == 0
-            ? 0
-            : (validPage - 1) * _productPageSize;
-        final endIndex = (startIndex + _productPageSize > totalItems)
-            ? totalItems
-            : startIndex + _productPageSize;
+        final endIndex = (validPage * _productPageSize).clamp(0, totalItems);
         final paginatedProducts = totalItems == 0
             ? []
-            : filteredProducts.sublist(startIndex, endIndex);
+            : filteredProducts.sublist(0, endIndex);
 
         return Column(
           children: [
@@ -10238,106 +9499,98 @@ class _DispatchSupervisorScreenState extends State<DispatchSupervisorScreen> {
                         ],
                       ),
                     )
-                  : LayoutBuilder(
-                      builder: (context, constraints) {
-                        return SingleChildScrollView(
-                          scrollDirection: Axis.vertical,
-                          child: SingleChildScrollView(
-                            scrollDirection: Axis.horizontal,
-                            child: ConstrainedBox(
-                              constraints: BoxConstraints(
-                                minWidth: constraints.maxWidth,
-                              ),
-                              child: DataTable(
-                                headingRowColor: MaterialStateProperty.all(
-                                  Colors.grey.shade100,
-                                ),
-                                headingRowHeight: 44,
-                                dividerThickness: 0,
-                                dataRowMaxHeight: 64,
-                                dataRowMinHeight: 58,
-                                horizontalMargin: 16,
-                                columnSpacing: 24,
-                                columns: const [
-                                  DataColumn(
-                                    label: Text(
-                                      "Mã SP",
-                                      style: TextStyle(
-                                        fontWeight: FontWeight.bold,
-                                        fontSize: 13,
-                                      ),
-                                    ),
-                                  ),
-                                  DataColumn(
-                                    label: Text(
-                                      "Tên sản phẩm",
-                                      style: TextStyle(
-                                        fontWeight: FontWeight.bold,
-                                        fontSize: 13,
-                                      ),
-                                    ),
-                                  ),
-                                  DataColumn(
-                                    label: Text(
-                                      "Nhóm vật liệu",
-                                      style: TextStyle(
-                                        fontWeight: FontWeight.bold,
-                                        fontSize: 13,
-                                      ),
-                                    ),
-                                  ),
-                                  DataColumn(
-                                    label: Text(
-                                      "Đơn vị tính",
-                                      style: TextStyle(
-                                        fontWeight: FontWeight.bold,
-                                        fontSize: 13,
-                                      ),
-                                    ),
-                                  ),
-                                  DataColumn(
-                                    label: Text(
-                                      "Bơm chuẩn (phút)",
-                                      style: TextStyle(
-                                        fontWeight: FontWeight.bold,
-                                        fontSize: 13,
-                                      ),
-                                    ),
-                                  ),
-                                  DataColumn(
-                                    label: Text(
-                                      "Nén khí",
-                                      style: TextStyle(
-                                        fontWeight: FontWeight.bold,
-                                        fontSize: 13,
-                                      ),
-                                    ),
-                                  ),
-                                  DataColumn(
-                                    label: Text(
-                                      "Thao tác",
-                                      style: TextStyle(
-                                        fontWeight: FontWeight.bold,
-                                        fontSize: 13,
-                                      ),
-                                    ),
-                                  ),
-                                ],
-                                rows: List.generate(paginatedProducts.length, (
-                                  idx,
-                                ) {
-                                  final p = paginatedProducts[idx];
-                                  final rowColor = idx % 2 == 0
-                                      ? Colors.white
-                                      : Colors.grey.shade50;
-                                  final code = (p['code'] ?? 'N/A').toString();
-                                  final name = (p['name'] ?? 'N/A').toString();
-                                  final category = _productCategoryLabel(
-                                    (p['category'] ?? '-').toString(),
-                                  );
-                                  final unit = (p['unit'] ?? '-').toString();
-                                  final pumpMin =
-                                      (p['standard_pump_time_minutes'] ?? '-')
+                  : VirtualizedDataTable(
+                      headingRowHeight: 44,
+                      rowHeight: 62,
+                      horizontalMargin: 16,
+                      columnSpacing: 24,
+                      minTableWidth: 1120,
+                      columnFlexes: const [14, 24, 18, 12, 14, 14, 14],
+                      hasMore: endIndex < totalItems,
+                      onLoadMore: () {
+                        if (validPage < totalPages) {
+                          setState(() => _productCurrentPage = validPage + 1);
+                        }
+                      },
+                      columns: const [
+                        DataColumn(
+                          label: Text(
+                            "Mã SP",
+                            style: TextStyle(
+                              fontWeight: FontWeight.bold,
+                              fontSize: 13,
+                            ),
+                          ),
+                        ),
+                        DataColumn(
+                          label: Text(
+                            "Tên sản phẩm",
+                            style: TextStyle(
+                              fontWeight: FontWeight.bold,
+                              fontSize: 13,
+                            ),
+                          ),
+                        ),
+                        DataColumn(
+                          label: Text(
+                            "Nhóm vật liệu",
+                            style: TextStyle(
+                              fontWeight: FontWeight.bold,
+                              fontSize: 13,
+                            ),
+                          ),
+                        ),
+                        DataColumn(
+                          label: Text(
+                            "Đơn vị tính",
+                            style: TextStyle(
+                              fontWeight: FontWeight.bold,
+                              fontSize: 13,
+                            ),
+                          ),
+                        ),
+                        DataColumn(
+                          label: Text(
+                            "Bơm chuẩn (phút)",
+                            style: TextStyle(
+                              fontWeight: FontWeight.bold,
+                              fontSize: 13,
+                            ),
+                          ),
+                        ),
+                        DataColumn(
+                          label: Text(
+                            "Nén khí",
+                            style: TextStyle(
+                              fontWeight: FontWeight.bold,
+                              fontSize: 13,
+                            ),
+                          ),
+                        ),
+                        DataColumn(
+                          label: Text(
+                            "Thao tác",
+                            style: TextStyle(
+                              fontWeight: FontWeight.bold,
+                              fontSize: 13,
+                            ),
+                          ),
+                        ),
+                      ],
+                      itemCount: paginatedProducts.length,
+                      rowBuilder: (idx) {
+                        final p = paginatedProducts[idx];
+                        final rowColor = idx % 2 == 0
+                            ? Colors.white
+                            : Colors.grey.shade50;
+                        final code = (p['code'] ?? 'N/A').toString();
+                        final name = (p['name'] ?? 'N/A').toString();
+                        final category = _productCategoryLabel(
+                          (p['category'] ?? '-').toString(),
+                        );
+                        final unit = (p['unit'] ?? '-').toString();
+                        final pumpMin =
+                            (p['standard_pump_time_minutes'] ?? '-')
                                           .toString();
                                   final needPump =
                                       p['requires_air_pump'] == true;
@@ -10466,186 +9719,9 @@ class _DispatchSupervisorScreenState extends State<DispatchSupervisorScreen> {
                                       ),
                                     ],
                                   );
-                                }),
-                              ),
-                            ),
-                          ),
-                        );
                       },
                     ),
             ),
-            // THANH ĐIỀU HƯỚNG PHÂN TRANG (PAGINATION BAR)
-            if (filteredProducts.isNotEmpty)
-              Container(
-                height: 40,
-                padding: const EdgeInsets.symmetric(horizontal: 16),
-                decoration: BoxDecoration(
-                  color: Colors.white,
-                  border: Border(
-                    top: BorderSide(color: Colors.grey.shade400, width: 1),
-                  ),
-                ),
-                child: Row(
-                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                  children: [
-                    // Thông tin số bản ghi hiển thị
-                    Text(
-                      "Hiển thị ${startIndex + 1} - $endIndex trên tổng số $totalItems sản phẩm",
-                      style: TextStyle(
-                        fontSize: 12,
-                        color: Colors.grey.shade700,
-                        fontWeight: FontWeight.w500,
-                      ),
-                    ),
-                    // Cụm điều khiển: Chọn PageSize + Các nút chuyển trang
-                    Row(
-                      children: [
-                        const Text(
-                          "Số dòng/trang: ",
-                          style: TextStyle(fontSize: 12, color: Colors.black87),
-                        ),
-                        const SizedBox(width: 4),
-                        PopupMenuButton<int>(
-                          tooltip: "Số dòng mỗi trang",
-                          initialValue: _productPageSize,
-                          position: PopupMenuPosition.over,
-                          constraints: const BoxConstraints(minWidth: 64),
-                          onSelected: (val) => setState(() {
-                            _productPageSize = val;
-                            _productCurrentPage = 1;
-                          }),
-                          itemBuilder: (_) => const [5, 10, 20, 50]
-                              .map(
-                                (n) => PopupMenuItem<int>(
-                                  value: n,
-                                  height: 36,
-                                  child: Text(
-                                    "$n",
-                                    style: const TextStyle(fontSize: 12.5),
-                                  ),
-                                ),
-                              )
-                              .toList(),
-                          child: Padding(
-                            padding: const EdgeInsets.symmetric(
-                              horizontal: 4,
-                              vertical: 2,
-                            ),
-                            child: Row(
-                              mainAxisSize: MainAxisSize.min,
-                              children: [
-                                Text(
-                                  "$_productPageSize",
-                                  style: const TextStyle(
-                                    fontSize: 12,
-                                    color: Colors.blueGrey,
-                                    fontWeight: FontWeight.bold,
-                                  ),
-                                ),
-                                const Icon(
-                                  Icons.arrow_drop_down,
-                                  size: 18,
-                                  color: Colors.blueGrey,
-                                ),
-                              ],
-                            ),
-                          ),
-                        ),
-                        const SizedBox(width: 14),
-                        // Nút về trang đầu
-                        IconButton(
-                          icon: const Icon(Icons.first_page, size: 18),
-                          padding: EdgeInsets.zero,
-                          constraints: const BoxConstraints(
-                            minWidth: 28,
-                            minHeight: 28,
-                          ),
-                          tooltip: "Trang đầu",
-                          onPressed: validPage > 1
-                              ? () {
-                                  setState(() {
-                                    _productCurrentPage = 1;
-                                  });
-                                }
-                              : null,
-                        ),
-                        // Nút trang trước
-                        IconButton(
-                          icon: const Icon(Icons.chevron_left, size: 18),
-                          padding: EdgeInsets.zero,
-                          constraints: const BoxConstraints(
-                            minWidth: 28,
-                            minHeight: 28,
-                          ),
-                          tooltip: "Trang trước",
-                          onPressed: validPage > 1
-                              ? () {
-                                  setState(() {
-                                    _productCurrentPage = validPage - 1;
-                                  });
-                                }
-                              : null,
-                        ),
-                        const SizedBox(width: 4),
-                        // Nhãn hiển thị trang hiện tại
-                        Container(
-                          padding: const EdgeInsets.symmetric(
-                            horizontal: 10,
-                            vertical: 3,
-                          ),
-                          decoration: BoxDecoration(
-                            color: Colors.blue.shade50,
-                            borderRadius: BorderRadius.circular(4),
-                          ),
-                          child: Text(
-                            "$validPage / $totalPages",
-                            style: TextStyle(
-                              fontSize: 12,
-                              fontWeight: FontWeight.bold,
-                              color: Colors.blue.shade800,
-                            ),
-                          ),
-                        ),
-                        const SizedBox(width: 4),
-                        // Nút trang kế tiếp
-                        IconButton(
-                          icon: const Icon(Icons.chevron_right, size: 18),
-                          padding: EdgeInsets.zero,
-                          constraints: const BoxConstraints(
-                            minWidth: 28,
-                            minHeight: 28,
-                          ),
-                          tooltip: "Trang sau",
-                          onPressed: validPage < totalPages
-                              ? () {
-                                  setState(() {
-                                    _productCurrentPage = validPage + 1;
-                                  });
-                                }
-                              : null,
-                        ),
-                        // Nút đến trang cuối
-                        IconButton(
-                          icon: const Icon(Icons.last_page, size: 18),
-                          padding: EdgeInsets.zero,
-                          constraints: const BoxConstraints(
-                            minWidth: 28,
-                            minHeight: 28,
-                          ),
-                          tooltip: "Trang cuối",
-                          onPressed: validPage < totalPages
-                              ? () {
-                                  setState(() {
-                                    _productCurrentPage = totalPages;
-                                  });
-                                }
-                              : null,
-                        ),
-                      ],
-                    ),
-                  ],
-                ),
-              ),
           ],
         );
       },
@@ -11467,13 +10543,10 @@ class _DispatchSupervisorScreenState extends State<DispatchSupervisorScreen> {
         ? 1
         : (totalItems / _realtimeReportPageSize).ceil();
     final validPage = _realtimeReportPage.clamp(1, totalPages);
-    final startIndex = (validPage - 1) * _realtimeReportPageSize;
-    final endIndex = (startIndex + _realtimeReportPageSize > totalItems)
-        ? totalItems
-        : startIndex + _realtimeReportPageSize;
+    final endIndex = (validPage * _realtimeReportPageSize).clamp(0, totalItems);
     final pageItems = totalItems == 0
         ? <Map<String, dynamic>>[]
-        : filtered.sublist(startIndex, endIndex);
+        : filtered.sublist(0, endIndex);
 
     Widget buildFilterChip({
       required String key,
@@ -11708,257 +10781,211 @@ class _DispatchSupervisorScreenState extends State<DispatchSupervisorScreen> {
                 ),
               )
             else
-              Column(
-                children: pageItems.map((rep) {
-                  final Color badgeColor = rep['color'] as Color;
-                  final IconData iconData = rep['icon'] as IconData;
-                  final String driverName = rep['driver_name'].toString();
-                  final String phone = rep['phone'].toString();
-                  final String plate = rep['plate'].toString();
-                  final String title = rep['title'].toString();
-                  final String desc = rep['description'].toString();
-                  final String timeLabel = rep['time_label'].toString();
-                  final String actionType = rep['action_type'].toString();
-
-                  return Container(
-                    margin: const EdgeInsets.only(bottom: 8),
-                    decoration: BoxDecoration(
-                      color: Colors.white,
-                      borderRadius: BorderRadius.circular(4),
-                      border: Border.all(color: Colors.grey.shade300),
-                    ),
-                    child: InkWell(
-                      borderRadius: BorderRadius.circular(4),
-                      onTap: () {
-                        if (actionType == 'INSPECTION') {
-                          if (widget.onOpenInspectionScreen != null) {
-                            widget.onOpenInspectionScreen!();
-                          } else {
-                            _showVehicleInspectionsDialog(plate, null);
-                          }
-                        } else if (actionType == 'ORDER') {
-                          widget.onTabChanged?.call(1);
-                        } else {
-                          widget.onTabChanged?.call(2);
+              ConstrainedBox(
+                constraints: const BoxConstraints(maxHeight: 420),
+                child: NotificationListener<ScrollNotification>(
+                  onNotification: (notification) {
+                    if (endIndex < totalItems &&
+                        notification.metrics.maxScrollExtent > 0 &&
+                        notification.metrics.pixels >=
+                            notification.metrics.maxScrollExtent - 120) {
+                      WidgetsBinding.instance.addPostFrameCallback((_) {
+                        if (mounted && validPage < totalPages) {
+                          setState(() => _realtimeReportPage = validPage + 1);
                         }
-                      },
-                      child: Padding(
-                        padding: const EdgeInsets.symmetric(
-                          horizontal: 12,
-                          vertical: 10,
+                      });
+                    }
+                    return false;
+                  },
+                  child: ListView.builder(
+                    shrinkWrap: true,
+                    addAutomaticKeepAlives: false,
+                    addRepaintBoundaries: true,
+                    itemCount: pageItems.length,
+                    itemBuilder: (context, idx) {
+                      final rep = pageItems[idx];
+                      final Color badgeColor = rep['color'] as Color;
+                      final IconData iconData = rep['icon'] as IconData;
+                      final String driverName = rep['driver_name'].toString();
+                      final String phone = rep['phone'].toString();
+                      final String plate = rep['plate'].toString();
+                      final String title = rep['title'].toString();
+                      final String desc = rep['description'].toString();
+                      final String timeLabel = rep['time_label'].toString();
+                      final String actionType = rep['action_type'].toString();
+
+                      return Container(
+                        margin: const EdgeInsets.only(bottom: 8),
+                        decoration: BoxDecoration(
+                          color: Colors.white,
+                          borderRadius: BorderRadius.circular(4),
+                          border: Border.all(color: Colors.grey.shade300),
                         ),
-                        child: Row(
-                          crossAxisAlignment: CrossAxisAlignment.center,
-                          children: [
-                            Container(
-                              width: 36,
-                              height: 36,
-                              decoration: BoxDecoration(
-                                color: badgeColor.withValues(alpha: 0.1),
-                                borderRadius: BorderRadius.circular(4),
-                                border: Border.all(
-                                  color: badgeColor.withValues(alpha: 0.3),
-                                ),
-                              ),
-                              child: Icon(
-                                iconData,
-                                color: badgeColor,
-                                size: 19,
-                              ),
+                        child: InkWell(
+                          borderRadius: BorderRadius.circular(4),
+                          onTap: () {
+                            if (actionType == 'INSPECTION') {
+                              if (widget.onOpenInspectionScreen != null) {
+                                widget.onOpenInspectionScreen!();
+                              } else {
+                                _showVehicleInspectionsDialog(plate, null);
+                              }
+                            } else if (actionType == 'ORDER') {
+                              widget.onTabChanged?.call(1);
+                            } else {
+                              widget.onTabChanged?.call(2);
+                            }
+                          },
+                          child: Padding(
+                            padding: const EdgeInsets.symmetric(
+                              horizontal: 12,
+                              vertical: 10,
                             ),
-                            const SizedBox(width: 12),
-                            Expanded(
-                              child: Column(
-                                crossAxisAlignment: CrossAxisAlignment.start,
-                                children: [
-                                  Wrap(
-                                    spacing: 8,
-                                    runSpacing: 4,
+                            child: Row(
+                              crossAxisAlignment: CrossAxisAlignment.center,
+                              children: [
+                                Container(
+                                  width: 36,
+                                  height: 36,
+                                  decoration: BoxDecoration(
+                                    color: badgeColor.withValues(alpha: 0.1),
+                                    borderRadius: BorderRadius.circular(4),
+                                    border: Border.all(
+                                      color: badgeColor.withValues(alpha: 0.3),
+                                    ),
+                                  ),
+                                  child: Icon(
+                                    iconData,
+                                    color: badgeColor,
+                                    size: 19,
+                                  ),
+                                ),
+                                const SizedBox(width: 12),
+                                Expanded(
+                                  child: Column(
                                     crossAxisAlignment:
-                                        WrapCrossAlignment.center,
+                                        CrossAxisAlignment.start,
                                     children: [
+                                      Wrap(
+                                        spacing: 8,
+                                        runSpacing: 4,
+                                        crossAxisAlignment:
+                                            WrapCrossAlignment.center,
+                                        children: [
+                                          Text(
+                                            driverName,
+                                            style: const TextStyle(
+                                              fontWeight: FontWeight.bold,
+                                              fontSize: 13,
+                                              color: Color(0xFF0F172A),
+                                            ),
+                                          ),
+                                          Container(
+                                            padding: const EdgeInsets.symmetric(
+                                              horizontal: 6,
+                                              vertical: 1.5,
+                                            ),
+                                            decoration: BoxDecoration(
+                                              color: Colors.blueGrey.shade50,
+                                              borderRadius:
+                                                  BorderRadius.circular(4),
+                                              border: Border.all(
+                                                color: Colors.blueGrey.shade200,
+                                              ),
+                                            ),
+                                            child: Text(
+                                              plate,
+                                              style: TextStyle(
+                                                fontSize: 11,
+                                                fontWeight: FontWeight.bold,
+                                                color: Colors.blueGrey.shade900,
+                                              ),
+                                            ),
+                                          ),
+                                          Container(
+                                            padding: const EdgeInsets.symmetric(
+                                              horizontal: 7,
+                                              vertical: 2,
+                                            ),
+                                            decoration: BoxDecoration(
+                                              color: badgeColor.withValues(
+                                                alpha: 0.1,
+                                              ),
+                                              borderRadius:
+                                                  BorderRadius.circular(4),
+                                            ),
+                                            child: Text(
+                                              title,
+                                              style: TextStyle(
+                                                fontSize: 11,
+                                                fontWeight: FontWeight.w600,
+                                                color: badgeColor,
+                                              ),
+                                            ),
+                                          ),
+                                          if (phone.isNotEmpty)
+                                            Text(
+                                              "• SĐT: $phone",
+                                              style: TextStyle(
+                                                fontSize: 11,
+                                                color: Colors.grey.shade600,
+                                              ),
+                                            ),
+                                        ],
+                                      ),
+                                      const SizedBox(height: 4),
                                       Text(
-                                        driverName,
-                                        style: const TextStyle(
-                                          fontWeight: FontWeight.bold,
-                                          fontSize: 13,
-                                          color: Color(0xFF0F172A),
+                                        desc,
+                                        style: TextStyle(
+                                          fontSize: 12,
+                                          color: Colors.grey.shade800,
                                         ),
+                                        maxLines: 2,
+                                        overflow: TextOverflow.ellipsis,
                                       ),
-                                      Container(
-                                        padding: const EdgeInsets.symmetric(
-                                          horizontal: 6,
-                                          vertical: 1.5,
+                                    ],
+                                  ),
+                                ),
+                                const SizedBox(width: 10),
+                                Column(
+                                  crossAxisAlignment: CrossAxisAlignment.end,
+                                  children: [
+                                    Row(
+                                      mainAxisSize: MainAxisSize.min,
+                                      children: [
+                                        Icon(
+                                          Icons.access_time,
+                                          size: 12,
+                                          color: Colors.grey.shade600,
                                         ),
-                                        decoration: BoxDecoration(
-                                          color: Colors.blueGrey.shade50,
-                                          borderRadius: BorderRadius.circular(
-                                            4,
-                                          ),
-                                          border: Border.all(
-                                            color: Colors.blueGrey.shade200,
-                                          ),
-                                        ),
-                                        child: Text(
-                                          plate,
-                                          style: TextStyle(
-                                            fontSize: 11,
-                                            fontWeight: FontWeight.bold,
-                                            color: Colors.blueGrey.shade900,
-                                          ),
-                                        ),
-                                      ),
-                                      Container(
-                                        padding: const EdgeInsets.symmetric(
-                                          horizontal: 7,
-                                          vertical: 2,
-                                        ),
-                                        decoration: BoxDecoration(
-                                          color: badgeColor.withValues(
-                                            alpha: 0.1,
-                                          ),
-                                          borderRadius: BorderRadius.circular(
-                                            4,
-                                          ),
-                                        ),
-                                        child: Text(
-                                          title,
+                                        const SizedBox(width: 4),
+                                        Text(
+                                          timeLabel,
                                           style: TextStyle(
                                             fontSize: 11,
                                             fontWeight: FontWeight.w600,
-                                            color: badgeColor,
+                                            color: Colors.grey.shade700,
                                           ),
                                         ),
-                                      ),
-                                      if (phone.isNotEmpty)
-                                        Text(
-                                          "• SĐT: $phone",
-                                          style: TextStyle(
-                                            fontSize: 11,
-                                            color: Colors.grey.shade600,
-                                          ),
-                                        ),
-                                    ],
-                                  ),
-                                  const SizedBox(height: 4),
-                                  Text(
-                                    desc,
-                                    style: TextStyle(
-                                      fontSize: 12,
-                                      color: Colors.grey.shade800,
+                                      ],
                                     ),
-                                    maxLines: 2,
-                                    overflow: TextOverflow.ellipsis,
-                                  ),
-                                ],
-                              ),
-                            ),
-                            const SizedBox(width: 10),
-                            Column(
-                              crossAxisAlignment: CrossAxisAlignment.end,
-                              children: [
-                                Row(
-                                  mainAxisSize: MainAxisSize.min,
-                                  children: [
+                                    const SizedBox(height: 4),
                                     Icon(
-                                      Icons.access_time,
-                                      size: 12,
-                                      color: Colors.grey.shade600,
-                                    ),
-                                    const SizedBox(width: 4),
-                                    Text(
-                                      timeLabel,
-                                      style: TextStyle(
-                                        fontSize: 11,
-                                        fontWeight: FontWeight.w600,
-                                        color: Colors.grey.shade700,
-                                      ),
+                                      Icons.chevron_right,
+                                      size: 16,
+                                      color: Colors.grey.shade400,
                                     ),
                                   ],
                                 ),
-                                const SizedBox(height: 4),
-                                Icon(
-                                  Icons.chevron_right,
-                                  size: 16,
-                                  color: Colors.grey.shade400,
-                                ),
                               ],
                             ),
-                          ],
-                        ),
-                      ),
-                    ),
-                  );
-                }).toList(),
-              ),
-
-            // Footer phân trang gọn cho block báo cáo realtime
-            if (totalItems > 0) ...[
-              const SizedBox(height: 4),
-              Container(
-                height: 36,
-                padding: const EdgeInsets.symmetric(horizontal: 8),
-                decoration: BoxDecoration(
-                  color: Colors.grey.shade50,
-                  borderRadius: BorderRadius.circular(4),
-                  border: Border.all(color: Colors.grey.shade200),
-                ),
-                child: Row(
-                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                  children: [
-                    Text(
-                      "Hiển thị ${startIndex + 1} - $endIndex trên tổng số $totalItems báo cáo",
-                      style: TextStyle(
-                        fontSize: 11.5,
-                        color: Colors.grey.shade700,
-                        fontWeight: FontWeight.w500,
-                      ),
-                    ),
-                    Row(
-                      mainAxisSize: MainAxisSize.min,
-                      children: [
-                        IconButton(
-                          icon: const Icon(Icons.chevron_left, size: 18),
-                          padding: EdgeInsets.zero,
-                          constraints: const BoxConstraints(
-                            minWidth: 28,
-                            minHeight: 28,
-                          ),
-                          onPressed: validPage > 1
-                              ? () => setState(
-                                  () => _realtimeReportPage = validPage - 1,
-                                )
-                              : null,
-                        ),
-                        Padding(
-                          padding: const EdgeInsets.symmetric(horizontal: 6),
-                          child: Text(
-                            "Trang $validPage / $totalPages",
-                            style: const TextStyle(
-                              fontSize: 11.5,
-                              fontWeight: FontWeight.w600,
-                            ),
                           ),
                         ),
-                        IconButton(
-                          icon: const Icon(Icons.chevron_right, size: 18),
-                          padding: EdgeInsets.zero,
-                          constraints: const BoxConstraints(
-                            minWidth: 28,
-                            minHeight: 28,
-                          ),
-                          onPressed: validPage < totalPages
-                              ? () => setState(
-                                  () => _realtimeReportPage = validPage + 1,
-                                )
-                              : null,
-                        ),
-                      ],
-                    ),
-                  ],
+                      );
+                    },
+                  ),
                 ),
               ),
-            ],
           ],
         ),
       ),
@@ -15588,11 +14615,18 @@ class _DispatchSupervisorScreenState extends State<DispatchSupervisorScreen> {
     for (final cu in customers) {
       final code = (cu['code'] ?? '').toString().trim();
       if (code.isEmpty || !seenCodes.add(norm(code))) continue;
+      final pName = (cu['pickup_location_name'] ?? '').toString().trim();
+      final dName = (cu['delivery_location_name'] ?? '').toString().trim();
+      final subParts = <String>[
+        code,
+        if (pName.isNotEmpty) 'Nhận: $pName',
+        if (dName.isNotEmpty) 'Giao: $dName',
+      ];
       options.add(
         InlineAutocompleteOption(
           value: code,
           title: (cu['name'] ?? '').toString(),
-          sub: code,
+          sub: subParts.join(' • '),
           icon: Icons.storefront_outlined,
         ),
       );
@@ -15652,12 +14686,21 @@ class _DispatchSupervisorScreenState extends State<DispatchSupervisorScreen> {
           final match = findByCode(value.text);
           if (match == null) return const SizedBox.shrink();
           final name = (match['name'] ?? '').toString().trim();
-          if (name.isEmpty) return const SizedBox.shrink();
+          final pName = (match['pickup_location_name'] ?? '').toString().trim();
+          final dName = (match['delivery_location_name'] ?? '').toString().trim();
+          final gName = (match['zalo_group_name'] ?? '').toString().trim();
+          final infoParts = <String>[
+            if (name.isNotEmpty) 'KH: $name',
+            if (pName.isNotEmpty) 'Điểm nhận: $pName',
+            if (dName.isNotEmpty) 'Điểm giao: $dName',
+            if (gName.isNotEmpty) 'Nhóm Zalo: $gName',
+          ];
+          if (infoParts.isEmpty) return const SizedBox.shrink();
           return Padding(
             padding: const EdgeInsets.only(top: 4),
             child: Text(
-              name,
-              maxLines: 1,
+              infoParts.join(' • '),
+              maxLines: 2,
               overflow: TextOverflow.ellipsis,
               style: TextStyle(
                 fontSize: 11,
@@ -15775,23 +14818,30 @@ class _DispatchSupervisorScreenState extends State<DispatchSupervisorScreen> {
     String lastSuggestedCustomerCode = '';
     String lastAutoFilledPickup = '';
     String lastAutoFilledDelivery = '';
+    String lastAutoFilledProductDetail = '';
     bool isLoadingCustomerPoints = false;
     Timer? _custPointsDebounce;
     // Co chan moi setState khi dialog dang dong - nguyen nhan chinh la cac
     // callback async/timer van goi setDialogState sau khi dialog da dong.
     bool dialogClosed = false;
 
-    int? findCustomerIdByCode(String code) {
+    Map<String, dynamic>? findCustomerByCode(String code) {
       final c = code.trim().toLowerCase();
       if (c.isEmpty) return null;
       for (final cu in customers) {
         if ((cu['code'] ?? '').toString().trim().toLowerCase() == c ||
             (cu['name'] ?? '').toString().trim().toLowerCase() == c) {
-          final rawId = cu['id'];
-          return rawId is int ? rawId : int.tryParse(rawId.toString());
+          return cu;
         }
       }
       return null;
+    }
+
+    int? findCustomerIdByCode(String code) {
+      final cu = findCustomerByCode(code);
+      if (cu == null) return null;
+      final rawId = cu['id'];
+      return rawId is int ? rawId : int.tryParse(rawId.toString());
     }
 
     showDialog(
@@ -15882,6 +14932,7 @@ class _DispatchSupervisorScreenState extends State<DispatchSupervisorScreen> {
                         if (dialogClosed || !dialogCtx.mounted) return;
 
                         // Tìm các điểm gắn trực tiếp với khách hàng này (qua customer_ids)
+                        final matchedCust = findCustomerByCode(trimmed);
                         final linkedPickups = matchedCustId != null
                             ? pList
                                 .where((loc) => _isLocationLinkedToCustomer(loc, matchedCustId))
@@ -15895,6 +14946,7 @@ class _DispatchSupervisorScreenState extends State<DispatchSupervisorScreen> {
 
                         // Tự động điền Điểm nhận hàng của khách hàng đang chọn (nếu có)
                         final curPickup = pickupAddrCtrl.text.trim();
+                        final fallbackPickupName = (matchedCust?['pickup_location_name'] ?? '').toString().trim();
                         if (linkedPickups.isNotEmpty) {
                           final fillP = _locationFillText(linkedPickups.first);
                           pickupAddrCtrl.text = fillP;
@@ -15922,6 +14974,9 @@ class _DispatchSupervisorScreenState extends State<DispatchSupervisorScreen> {
                                       '';
                             }
                           }
+                        } else if (fallbackPickupName.isNotEmpty) {
+                          pickupAddrCtrl.text = fallbackPickupName;
+                          lastAutoFilledPickup = fallbackPickupName;
                         } else if (curPickup.isNotEmpty && curPickup == lastAutoFilledPickup) {
                           // Khách hàng mới không có điểm nhận riêng -> xoá điểm nhận tự điền của KH trước đó
                           pickupAddrCtrl.clear();
@@ -15930,14 +14985,44 @@ class _DispatchSupervisorScreenState extends State<DispatchSupervisorScreen> {
 
                         // Tự động điền Điểm giao hàng của khách hàng đang chọn (nếu có)
                         final curDelivery = deliveryAddrCtrl.text.trim();
+                        final fallbackDeliveryName = (matchedCust?['delivery_location_name'] ?? '').toString().trim();
                         if (linkedDeliveries.isNotEmpty) {
                           final fillD = _locationFillText(linkedDeliveries.first);
                           deliveryAddrCtrl.text = fillD;
                           lastAutoFilledDelivery = fillD;
+                        } else if (fallbackDeliveryName.isNotEmpty) {
+                          deliveryAddrCtrl.text = fallbackDeliveryName;
+                          lastAutoFilledDelivery = fallbackDeliveryName;
                         } else if (curDelivery.isNotEmpty && curDelivery == lastAutoFilledDelivery) {
                           // Khách hàng mới không có điểm giao riêng -> xoá điểm giao tự điền của KH trước đó
                           deliveryAddrCtrl.clear();
                           lastAutoFilledDelivery = '';
+                        }
+
+                        // Tự động điền Sản phẩm / Hàng hóa của khách hàng (nếu có)
+                        final custProdCode = (matchedCust?['product_code'] ?? '').toString().trim();
+                        final curProdDetail = productDetailCtrl.text.trim();
+                        if (custProdCode.isNotEmpty &&
+                            (curProdDetail.isEmpty || curProdDetail == lastAutoFilledProductDetail)) {
+                          productDetailCtrl.text = custProdCode;
+                          lastAutoFilledProductDetail = custProdCode;
+                        } else if (custProdCode.isEmpty &&
+                            curProdDetail.isNotEmpty &&
+                            curProdDetail == lastAutoFilledProductDetail) {
+                          productDetailCtrl.clear();
+                          lastAutoFilledProductDetail = '';
+                        }
+                        final custNote = (matchedCust?['note'] ?? '').toString().trim().toLowerCase();
+                        if (custNote.isNotEmpty && _products.isNotEmpty) {
+                          for (final p in _products) {
+                            final pname = (p['name'] ?? '').toString().toLowerCase();
+                            if ((custNote.contains('xi măng') && pname.contains('xi măng')) ||
+                                (custNote.contains('tro') && pname.contains('tro')) ||
+                                (custNote.contains('xỉ') && pname.contains('xỉ'))) {
+                              selectedProductId = p['id'] as int?;
+                              break;
+                            }
+                          }
                         }
 
                         if (!dialogClosed) {

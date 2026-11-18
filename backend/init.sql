@@ -468,3 +468,49 @@ CREATE TABLE IF NOT EXISTS fuel_requests (
 CREATE INDEX IF NOT EXISTS ix_fuel_requests_plate ON fuel_requests(plate_number);
 CREATE INDEX IF NOT EXISTS ix_fuel_requests_status ON fuel_requests(status);
 CREATE INDEX IF NOT EXISTS ix_fuel_requests_requested_at ON fuel_requests(requested_at DESC);
+
+-- Bảng Khách hàng và Điểm nhận/giao hàng (Task T6 - Liên kết Điểm Nhận/Giao theo Khách hàng & Import DS DIEM VIETMAP.xlsx)
+CREATE TABLE IF NOT EXISTS customers (
+    id SERIAL PRIMARY KEY,
+    code VARCHAR(50) UNIQUE NOT NULL,
+    name VARCHAR(255) NOT NULL,
+    tax_code VARCHAR(50),
+    contact_person VARCHAR(150),
+    phone VARCHAR(30),
+    email VARCHAR(150),
+    address TEXT,
+    note TEXT,
+    source VARCHAR(20) DEFAULT 'manual',
+    zalo_group_id VARCHAR(100),
+    zalo_group_name VARCHAR(255),
+    pickup_location_name VARCHAR(255),
+    delivery_location_name VARCHAR(255),
+    product_code VARCHAR(150),
+    is_active BOOLEAN DEFAULT TRUE,
+    created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE TABLE IF NOT EXISTS locations (
+    id SERIAL PRIMARY KEY,
+    stt INTEGER,
+    vietmap_id VARCHAR(64),
+    category VARCHAR(150),
+    name VARCHAR(255) NOT NULL,
+    address TEXT,
+    kind VARCHAR(20) DEFAULT 'BOTH',
+    latitude DOUBLE PRECISION,
+    longitude DOUBLE PRECISION,
+    phone VARCHAR(50),
+    radius_m INTEGER DEFAULT 100,
+    contact_person VARCHAR(150),
+    mobile VARCHAR(50),
+    email VARCHAR(150),
+    allow_stop BOOLEAN DEFAULT FALSE,
+    note TEXT,
+    source VARCHAR(30) DEFAULT 'MANUAL',
+    customer_ids INTEGER[] DEFAULT '{}' NOT NULL,
+    is_active BOOLEAN DEFAULT TRUE,
+    created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
+);

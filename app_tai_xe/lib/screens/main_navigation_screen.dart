@@ -680,7 +680,7 @@ class _MainNavigationScreenState extends State<MainNavigationScreen> {
                       icon: Icons.place_outlined,
                       activeIcon: Icons.place,
                       title: "Điểm nhận / giao",
-                      subtitle: "Kho, cảng, gợi ý từ GPS",
+                      subtitle: "Kho, cảng, danh mục điểm VietMap",
                       onTap: () => _onSelectManagementTab(10),
                     ),
                   ],
@@ -771,7 +771,7 @@ class _MainNavigationScreenState extends State<MainNavigationScreen> {
                   const Padding(
                     padding: EdgeInsets.only(bottom: 12),
                     child: Text(
-                      "Phiên bản hệ thống: v2.4.0",
+                      "Phiên bản hệ thống: v2.5.0",
                       style: TextStyle(fontSize: 11, color: Colors.white38),
                       textAlign: TextAlign.center,
                     ),

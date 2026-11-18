@@ -90,9 +90,9 @@ jobs:
         uses: softprops/action-gh-release@v2
         with:
           tag_name: v1.0.0-latest
-          name: "Bản phát hành Sao Mai VinTrans v2.4.0 (Android & Windows)"
+          name: "Bản phát hành Sao Mai VinTrans v2.5.0 (Android & Windows)"
           body: |
-            Bản phát hành chính thức hệ thống Quản lý Vận tải Sao Mai VinTrans (v2.4.0):
+            Bản phát hành chính thức hệ thống Quản lý Vận tải Sao Mai VinTrans (v2.5.0):
 
             ### 1. Android (Google Play Store & Cài đặt trực tiếp)
             - **Google Play Console (`.aab`)**: Tải file `SaoMai_TaiXe_Android.aab` (đã ký bằng khóa Upload Keystore chính thức, package `com.taxilogistics.driver.saomai`, `versionCode` tự động tăng: `${{ env.BUILD_NUMBER }}`) để tải lên mục **Production / Internal Testing** trên Google Play Console.

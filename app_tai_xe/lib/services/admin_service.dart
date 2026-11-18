@@ -449,36 +449,6 @@ class AdminService {
   static Future<Map<String, dynamic>> bulkDeleteLocations(List<int> ids) =>
       _locationCall('POST', 'locations/bulk-delete', body: {'ids': ids}, timeoutSeconds: 60);
 
-  /// Bắt đầu quét lịch sử dừng đỗ của Vietmap và Bình Anh (chạy nền phía server).
-  static Future<Map<String, dynamic>> startLocationScan(Map<String, dynamic> options) =>
-      _locationCall('POST', 'locations/scan', body: options);
-
-  /// Tiến độ lượt quét gần nhất.
-  static Future<Map<String, dynamic>> fetchLocationScanStatus() => _locationCall('GET', 'locations/scan/status');
-
-  /// Gợi ý điểm gom từ GPS. [status] = PENDING | IGNORED | APPROVED | ALL
-  static Future<List<dynamic>> fetchLocationSuggestions({String status = 'PENDING'}) async {
-    final res = await _locationCall('GET', 'location-suggestions?status_filter=$status');
-    return res['ok'] == true && res['data'] is List ? res['data'] as List<dynamic> : [];
-  }
-
-  /// Duyệt gợi ý thành một điểm trong danh mục.
-  static Future<Map<String, dynamic>> approveLocationSuggestion(int id, Map<String, dynamic> data) =>
-      _locationCall('POST', 'location-suggestions/$id/approve', body: data);
-
-  /// Duyệt nhiều gợi ý cùng lúc. Tên điểm lấy theo tên trạm hoặc địa chỉ GPS.
-  static Future<Map<String, dynamic>> bulkApproveLocationSuggestions(List<int> ids, {String kind = 'BOTH'}) =>
-      _locationCall('POST', 'location-suggestions/bulk-approve',
-          body: {'ids': ids, 'kind': kind}, timeoutSeconds: 60);
-
-  /// Bỏ qua gợi ý (lần quét sau không hiện lại trong hàng chờ).
-  static Future<Map<String, dynamic>> ignoreLocationSuggestion(int id) =>
-      _locationCall('POST', 'location-suggestions/$id/ignore');
-
-  /// Đưa gợi ý đã bỏ qua về hàng chờ duyệt.
-  static Future<Map<String, dynamic>> restoreLocationSuggestion(int id) =>
-      _locationCall('POST', 'location-suggestions/$id/restore');
-
   /// Gọi API Zalo OA, trả về {'ok': bool, 'status': int, 'data': dynamic, 'message': String}
   static Future<Map<String, dynamic>> _zaloCall(String method, String path,
       {Map<String, dynamic>? body, int timeoutSeconds = 25}) async {
@@ -1375,9 +1345,62 @@ class AdminService {
           'updated': data['updated'] ?? 0,
           'groupsLearned': data['groups_learned'] ?? 0,
           'withGroup': data['with_group'] ?? 0,
+          'linkedCustomers': data['linked_customers'] ?? 0,
+          'linkedLocations': data['linked_locations'] ?? 0,
           'missingGroupColumns': List<String>.from(data['missing_group_columns'] ?? []),
           'skipped': data['skipped'] ?? 0,
           'skippedDetails': List<String>.from(data['skipped_details'] ?? []),
+          'errors': List<String>.from(data['errors'] ?? []),
+          'total': data['total'] ?? 0,
+        };
+      }
+      return {
+        'success': false,
+        'message': (data['detail'] ?? 'Import thất bại').toString(),
+      };
+    } catch (e) {
+      return {'success': false, 'message': 'Không thể import Excel: $e'};
+    }
+  }
+
+  /// Import danh sách Điểm nhận/Giao hàng từ file Excel (theo mẫu "DS DIEM VIETMAP.xlsx").
+  /// - Dòng bôi vàng -> Điểm nhận (PICKUP).
+  /// - Các dòng còn lại -> Điểm giao (DELIVERY).
+  /// - [replaceAll] = true: xóa toàn bộ dữ liệu cũ của Điểm nhận/Giao và cập nhật mới từ file Excel.
+  static Future<Map<String, dynamic>> importLocationsExcel(
+    List<int> bytes,
+    String filename, {
+    bool replaceAll = true,
+  }) async {
+    try {
+      final request = http.MultipartRequest(
+        'POST',
+        Uri.parse('$baseUrl/locations/import-excel?replace_all=$replaceAll'),
+      );
+      request.headers.addAll(await _headers().then((h) {
+        h.remove('Content-Type');
+        return h;
+      }));
+      request.files.add(http.MultipartFile.fromBytes(
+        'file',
+        bytes,
+        filename: filename,
+      ));
+      final streamedResponse =
+          await request.send().timeout(const Duration(seconds: 60));
+      final response = await http.Response.fromStream(streamedResponse);
+      await _checkUnauthorized(response);
+      final data = jsonDecode(utf8.decode(response.bodyBytes));
+      if (response.statusCode == 200) {
+        return {
+          'success': true,
+          'inserted': data['inserted'] ?? 0,
+          'updated': data['updated'] ?? 0,
+          'skipped': data['skipped'] ?? 0,
+          'pickupCount': data['pickup_count'] ?? 0,
+          'deliveryCount': data['delivery_count'] ?? 0,
+          'linkedLocations': data['linked_locations'] ?? 0,
+          'linkedCustomers': data['linked_customers'] ?? 0,
           'errors': List<String>.from(data['errors'] ?? []),
           'total': data['total'] ?? 0,
         };

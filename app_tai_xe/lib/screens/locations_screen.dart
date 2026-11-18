@@ -1,16 +1,17 @@
 import 'dart:async';
 
+import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
 
 import '../services/address_geocoder_service.dart';
 import '../services/admin_service.dart';
 import '../widgets/center_loading_overlay.dart';
 import '../widgets/map_point_picker_dialog.dart';
+import '../widgets/virtualized_load_more_table.dart';
 
 /// Màn hình Điểm nhận / giao hàng.
-/// Một danh sách duy nhất gồm:
-/// - Điểm đã xác nhận: dùng cho ô Nơi nhận hàng / Điểm giao hàng trong form đơn.
-/// - Gợi ý từ lịch sử dừng đỗ GPS: chờ điều phối duyệt (Duyệt / Bỏ qua) ngay trên dòng.
+/// Quản lý danh mục Điểm nhận hàng (PICKUP) và Điểm giao hàng (DELIVERY)
+/// liên kết với Khách hàng, hỗ trợ Import chuẩn file DS DIEM VIETMAP.xlsx.
 /// Chỉ Điều phối viên, Quản lý / Giám đốc và Admin được vào.
 class LocationsScreen extends StatefulWidget {
   final void Function(int filtered, int total)? onCountChanged;
@@ -26,23 +27,18 @@ class _LocationsScreenState extends State<LocationsScreen> {
   String _query = '';
   bool _loading = true;
   List<Map<String, dynamic>> _locations = [];
-  List<Map<String, dynamic>> _suggestions = [];
-  // ALL = đã xác nhận + chờ duyệt | CONFIRMED | PENDING | PICKUP | DELIVERY | IGNORED
+  // ALL | PICKUP | DELIVERY
   String _filter = 'ALL';
 
   int _currentPage = 1;
-  int _pageSize = 10;
+  int _pageSize = 20;
 
-  // Chọn nhiều gợi ý chờ duyệt để duyệt cùng lúc
-  final Set<int> _selectedIds = {};
-  // Chọn nhiều điểm đã xác nhận để xóa cùng lúc
+  // Chọn nhiều điểm để xóa cùng lúc
   final Set<int> _selectedLocIds = {};
   bool _bulkBusy = false;
 
-  // Quét GPS
-  bool _scanBusy = false;
-  String _scanProgress = '';
-  Timer? _scanTimer;
+  // Import Excel DS DIEM VIETMAP.xlsx
+  bool _importBusy = false;
 
   // Danh mục khách hàng (để gán điểm cho nhiều khách hàng trong form thêm / sửa)
   List<Map<String, dynamic>> _customers = [];
@@ -57,12 +53,10 @@ class _LocationsScreenState extends State<LocationsScreen> {
   void initState() {
     super.initState();
     _load();
-    _checkRunningScan();
   }
 
   @override
   void dispose() {
-    _scanTimer?.cancel();
     _searchCtrl.dispose();
     super.dispose();
   }
@@ -77,24 +71,13 @@ class _LocationsScreenState extends State<LocationsScreen> {
     setState(() => _loading = true);
     final results = await Future.wait([
       AdminService.fetchLocations(),
-      AdminService.fetchLocationSuggestions(status: 'ALL'),
       AdminService.fetchCustomers(),
     ]);
     if (!mounted) return;
     setState(() {
       _locations = _asMaps(results[0]);
-      _suggestions = _asMaps(results[1]);
-      _customers = _asMaps(results[2]);
+      _customers = _asMaps(results[1]);
       _loading = false;
-      _pruneSelection();
-    });
-  }
-
-  Future<void> _loadSuggestions() async {
-    final rows = await AdminService.fetchLocationSuggestions(status: 'ALL');
-    if (!mounted) return;
-    setState(() {
-      _suggestions = _asMaps(rows);
       _pruneSelection();
     });
   }
@@ -116,239 +99,30 @@ class _LocationsScreenState extends State<LocationsScreen> {
     });
   }
 
-  // ---------------- QUÉT GPS ----------------
+  // ---------------- LỌC & CHỌN DÒNG ----------------
 
-  Future<void> _checkRunningScan() async {
-    final st = await AdminService.fetchLocationScanStatus();
-    if (!mounted) return;
-    if (st['ok'] == true &&
-        st['data'] is Map &&
-        st['data']['running'] == true) {
-      _startPolling();
-    }
-  }
+  int? _locId(Map<String, dynamic> m) => int.tryParse(_s(m, 'id'));
 
-  Future<void> _onScan() async {
-    if (_scanBusy) return;
-    final vmCtrl = TextEditingController(text: '30');
-    final baCtrl = TextEditingController(text: '7');
-    final minStopCtrl = TextEditingController(text: '15');
-    final formKey = GlobalKey<FormState>();
-
-    String? numValidator(String? v, int min, int max) {
-      final n = int.tryParse((v ?? '').trim());
-      if (n == null || n < min || n > max) return "Từ $min đến $max";
-      return null;
-    }
-
-    Widget numField(
-      TextEditingController c,
-      String label,
-      String helper,
-      int min,
-      int max,
-    ) {
-      return Padding(
-        padding: const EdgeInsets.only(bottom: 10),
-        child: TextFormField(
-          controller: c,
-          keyboardType: TextInputType.number,
-          style: const TextStyle(fontSize: 13),
-          decoration: InputDecoration(labelText: label, helperText: helper),
-          validator: (v) => numValidator(v, min, max),
-        ),
-      );
-    }
-
-    final ok = await showDialog<bool>(
-      context: context,
-      builder: (dialogContext) => AlertDialog(
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(4)),
-        title: const Text(
-          "Quét lịch sử dừng đỗ",
-          style: TextStyle(fontSize: 17, fontWeight: FontWeight.bold),
-        ),
-        content: SizedBox(
-          width: 420,
-          child: Form(
-            key: formKey,
-            child: SingleChildScrollView(
-              child: Column(
-                mainAxisSize: MainAxisSize.min,
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text(
-                    "Máy chủ sẽ lấy toàn bộ các lần dừng đỗ của đội xe và đề xuất hết thành gợi ý, "
-                    "kể cả chỗ chỉ dừng 1 lần. Địa chỉ đã có trong danh mục hoặc đã từng gợi ý sẽ không lấy lại.",
-                    style: TextStyle(
-                      fontSize: 12.5,
-                      color: Colors.grey.shade700,
-                    ),
-                  ),
-                  const SizedBox(height: 12),
-                  numField(
-                    vmCtrl,
-                    "Số ngày quét Vietmap",
-                    "0 = bỏ qua Vietmap, tối đa 31",
-                    0,
-                    31,
-                  ),
-                  numField(
-                    baCtrl,
-                    "Số ngày quét Bình Anh",
-                    "0 = bỏ qua Bình Anh, tối đa 31 (quét lâu hơn Vietmap)",
-                    0,
-                    31,
-                  ),
-                  numField(
-                    minStopCtrl,
-                    "Dừng tối thiểu (phút)",
-                    "Dừng ngắn hơn sẽ bị bỏ qua",
-                    1,
-                    1440,
-                  ),
-                ],
-              ),
-            ),
-          ),
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(dialogContext, false),
-            child: const Text("Hủy bỏ"),
-          ),
-          ElevatedButton(
-            style: ElevatedButton.styleFrom(
-              backgroundColor: Colors.teal.shade700,
-              foregroundColor: Colors.white,
-              shape: RoundedRectangleBorder(
-                borderRadius: BorderRadius.circular(4),
-              ),
-            ),
-            onPressed: () {
-              if (formKey.currentState!.validate())
-                Navigator.pop(dialogContext, true);
-            },
-            child: const Text("Bắt đầu quét"),
-          ),
-        ],
-      ),
-    );
-    if (ok != true) return;
-    final options = {
-      'vietmap_days': int.parse(vmCtrl.text.trim()),
-      'binhanh_days': int.parse(baCtrl.text.trim()),
-      'min_stop_minutes': int.parse(minStopCtrl.text.trim()),
-    };
-    final res = await AdminService.startLocationScan(options);
-    if (!mounted) return;
-    if (res['ok'] != true) {
-      _toast(res['message'].toString(), error: true);
-      return;
-    }
-    _startPolling();
-  }
-
-  void _startPolling() {
-    _scanTimer?.cancel();
-    setState(() {
-      _scanBusy = true;
-      _scanProgress = 'Đang quét...';
-    });
-    _scanTimer = Timer.periodic(const Duration(seconds: 3), (_) => _scanTick());
-  }
-
-  Future<void> _scanTick() async {
-    final st = await AdminService.fetchLocationScanStatus();
-    if (!mounted || _scanTimer == null) return;
-    if (st['ok'] != true || st['data'] is! Map) return;
-    final data = Map<String, dynamic>.from(st['data'] as Map);
-    if (data['running'] == true) {
-      setState(
-        () => _scanProgress = (data['progress'] ?? 'Đang quét...').toString(),
-      );
-      return;
-    }
-    _scanTimer?.cancel();
-    _scanTimer = null;
-    final r = data['result'] is Map
-        ? Map<String, dynamic>.from(data['result'])
-        : <String, dynamic>{};
-    int n(String k) => int.tryParse('${r[k] ?? 0}') ?? 0;
-    final errors = (r['errors'] is List)
-        ? (r['errors'] as List).join('; ')
-        : '';
-    setState(() {
-      _scanBusy = false;
-      _scanProgress = '';
-    });
-    if (data['error'] != null) {
-      _toast("Quét lỗi: ${data['error']}", error: true);
-    } else {
-      _toast(
-        "Quét xong: ${n('stops')} lần dừng, gợi ý mới ${n('inserted')}, "
-        "bỏ qua ${n('skipped_existing')} địa chỉ đã gợi ý và ${n('skipped_in_catalog')} địa chỉ đã có trong danh mục"
-        "${errors.isNotEmpty ? '. Lỗi: $errors' : ''}",
-        error: errors.isNotEmpty,
-      );
-    }
-    _loadSuggestions();
-  }
-
-  // ---------------- LỌC ----------------
-
-  bool _isLoc(Map<String, dynamic> m) => m['_row'] == 'LOC';
-
-  int get _pendingCount =>
-      _suggestions.where((x) => _s(x, 'status') == 'PENDING').length;
-
-  int? _sugId(Map<String, dynamic> m) => int.tryParse(_s(m, 'id'));
-
-  bool _isSelectable(Map<String, dynamic> m) =>
-      !_isLoc(m) && _s(m, 'status') == 'PENDING' && _sugId(m) != null;
-
-  int? _locId(Map<String, dynamic> m) =>
-      _isLoc(m) ? int.tryParse(_s(m, 'id')) : null;
-
-  /// Dòng có ô chọn: gợi ý chờ duyệt (để duyệt) hoặc điểm đã xác nhận (để xóa).
-  bool _canPick(Map<String, dynamic> m) =>
-      _isSelectable(m) || _locId(m) != null;
+  bool _canPick(Map<String, dynamic> m) => _locId(m) != null;
 
   bool _isPicked(Map<String, dynamic> m) {
-    if (_isLoc(m)) {
-      final id = _locId(m);
-      return id != null && _selectedLocIds.contains(id);
-    }
-    final id = _sugId(m);
-    return id != null && _selectedIds.contains(id);
+    final id = _locId(m);
+    return id != null && _selectedLocIds.contains(id);
   }
 
   void _setPicked(Map<String, dynamic> m, bool v) {
-    if (_isLoc(m)) {
-      final id = _locId(m);
-      if (id == null) return;
-      v ? _selectedLocIds.add(id) : _selectedLocIds.remove(id);
-    } else if (_isSelectable(m)) {
-      final id = _sugId(m)!;
-      v ? _selectedIds.add(id) : _selectedIds.remove(id);
-    }
+    final id = _locId(m);
+    if (id == null) return;
+    v ? _selectedLocIds.add(id) : _selectedLocIds.remove(id);
   }
 
-  int get _pickedCount => _selectedIds.length + _selectedLocIds.length;
+  int get _pickedCount => _selectedLocIds.length;
 
   void _clearPicked() {
-    _selectedIds.clear();
     _selectedLocIds.clear();
   }
 
-  /// Bỏ khỏi danh sách đang chọn những gợi ý không còn chờ duyệt (đã duyệt, bỏ qua, bị xóa).
   void _pruneSelection() {
-    final pending = _suggestions
-        .where((x) => _s(x, 'status') == 'PENDING')
-        .map(_sugId)
-        .whereType<int>()
-        .toSet();
-    _selectedIds.retainWhere(pending.contains);
     final locIds = _locations
         .map((x) => int.tryParse(_s(x, 'id')))
         .whereType<int>()
@@ -356,16 +130,215 @@ class _LocationsScreenState extends State<LocationsScreen> {
     _selectedLocIds.retainWhere(locIds.contains);
   }
 
-  /// Danh sách gộp: điểm đã xác nhận (theo tên) rồi tới gợi ý GPS (theo số lần dừng).
-  /// Gợi ý đã duyệt không hiện lại vì đã nằm trong danh sách điểm.
+  /// Import danh sách Điểm nhận / Giao hàng từ file Excel (theo mẫu "DS DIEM VIETMAP.xlsx").
+  /// - Dòng bôi vàng -> Điểm nhận (PICKUP)
+  /// - Các dòng còn lại -> Điểm giao (DELIVERY)
+  Future<void> _importExcel() async {
+    if (_importBusy) return;
+    final picked = await FilePicker.platform.pickFiles(
+      type: FileType.custom,
+      allowedExtensions: ['xlsx', 'xls'],
+      withData: true,
+    );
+    if (picked == null || picked.files.isEmpty) return;
+    final f = picked.files.first;
+    final bytes = f.bytes;
+    if (bytes == null || bytes.isEmpty) {
+      _toast('Không đọc được nội dung file Excel', error: true);
+      return;
+    }
+    if (!mounted) return;
+
+    bool replaceAll = true;
+    final confirm = await showDialog<bool>(
+      context: context,
+      builder: (dialogContext) => StatefulBuilder(
+        builder: (dialogContext, setDialogState) => AlertDialog(
+          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(4)),
+          title: const Text(
+            "Import Điểm nhận / Giao hàng (VietMap)",
+            style: TextStyle(fontSize: 16.5, fontWeight: FontWeight.bold),
+          ),
+          content: SizedBox(
+            width: 480,
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  "File đã chọn: ${f.name}",
+                  style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w700),
+                ),
+                const SizedBox(height: 8),
+                Text(
+                  "Quy tắc nhận diện tự động theo mẫu DS DIEM VIETMAP.xlsx:\n"
+                  "• Đọc đầy đủ 14 cột: #, Id, Danh Mục, Tên, Vĩ Độ, Kinh Độ, Địa Chỉ, Số ĐT, Bán Kính, Người Liên Hệ, Di Động, Email, Cho Phép Dừng Xe, Ghi Chú.\n"
+                  "• Dòng bôi nền màu vàng -> Điểm nhận hàng (PICKUP).\n"
+                  "• Các dòng còn lại -> Điểm giao hàng (DELIVERY).\n"
+                  "• Tự động liên kết Điểm nhận/Giao với Khách hàng tương ứng.",
+                  style: TextStyle(fontSize: 12.5, height: 1.45, color: Colors.grey.shade800),
+                ),
+                const SizedBox(height: 12),
+                InkWell(
+                  borderRadius: BorderRadius.circular(4),
+                  onTap: () => setDialogState(() => replaceAll = !replaceAll),
+                  child: Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+                    decoration: BoxDecoration(
+                      color: replaceAll ? Colors.amber.shade50 : Colors.grey.shade50,
+                      borderRadius: BorderRadius.circular(4),
+                      border: Border.all(
+                        color: replaceAll ? Colors.amber.shade400 : Colors.grey.shade300,
+                      ),
+                    ),
+                    child: Row(
+                      children: [
+                        SizedBox(
+                          width: 20,
+                          height: 20,
+                          child: Checkbox(
+                            value: replaceAll,
+                            onChanged: (v) => setDialogState(() => replaceAll = v ?? true),
+                          ),
+                        ),
+                        const SizedBox(width: 8),
+                        const Expanded(
+                          child: Text(
+                            "Xóa dữ liệu cũ của Điểm nhận/Giao và cập nhật mới hoàn toàn từ file Excel này",
+                            style: TextStyle(fontSize: 12.5, fontWeight: FontWeight.w600),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(dialogContext, false),
+              child: const Text("Hủy bỏ"),
+            ),
+            ElevatedButton(
+              style: ElevatedButton.styleFrom(
+                backgroundColor: const Color(0xFF2E7D32),
+                foregroundColor: Colors.white,
+                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(4)),
+              ),
+              onPressed: () => Navigator.pop(dialogContext, true),
+              child: const Text("Tiến hành Import"),
+            ),
+          ],
+        ),
+      ),
+    );
+    if (confirm != true || !mounted) return;
+
+    setState(() => _importBusy = true);
+    final res = await AdminService.importLocationsExcel(
+      bytes.toList(),
+      f.name,
+      replaceAll: replaceAll,
+    );
+    if (!mounted) return;
+    setState(() => _importBusy = false);
+    if (res['success'] == true) {
+      await _load();
+      _showImportResult(res);
+    } else {
+      _toast(res['message']?.toString() ?? 'Import thất bại', error: true);
+    }
+  }
+
+  void _showImportResult(Map<String, dynamic> res) {
+    final inserted = res['inserted'] ?? 0;
+    final updated = res['updated'] ?? 0;
+    final pickupCount = res['pickupCount'] ?? 0;
+    final deliveryCount = res['deliveryCount'] ?? 0;
+    final linkedLocations = res['linkedLocations'] ?? 0;
+    final linkedCustomers = res['linkedCustomers'] ?? 0;
+    final errors = (res['errors'] as List?) ?? const [];
+
+    Widget rowStat(String label, dynamic val, Color color) {
+      return Padding(
+        padding: const EdgeInsets.symmetric(vertical: 3),
+        child: Row(
+          children: [
+            Container(
+              width: 9,
+              height: 9,
+              decoration: BoxDecoration(color: color, shape: BoxShape.circle),
+            ),
+            const SizedBox(width: 10),
+            Expanded(child: Text(label, style: const TextStyle(fontSize: 13))),
+            Text(
+              '$val',
+              style: TextStyle(fontWeight: FontWeight.bold, fontSize: 13, color: color),
+            ),
+          ],
+        ),
+      );
+    }
+
+    showDialog(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(4)),
+        title: Row(
+          children: [
+            Icon(Icons.check_circle, color: Colors.green.shade700),
+            const SizedBox(width: 10),
+            const Text(
+              "Kết quả Import Điểm nhận / Giao",
+              style: TextStyle(fontSize: 16.5, fontWeight: FontWeight.bold),
+            ),
+          ],
+        ),
+        content: SizedBox(
+          width: 460,
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              rowStat("Thêm mới từ Excel", inserted, Colors.green.shade700),
+              rowStat("Cập nhật điểm đã có", updated, Colors.blue.shade800),
+              rowStat("Điểm nhận hàng (dòng bôi vàng)", pickupCount, Colors.amber.shade900),
+              rowStat("Điểm giao hàng (dòng thường)", deliveryCount, Colors.teal.shade800),
+              rowStat("Điểm đã tự động liên kết Khách hàng", linkedLocations, Colors.indigo.shade700),
+              rowStat("Khách hàng đã gắn Điểm nhận / giao", linkedCustomers, Colors.purple.shade700),
+              if (errors.isNotEmpty) ...[
+                const SizedBox(height: 10),
+                const Text(
+                  "Lỗi từng dòng:",
+                  style: TextStyle(fontWeight: FontWeight.bold, color: Colors.red),
+                ),
+                ...errors.take(8).map(
+                  (e) => Padding(
+                    padding: const EdgeInsets.only(top: 3),
+                    child: Text("- $e", style: const TextStyle(fontSize: 12, color: Colors.red)),
+                  ),
+                ),
+              ],
+            ],
+          ),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx),
+            child: const Text("Đóng"),
+          ),
+        ],
+      ),
+    );
+  }
+
+  /// Danh sách điểm nhận / giao đã lọc và sắp xếp theo STT file Excel (#1..#109).
   List<Map<String, dynamic>> get _visibleRows {
     final q = _query.toLowerCase().trim();
-    final locs = _locations.map((l) => {...l, '_row': 'LOC'}).where((l) {
+    final locs = _locations.where((l) {
       final kind = _s(l, 'kind').isEmpty ? 'BOTH' : _s(l, 'kind');
       switch (_filter) {
-        case 'PENDING':
-        case 'IGNORED':
-          return false;
         case 'PICKUP':
           if (kind == 'DELIVERY') return false;
           break;
@@ -375,37 +348,30 @@ class _LocationsScreenState extends State<LocationsScreen> {
       }
       if (q.isEmpty) return true;
       if ([
+        'stt',
+        'vietmap_id',
+        'category',
         'name',
         'address',
+        'phone',
+        'contact_person',
+        'mobile',
+        'email',
         'note',
       ].any((k) => _s(l, k).toLowerCase().contains(q))) {
         return true;
       }
       return _customerNames(l).any((n) => n.toLowerCase().contains(q));
     }).toList();
-    locs.sort(
-      (a, b) =>
-          _s(a, 'name').toLowerCase().compareTo(_s(b, 'name').toLowerCase()),
-    );
-
-    final wantStatus = _filter == 'IGNORED'
-        ? 'IGNORED'
-        : ((_filter == 'ALL' || _filter == 'PENDING') ? 'PENDING' : null);
-    final sugs = wantStatus == null
-        ? <Map<String, dynamic>>[]
-        : _suggestions
-              .where((x) => _s(x, 'status') == wantStatus)
-              .map((x) => {...x, '_row': 'SUG'})
-              .where((x) {
-                if (q.isEmpty) return true;
-                return [
-                  'address',
-                  'station_name',
-                  'vehicles',
-                ].any((k) => _s(x, k).toLowerCase().contains(q));
-              })
-              .toList();
-    return [...locs, ...sugs];
+    locs.sort((a, b) {
+      final sa = int.tryParse(_s(a, 'stt')) ?? 999999;
+      final sb = int.tryParse(_s(b, 'stt')) ?? 999999;
+      if (sa != sb) return sa.compareTo(sb);
+      final ia = int.tryParse(_s(a, 'id')) ?? 999999;
+      final ib = int.tryParse(_s(b, 'id')) ?? 999999;
+      return ia.compareTo(ib);
+    });
+    return locs;
   }
 
   // ---------------- GIAO DIỆN ----------------
@@ -485,11 +451,8 @@ class _LocationsScreenState extends State<LocationsScreen> {
         ),
         items: const [
           DropdownMenuItem(value: 'ALL', child: Text("Tất cả")),
-          DropdownMenuItem(value: 'CONFIRMED', child: Text("Đã xác nhận")),
-          DropdownMenuItem(value: 'PENDING', child: Text("Chờ duyệt (từ GPS)")),
           DropdownMenuItem(value: 'PICKUP', child: Text("Điểm nhận")),
           DropdownMenuItem(value: 'DELIVERY', child: Text("Điểm giao")),
-          DropdownMenuItem(value: 'IGNORED', child: Text("Đã bỏ qua")),
         ],
         onChanged: (val) {
           if (val == null) return;
@@ -505,18 +468,15 @@ class _LocationsScreenState extends State<LocationsScreen> {
   @override
   Widget build(BuildContext context) {
     final rows = _visibleRows;
-    _reportCount(rows.length, _locations.length + _pendingCount);
+    _reportCount(rows.length, _locations.length);
 
     final totalItems = rows.length;
     final totalPages = (totalItems / _pageSize).ceil().clamp(1, 99999);
     final validPage = _currentPage.clamp(1, totalPages);
-    final startIndex = totalItems == 0 ? 0 : (validPage - 1) * _pageSize;
-    final endIndex = (startIndex + _pageSize > totalItems)
-        ? totalItems
-        : startIndex + _pageSize;
+    final endIndex = (validPage * _pageSize).clamp(0, totalItems);
     final pageItems = totalItems == 0
         ? <Map<String, dynamic>>[]
-        : rows.sublist(startIndex, endIndex);
+        : rows.sublist(0, endIndex);
 
     return Column(
       children: [
@@ -543,7 +503,7 @@ class _LocationsScreenState extends State<LocationsScreen> {
                         minHeight: 36,
                         maxHeight: 36,
                       ),
-                      hintText: "Tìm theo tên điểm, khách hàng, địa chỉ, ghi chú, biển số...",
+                      hintText: "Tìm theo tên điểm, khách hàng, địa chỉ, ghi chú...",
                       hintStyle: const TextStyle(fontSize: 12.5),
                       prefixIcon: const Icon(Icons.search, size: 17),
                       prefixIconConstraints: const BoxConstraints(
@@ -577,25 +537,24 @@ class _LocationsScreenState extends State<LocationsScreen> {
               ),
               const SizedBox(width: 10),
               Expanded(flex: 2, child: _filterDropdown()),
-              const SizedBox(width: 12),
+              const SizedBox(width: 10),
+              Tooltip(
+                message: "Import danh sách Điểm nhận/Giao từ file Excel theo mẫu DS DIEM VIETMAP.xlsx (dòng bôi vàng = Điểm nhận)",
+                child: _toolbarButton(
+                  icon: Icons.upload_file_outlined,
+                  label: _importBusy ? "Đang import..." : "Import Excel",
+                  color: const Color(0xFF2E7D32),
+                  busy: _importBusy,
+                  onPressed: _importBusy ? null : _importExcel,
+                ),
+              ),
+              const SizedBox(width: 10),
               _toolbarButton(
                 icon: Icons.add_location_alt_outlined,
                 label: "Thêm điểm",
                 color: Colors.blue.shade800,
                 filled: true,
                 onPressed: () => _showForm(),
-              ),
-              const SizedBox(width: 10),
-              Tooltip(
-                message:
-                    "Lấy các chỗ xe từng dừng đỗ từ lịch sử GPS thành gợi ý",
-                child: _toolbarButton(
-                  icon: Icons.travel_explore,
-                  label: _scanBusy ? "Đang quét..." : "Quét GPS",
-                  color: Colors.teal.shade700,
-                  busy: _scanBusy,
-                  onPressed: _scanBusy ? null : _onScan,
-                ),
               ),
             ],
           ),
@@ -604,46 +563,38 @@ class _LocationsScreenState extends State<LocationsScreen> {
         const Divider(height: 1),
         Expanded(
           child: CenterLoadingOverlay(
-            isLoading: _loading || _scanBusy || _bulkBusy || _scanProgress.isNotEmpty,
-            message: _scanProgress.isNotEmpty
-                ? _scanProgress
-                : (_scanBusy
-                    ? 'Đang quét lịch sử GPS...'
-                    : (_bulkBusy
-                        ? 'Đang xử lý hàng loạt...'
-                        : 'Đang tải danh sách điểm nhận / giao...')),
+            isLoading: _loading || _importBusy || _bulkBusy,
+            message: _importBusy
+                ? 'Đang import danh sách Điểm nhận / giao từ Excel...'
+                : (_bulkBusy
+                    ? 'Đang xử lý hàng loạt...'
+                    : 'Đang tải danh sách điểm nhận / giao...'),
             child: _loading
                 ? const SizedBox.expand()
                 : RefreshIndicator(
                     onRefresh: _load,
                     child: pageItems.isEmpty
                         ? _buildEmpty()
-                        : _buildTable(pageItems),
+                        : _buildTable(
+                            pageItems,
+                            hasMore: endIndex < totalItems,
+                            onLoadMore: () {
+                              if (validPage < totalPages) {
+                                setState(() => _currentPage = validPage + 1);
+                              }
+                            },
+                          ),
                   ),
           ),
         ),
-        if (!_loading && totalItems > 0)
-          _buildPagination(
-            totalItems: totalItems,
-            startIndex: startIndex,
-            endIndex: endIndex,
-            validPage: validPage,
-            totalPages: totalPages,
-          ),
       ],
     );
   }
 
   Widget _buildEmpty() {
-    final String msg;
-    if (_locations.isEmpty && _suggestions.isEmpty) {
-      msg =
-          "Chưa có điểm nào. Bấm \"Thêm điểm\" hoặc \"Quét GPS\" để lấy các chỗ xe từng dừng đỗ.";
-    } else if (_filter == 'IGNORED') {
-      msg = "Không có gợi ý nào đã bỏ qua";
-    } else {
-      msg = "Không tìm thấy điểm nào phù hợp với bộ lọc";
-    }
+    final msg = _locations.isEmpty
+        ? "Chưa có điểm nào. Bấm \"Import Excel\" hoặc \"Thêm điểm\" để tạo danh mục."
+        : "Không tìm thấy điểm nào phù hợp với bộ lọc";
     return LayoutBuilder(
       builder: (context, constraints) => SingleChildScrollView(
         physics: const AlwaysScrollableScrollPhysics(),
@@ -685,23 +636,6 @@ class _LocationsScreenState extends State<LocationsScreen> {
   DataCell _cell(Widget child) =>
       DataCell(Container(alignment: Alignment.centerLeft, child: child));
 
-  Widget _plain(String text, {double maxWidth = 260}) {
-    if (text.isEmpty)
-      return Text(
-        "—",
-        style: TextStyle(fontSize: 12.5, color: Colors.grey.shade400),
-      );
-    return ConstrainedBox(
-      constraints: BoxConstraints(maxWidth: maxWidth),
-      child: Text(
-        text,
-        maxLines: 2,
-        overflow: TextOverflow.ellipsis,
-        style: const TextStyle(fontSize: 12.5),
-      ),
-    );
-  }
-
   Widget _badge(String text, MaterialColor color) {
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
@@ -722,8 +656,8 @@ class _LocationsScreenState extends State<LocationsScreen> {
   }
 
   MaterialColor _kindColor(String kind) => kind == 'PICKUP'
-      ? Colors.blue
-      : (kind == 'DELIVERY' ? Colors.orange : Colors.teal);
+      ? Colors.amber
+      : (kind == 'DELIVERY' ? Colors.blue : Colors.teal);
 
   String _coord(Map<String, dynamic> m) {
     final lat = double.tryParse(_s(m, 'latitude'));
@@ -732,58 +666,68 @@ class _LocationsScreenState extends State<LocationsScreen> {
     return "${lat.toStringAsFixed(5)}, ${lng.toStringAsFixed(5)}";
   }
 
-  Widget _scrollTable(DataTable table) {
-    return LayoutBuilder(
-      builder: (context, constraints) => SingleChildScrollView(
-        physics: const AlwaysScrollableScrollPhysics(),
-        child: SingleChildScrollView(
-          scrollDirection: Axis.horizontal,
-          child: ConstrainedBox(
-            constraints: BoxConstraints(minWidth: constraints.maxWidth),
-            child: table,
+  Widget _buildTable(
+    List<Map<String, dynamic>> items, {
+    required bool hasMore,
+    required VoidCallback onLoadMore,
+  }) {
+    return VirtualizedDataTable(
+      headingRowHeight: 44,
+      rowHeight: 62,
+      horizontalMargin: 16,
+      columnSpacing: 16,
+      minTableWidth: 0,
+      fixedColumnWidths: const [
+        32,   // Checkbox
+        42,   // #
+        null, // Tên điểm / Địa chỉ
+        null, // Loại điểm
+        null, // Khách hàng liên kết
+        null, // Tọa độ / Bán kính
+        null, // Thao tác
+      ],
+      columnFlexes: const [
+        1,
+        1,
+        30, // Tên điểm / Địa chỉ
+        12, // Loại điểm
+        20, // Khách hàng liên kết
+        18, // Tọa độ / Bán kính
+        15, // Thao tác
+      ],
+      hasMore: hasMore,
+      onLoadMore: onLoadMore,
+      onRowTap: (idx) {
+        _showLocationDetailDialog(items[idx]);
+      },
+      columns: [
+        DataColumn(label: _headerCheckbox(items)),
+        _col("#"),
+        _col("Tên điểm / Địa chỉ"),
+        _col("Loại điểm"),
+        _col("Khách hàng"),
+        _col("Tọa độ / Bán kính"),
+        _col("Thao tác"),
+      ],
+      itemCount: items.length,
+      rowBuilder: (idx) {
+        final m = items[idx];
+        final selected = _isPicked(m);
+        final isPickup = _s(m, 'kind') == 'PICKUP';
+        return DataRow(
+          color: WidgetStateProperty.all(
+            selected
+                ? Colors.green.shade50
+                : (isPickup
+                    ? const Color(0xFFFFFBEB)
+                    : (idx % 2 == 0 ? Colors.white : Colors.grey.shade50)),
           ),
-        ),
-      ),
-    );
-  }
-
-  Widget _buildTable(List<Map<String, dynamic>> items) {
-    return _scrollTable(
-      DataTable(
-        headingRowColor: WidgetStateProperty.all(Colors.grey.shade100),
-        headingRowHeight: 44,
-        dividerThickness: 0,
-        dataRowMaxHeight: 68,
-        dataRowMinHeight: 58,
-        horizontalMargin: 8,
-        columnSpacing: 24,
-        columns: [
-          DataColumn(label: _headerCheckbox(items)),
-          _col("Tên điểm / Địa chỉ"),
-          _col("Khách hàng"),
-          _col("Trạng thái"),
-          _col("Loại"),
-          _col("Tọa độ"),
-          _col("Dừng đỗ"),
-          _col("Thao tác"),
-        ],
-        rows: List.generate(items.length, (idx) {
-          final m = items[idx];
-          final isLoc = _isLoc(m);
-          final selected = _isPicked(m);
-          return DataRow(
-            color: WidgetStateProperty.all(
-              selected
-                  ? Colors.green.shade50
-                  : (idx % 2 == 0 ? Colors.white : Colors.grey.shade50),
-            ),
-            cells: [
-              DataCell(_rowCheckbox(m)),
-              ...(isLoc ? _locationCells(m) : _suggestionCells(m)),
-            ],
-          );
-        }),
-      ),
+          cells: [
+            DataCell(_rowCheckbox(m)),
+            ..._locationCells(m, idx + 1),
+          ],
+        );
+      },
     );
   }
 
@@ -803,7 +747,7 @@ class _LocationsScreenState extends State<LocationsScreen> {
     );
   }
 
-  /// Ô ở tiêu đề: chọn / bỏ chọn mọi dòng chọn được (điểm và gợi ý chờ duyệt) của trang đang xem.
+  /// Ô ở tiêu đề: chọn / bỏ chọn mọi dòng trong trang đang xem.
   Widget _headerCheckbox(List<Map<String, dynamic>> items) {
     final pickable = items.where(_canPick).toList();
     if (pickable.isEmpty) return const SizedBox(width: 24);
@@ -819,8 +763,8 @@ class _LocationsScreenState extends State<LocationsScreen> {
           materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
           visualDensity: const VisualDensity(horizontal: -4, vertical: -4),
           onChanged: _bulkBusy
-              ? null
-              : (_) => setState(() {
+               ? null
+               : (_) => setState(() {
                   final v = picked != pickable.length;
                   for (final m in pickable) {
                     _setPicked(m, v);
@@ -834,11 +778,6 @@ class _LocationsScreenState extends State<LocationsScreen> {
   Widget _buildBulkBar(List<Map<String, dynamic>> rows) {
     final pickable = rows.where(_canPick).toList();
     final canSelectMore = pickable.any((m) => !_isPicked(m));
-    final parts = <String>[
-      if (_selectedLocIds.isNotEmpty)
-        "${_selectedLocIds.length} điểm đã xác nhận",
-      if (_selectedIds.isNotEmpty) "${_selectedIds.length} gợi ý chờ duyệt",
-    ];
     return Container(
       width: double.infinity,
       padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
@@ -848,7 +787,7 @@ class _LocationsScreenState extends State<LocationsScreen> {
           Icon(Icons.checklist, size: 18, color: Colors.green.shade800),
           const SizedBox(width: 8),
           Text(
-            "Đã chọn ${parts.join(', ')}",
+            "Đã chọn ${_selectedLocIds.length} điểm",
             style: TextStyle(
               fontSize: 13,
               fontWeight: FontWeight.bold,
@@ -888,19 +827,6 @@ class _LocationsScreenState extends State<LocationsScreen> {
               onPressed: _bulkBusy ? null : _bulkDelete,
             ),
           ],
-          if (_selectedIds.isNotEmpty) ...[
-            const SizedBox(width: 8),
-            _toolbarButton(
-              icon: Icons.done_all,
-              label: _bulkBusy
-                  ? "Đang duyệt..."
-                  : "Duyệt ${_selectedIds.length} điểm",
-              color: Colors.green.shade700,
-              filled: true,
-              busy: _bulkBusy,
-              onPressed: _bulkBusy ? null : _bulkApprove,
-            ),
-          ],
         ],
       ),
     );
@@ -920,7 +846,7 @@ class _LocationsScreenState extends State<LocationsScreen> {
         content: const SizedBox(
           width: 460,
           child: Text(
-            "Đơn hàng cũ không bị ảnh hưởng. Điểm nào được duyệt từ gợi ý GPS thì gợi ý đó quay về trạng thái Chờ duyệt.",
+            "Xác nhận xóa các điểm đã chọn khỏi danh mục? Đơn hàng cũ không bị ảnh hưởng.",
             style: TextStyle(fontSize: 13.5),
           ),
         ),
@@ -961,281 +887,561 @@ class _LocationsScreenState extends State<LocationsScreen> {
     _load();
   }
 
-  Future<void> _bulkApprove() async {
-    final ids = _selectedIds.toList();
-    if (ids.isEmpty) return;
-    final picked = _suggestions.where((x) => ids.contains(_sugId(x))).toList();
-    String kind = 'BOTH';
-    final ok = await showDialog<bool>(
-      context: context,
-      builder: (dialogContext) => StatefulBuilder(
-        builder: (dialogContext, setDialogState) => AlertDialog(
-          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(4)),
-          title: Text(
-            "Duyệt ${ids.length} gợi ý vào danh mục",
-            style: const TextStyle(fontSize: 17, fontWeight: FontWeight.bold),
-          ),
-          content: SizedBox(
-            width: 480,
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(
-                  "Tên điểm sẽ lấy theo địa chỉ GPS, bán kính mặc định 100 m. "
-                  "Muốn đổi tên dễ nhớ thì bấm Sửa từng điểm sau khi duyệt.",
-                  style: TextStyle(fontSize: 12, color: Colors.grey.shade700),
-                ),
-                const SizedBox(height: 12),
-                _kindDropdown(kind, (v) => setDialogState(() => kind = v)),
-                const SizedBox(height: 10),
-                ConstrainedBox(
-                  constraints: const BoxConstraints(maxHeight: 220),
-                  child: Container(
-                    decoration: BoxDecoration(
-                      border: Border.all(color: Colors.grey.shade300),
-                      borderRadius: BorderRadius.circular(4),
-                    ),
-                    child: ListView.builder(
-                      shrinkWrap: true,
-                      itemCount: picked.length,
-                      itemBuilder: (_, i) {
-                        final x = picked[i];
-                        final station = _s(x, 'station_name');
-                        final name = station.isNotEmpty
-                            ? station
-                            : _s(x, 'address');
-                        return Padding(
-                          padding: const EdgeInsets.symmetric(
-                            horizontal: 10,
-                            vertical: 5,
-                          ),
-                          child: Text(
-                            "${i + 1}. ${name.isEmpty ? 'Không rõ địa chỉ' : name}",
-                            maxLines: 1,
-                            overflow: TextOverflow.ellipsis,
-                            style: const TextStyle(fontSize: 12.5),
-                          ),
-                        );
-                      },
-                    ),
-                  ),
-                ),
-              ],
-            ),
-          ),
-          actions: [
-            TextButton(
-              onPressed: () => Navigator.pop(dialogContext, false),
-              child: const Text("Hủy bỏ"),
-            ),
-            ElevatedButton(
-              style: ElevatedButton.styleFrom(
-                backgroundColor: Colors.green.shade700,
-                foregroundColor: Colors.white,
-                minimumSize: const Size(64, 36),
-                shape: RoundedRectangleBorder(
-                  borderRadius: BorderRadius.circular(4),
-                ),
-              ),
-              onPressed: () => Navigator.pop(dialogContext, true),
-              child: Text("Duyệt ${ids.length} điểm"),
-            ),
-          ],
-        ),
-      ),
-    );
-    if (ok != true || !mounted) return;
-
-    setState(() => _bulkBusy = true);
-    final res = await AdminService.bulkApproveLocationSuggestions(
-      ids,
-      kind: kind,
-    );
-    if (!mounted) return;
-    setState(() => _bulkBusy = false);
-    if (res['ok'] != true) {
-      _toast(res['message'].toString(), error: true);
-      return;
-    }
-    final data = res['data'] is Map
-        ? Map<String, dynamic>.from(res['data'] as Map)
-        : <String, dynamic>{};
-    final approved = int.tryParse('${data['approved'] ?? 0}') ?? 0;
-    final skippedItems = (data['skipped_items'] is List)
-        ? data['skipped_items'] as List
-        : const [];
-    setState(() => _selectedIds.clear());
-    if (skippedItems.isEmpty) {
-      _toast("Đã duyệt $approved điểm vào danh mục");
-    } else {
-      final reasons = skippedItems
-          .whereType<Map>()
-          .map((e) => (e['reason'] ?? '').toString())
-          .where((e) => e.isNotEmpty)
-          .take(3)
-          .join('; ');
-      _toast(
-        "Đã duyệt $approved điểm, bỏ qua ${skippedItems.length}: $reasons",
-        error: approved == 0,
-      );
-    }
-    _load();
-  }
-
-  Widget _nameCell({
-    required String title,
-    required String subtitle,
-    required bool confirmed,
-  }) {
-    return Row(
-      mainAxisSize: MainAxisSize.min,
-      children: [
-        Container(
-          padding: const EdgeInsets.all(6),
-          decoration: BoxDecoration(
-            color: confirmed ? Colors.blue.shade50 : Colors.amber.shade50,
-            borderRadius: BorderRadius.circular(4),
-          ),
-          child: Icon(
-            confirmed ? Icons.place : Icons.wrong_location_outlined,
-            size: 18,
-            color: confirmed ? Colors.blue : Colors.amber.shade800,
-          ),
-        ),
-        const SizedBox(width: 10),
-        ConstrainedBox(
-          constraints: const BoxConstraints(maxWidth: 320),
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Text(
-                title,
-                maxLines: 2,
-                overflow: TextOverflow.ellipsis,
-                style: TextStyle(
-                  fontWeight: FontWeight.bold,
-                  fontSize: 13,
-                  color: Colors.blueGrey.shade900,
-                ),
-              ),
-              if (subtitle.isNotEmpty)
-                Text(
-                  subtitle,
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                  style: TextStyle(fontSize: 11, color: Colors.grey.shade600),
-                ),
-            ],
-          ),
-        ),
-      ],
-    );
-  }
-
-  /// Danh sách tên khách hàng liên kết với điểm (customer_ids).
-  List<String> _customerNames(Map<String, dynamic> l) {
+  /// Danh sách bản ghi khách hàng liên kết với điểm (customer_ids).
+  List<Map<String, dynamic>> _linkedCustomers(Map<String, dynamic> l) {
     final ids = (l['customer_ids'] as List?) ?? const [];
     final idSet = ids.map((e) => int.tryParse('$e') ?? -1).toSet();
     return _customers
         .where((c) => idSet.contains(int.tryParse('${c['id']}')))
-        .map((c) => (c['name'] ?? '').toString())
+        .toList();
+  }
+
+  /// Danh sách tên khách hàng liên kết với điểm (customer_ids).
+  List<String> _customerNames(Map<String, dynamic> l) {
+    return _linkedCustomers(l)
+        .map((c) => (c['name'] ?? '').toString().trim())
         .where((n) => n.isNotEmpty)
         .toList();
   }
 
-  Widget _customerCell(List<String> custNames) {
+  /// Ô Khách hàng thu gọn trên 1 dòng: bấm vào để bật Dialog chi tiết Điểm & danh sách Khách hàng.
+  Widget _customerCell(Map<String, dynamic> l, List<String> custNames) {
     if (custNames.isEmpty) {
       return Text(
-        "—",
-        style: TextStyle(fontSize: 12.5, color: Colors.grey.shade400),
+        "Dùng chung",
+        style: TextStyle(fontSize: 12, color: Colors.grey.shade500),
       );
     }
-    final display = custNames.take(2).toList();
-    final extra = custNames.length - display.length;
+    final first = custNames.first;
+    final extra = custNames.length - 1;
     return Tooltip(
-      message: custNames.join('\n'),
-      child: ConstrainedBox(
-        constraints: const BoxConstraints(maxWidth: 240),
-        child: Wrap(
-          spacing: 4,
-          runSpacing: 4,
-          crossAxisAlignment: WrapCrossAlignment.center,
-          children: [
-            for (final name in display)
-              Container(
-                padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 2),
-                decoration: BoxDecoration(
-                  color: Colors.indigo.shade50,
-                  borderRadius: BorderRadius.circular(4),
-                  border: Border.all(color: Colors.indigo.shade200),
+      message: "Bấm để xem chi tiết ${custNames.length} khách hàng liên kết",
+      child: InkWell(
+        borderRadius: BorderRadius.circular(4),
+        onTap: () => _showLocationDetailDialog(l),
+        child: Container(
+          padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+          decoration: BoxDecoration(
+            color: Colors.indigo.shade50,
+            borderRadius: BorderRadius.circular(4),
+            border: Border.all(color: Colors.indigo.shade200),
+          ),
+          child: Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Icon(
+                Icons.groups_2_outlined,
+                size: 14,
+                color: Colors.indigo.shade700,
+              ),
+              const SizedBox(width: 6),
+              Flexible(
+                child: Text(
+                  first,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: TextStyle(
+                    fontSize: 11.5,
+                    fontWeight: FontWeight.w700,
+                    color: Colors.indigo.shade900,
+                  ),
                 ),
-                child: ConstrainedBox(
-                  constraints: const BoxConstraints(maxWidth: 160),
+              ),
+              if (extra > 0) ...[
+                const SizedBox(width: 5),
+                Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 1),
+                  decoration: BoxDecoration(
+                    color: Colors.indigo.shade700,
+                    borderRadius: BorderRadius.circular(3),
+                  ),
                   child: Text(
-                    name,
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
-                    style: TextStyle(
-                      fontSize: 11,
-                      fontWeight: FontWeight.w600,
-                      color: Colors.indigo.shade800,
+                    "+$extra",
+                    style: const TextStyle(
+                      fontSize: 10.5,
+                      fontWeight: FontWeight.bold,
+                      color: Colors.white,
                     ),
                   ),
                 ),
-              ),
-            if (extra > 0)
-              Container(
-                padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
-                decoration: BoxDecoration(
-                  color: Colors.grey.shade200,
-                  borderRadius: BorderRadius.circular(4),
-                ),
-                child: Text(
-                  "+$extra",
-                  style: TextStyle(
-                    fontSize: 11,
-                    fontWeight: FontWeight.bold,
-                    color: Colors.grey.shade800,
-                  ),
-                ),
-              ),
-          ],
+              ],
+            ],
+          ),
         ),
       ),
     );
   }
 
-  List<DataCell> _locationCells(Map<String, dynamic> l) {
+  /// Hộp thoại xem chi tiết đầy đủ tất cả các cột VietMap của Điểm nhận/giao + Danh sách Khách hàng liên kết.
+  void _showLocationDetailDialog(Map<String, dynamic> l) {
     final kind = _s(l, 'kind').isEmpty ? 'BOTH' : _s(l, 'kind');
-    final fromGps = _s(l, 'source').startsWith('GPS');
+    final isPickup = kind == 'PICKUP';
+    final stt = _s(l, 'stt');
+    final vietmapId = _s(l, 'vietmap_id');
+    final category = _s(l, 'category').isNotEmpty ? _s(l, 'category') : 'Chưa phân loại';
+    final name = _s(l, 'name');
     final address = _s(l, 'address');
+    final lat = _s(l, 'latitude');
+    final lng = _s(l, 'longitude');
+    final radius = _s(l, 'radius_m').isNotEmpty ? "${_s(l, 'radius_m')} m" : '100 m';
+    final phone = _s(l, 'phone');
+    final mobile = _s(l, 'mobile');
+    final contactPerson = _s(l, 'contact_person');
+    final email = _s(l, 'email');
+    final allowStop = l['allow_stop'] == true ||
+        _s(l, 'allow_stop').toLowerCase() == 'true' ||
+        _s(l, 'allow_stop') == '1';
     final note = _s(l, 'note');
+    final linkedCusts = _linkedCustomers(l);
+    final custFilterCtrl = TextEditingController();
+
+    Widget infoItem(String label, String value, {Color? valueColor, bool bold = false}) {
+      final display = value.trim().isEmpty ? '—' : value.trim();
+      return Container(
+        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 7),
+        decoration: BoxDecoration(
+          color: Colors.grey.shade50,
+          borderRadius: BorderRadius.circular(4),
+          border: Border.all(color: Colors.grey.shade200),
+        ),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Text(
+              label,
+              style: TextStyle(
+                fontSize: 11,
+                fontWeight: FontWeight.w600,
+                color: Colors.grey.shade600,
+              ),
+            ),
+            const SizedBox(height: 2),
+            SelectableText(
+              display,
+              style: TextStyle(
+                fontSize: 12.5,
+                fontWeight: bold ? FontWeight.bold : FontWeight.w600,
+                color: value.trim().isEmpty
+                    ? Colors.grey.shade400
+                    : (valueColor ?? Colors.blueGrey.shade900),
+              ),
+            ),
+          ],
+        ),
+      );
+    }
+
+    showDialog(
+      context: context,
+      builder: (dialogCtx) => StatefulBuilder(
+        builder: (dialogCtx, setDialogState) {
+          final q = custFilterCtrl.text.trim().toLowerCase();
+          final filteredCusts = linkedCusts.where((c) {
+            if (q.isEmpty) return true;
+            return _s(c, 'name').toLowerCase().contains(q) ||
+                _s(c, 'code').toLowerCase().contains(q) ||
+                _s(c, 'zalo_group_name').toLowerCase().contains(q) ||
+                _s(c, 'product_code').toLowerCase().contains(q);
+          }).toList();
+
+          return AlertDialog(
+            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(4)),
+            titlePadding: const EdgeInsets.fromLTRB(18, 16, 18, 10),
+            contentPadding: const EdgeInsets.fromLTRB(18, 4, 18, 12),
+            actionsPadding: const EdgeInsets.fromLTRB(18, 6, 18, 14),
+            title: Row(
+              children: [
+                Container(
+                  padding: const EdgeInsets.all(7),
+                  decoration: BoxDecoration(
+                    color: isPickup ? Colors.amber.shade100 : Colors.blue.shade50,
+                    borderRadius: BorderRadius.circular(4),
+                  ),
+                  child: Icon(
+                    isPickup ? Icons.warehouse_outlined : Icons.place,
+                    size: 20,
+                    color: isPickup ? Colors.amber.shade900 : Colors.blue.shade800,
+                  ),
+                ),
+                const SizedBox(width: 10),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        name,
+                        style: const TextStyle(
+                          fontSize: 16,
+                          fontWeight: FontWeight.bold,
+                        ),
+                      ),
+                      const SizedBox(height: 2),
+                      Text(
+                        [
+                          if (stt.isNotEmpty) "STT #$stt",
+                          if (vietmapId.isNotEmpty) "Id VietMap: $vietmapId",
+                          "Danh mục: $category",
+                        ].join(' • '),
+                        style: TextStyle(
+                          fontSize: 11.5,
+                          color: Colors.grey.shade600,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+                const SizedBox(width: 8),
+                _badge(_kindLabels[kind] ?? kind, _kindColor(kind)),
+              ],
+            ),
+            content: SizedBox(
+              width: 640,
+              child: SingleChildScrollView(
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    const Divider(height: 12),
+                    const Text(
+                      "Thông tin chi tiết Điểm nhận / giao (VietMap)",
+                      style: TextStyle(
+                        fontSize: 13,
+                        fontWeight: FontWeight.bold,
+                        color: Color(0xFF1E293B),
+                      ),
+                    ),
+                    const SizedBox(height: 8),
+                    Row(
+                      children: [
+                        Expanded(child: infoItem("# (Số thứ tự)", stt)),
+                        const SizedBox(width: 8),
+                        Expanded(
+                          child: infoItem(
+                            "Id VietMap",
+                            vietmapId,
+                            valueColor: Colors.indigo.shade800,
+                            bold: true,
+                          ),
+                        ),
+                        const SizedBox(width: 8),
+                        Expanded(child: infoItem("Danh Mục", category)),
+                      ],
+                    ),
+                    const SizedBox(height: 8),
+                    infoItem("Địa Chỉ", address, bold: true),
+                    const SizedBox(height: 8),
+                    Row(
+                      children: [
+                        Expanded(child: infoItem("Vĩ Độ (Latitude)", lat)),
+                        const SizedBox(width: 8),
+                        Expanded(child: infoItem("Kinh Độ (Longitude)", lng)),
+                        const SizedBox(width: 8),
+                        Expanded(child: infoItem("Bán Kính", radius)),
+                      ],
+                    ),
+                    const SizedBox(height: 8),
+                    Row(
+                      children: [
+                        Expanded(child: infoItem("Số ĐT", phone)),
+                        const SizedBox(width: 8),
+                        Expanded(child: infoItem("Di Động", mobile)),
+                        const SizedBox(width: 8),
+                        Expanded(child: infoItem("Người Liên Hệ", contactPerson)),
+                      ],
+                    ),
+                    const SizedBox(height: 8),
+                    Row(
+                      children: [
+                        Expanded(flex: 2, child: infoItem("Email", email)),
+                        const SizedBox(width: 8),
+                        Expanded(
+                          flex: 1,
+                          child: infoItem(
+                            "Cho Phép Dừng Xe",
+                            allowStop ? "Cho phép (True)" : "Không (False)",
+                            valueColor: allowStop
+                                ? Colors.green.shade800
+                                : Colors.grey.shade700,
+                            bold: true,
+                          ),
+                        ),
+                      ],
+                    ),
+                    if (note.isNotEmpty) ...[
+                      const SizedBox(height: 8),
+                      infoItem("Ghi Chú", note),
+                    ],
+                    const SizedBox(height: 14),
+                    Row(
+                      children: [
+                        Text(
+                          "Khách hàng liên kết (${linkedCusts.length})",
+                          style: const TextStyle(
+                            fontSize: 13,
+                            fontWeight: FontWeight.bold,
+                            color: Color(0xFF1E293B),
+                          ),
+                        ),
+                        const Spacer(),
+                        if (linkedCusts.isEmpty)
+                          Text(
+                            "Điểm dùng chung cho mọi khách hàng",
+                            style: TextStyle(
+                              fontSize: 11.5,
+                              color: Colors.grey.shade600,
+                              fontStyle: FontStyle.italic,
+                            ),
+                          ),
+                      ],
+                    ),
+                    if (linkedCusts.isNotEmpty) ...[
+                      const SizedBox(height: 8),
+                      if (linkedCusts.length > 4)
+                        Padding(
+                          padding: const EdgeInsets.only(bottom: 8),
+                          child: SizedBox(
+                            height: 34,
+                            child: TextField(
+                              controller: custFilterCtrl,
+                              onChanged: (_) => setDialogState(() {}),
+                              style: const TextStyle(fontSize: 12.5),
+                              decoration: const InputDecoration(
+                                isDense: true,
+                                hintText: "Tìm nhanh khách hàng trong danh sách liên kết...",
+                                prefixIcon: Icon(Icons.search, size: 16),
+                                prefixIconConstraints: BoxConstraints(
+                                  minWidth: 32,
+                                  minHeight: 34,
+                                  maxHeight: 34,
+                                ),
+                                contentPadding: EdgeInsets.symmetric(
+                                  horizontal: 10,
+                                  vertical: 0,
+                                ),
+                              ),
+                            ),
+                          ),
+                        ),
+                      ConstrainedBox(
+                        constraints: const BoxConstraints(maxHeight: 220),
+                        child: Container(
+                          decoration: BoxDecoration(
+                            border: Border.all(color: Colors.grey.shade300),
+                            borderRadius: BorderRadius.circular(4),
+                          ),
+                          child: filteredCusts.isEmpty
+                              ? Padding(
+                                  padding: const EdgeInsets.all(12),
+                                  child: Text(
+                                    "Không có khách hàng khớp từ khóa",
+                                    style: TextStyle(
+                                      fontSize: 12,
+                                      color: Colors.grey.shade600,
+                                    ),
+                                  ),
+                                )
+                              : ListView.separated(
+                                  shrinkWrap: true,
+                                  itemCount: filteredCusts.length,
+                                  separatorBuilder: (_, _) => Divider(
+                                    height: 1,
+                                    color: Colors.grey.shade200,
+                                  ),
+                                  itemBuilder: (_, i) {
+                                    final c = filteredCusts[i];
+                                    final cName = _s(c, 'name');
+                                    final cCode = _s(c, 'code');
+                                    final cProd = _s(c, 'product_code');
+                                    final cGroup = _s(c, 'zalo_group_name');
+                                    return Padding(
+                                      padding: const EdgeInsets.symmetric(
+                                        horizontal: 10,
+                                        vertical: 7,
+                                      ),
+                                      child: Row(
+                                        children: [
+                                          Icon(
+                                            Icons.storefront_outlined,
+                                            size: 16,
+                                            color: Colors.indigo.shade700,
+                                          ),
+                                          const SizedBox(width: 8),
+                                          Expanded(
+                                            child: Column(
+                                              crossAxisAlignment:
+                                                  CrossAxisAlignment.start,
+                                              children: [
+                                                Text(
+                                                  "$cName  ($cCode)",
+                                                  style: TextStyle(
+                                                    fontSize: 12.5,
+                                                    fontWeight: FontWeight.bold,
+                                                    color: Colors
+                                                        .blueGrey.shade900,
+                                                  ),
+                                                ),
+                                                if (cProd.isNotEmpty ||
+                                                    cGroup.isNotEmpty)
+                                                  Text(
+                                                    [
+                                                      if (cProd.isNotEmpty)
+                                                        "SP: $cProd",
+                                                      if (cGroup.isNotEmpty)
+                                                        "Zalo: $cGroup",
+                                                    ].join(' • '),
+                                                    style: TextStyle(
+                                                      fontSize: 11,
+                                                      color:
+                                                          Colors.grey.shade600,
+                                                    ),
+                                                  ),
+                                              ],
+                                            ),
+                                          ),
+                                        ],
+                                      ),
+                                    );
+                                  },
+                                ),
+                        ),
+                      ),
+                    ],
+                  ],
+                ),
+              ),
+            ),
+            actions: [
+              TextButton(
+                onPressed: () => Navigator.pop(dialogCtx),
+                child: const Text("Đóng"),
+              ),
+              ElevatedButton.icon(
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: Colors.blue.shade800,
+                  foregroundColor: Colors.white,
+                  minimumSize: const Size(0, 36),
+                  shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(4),
+                  ),
+                ),
+                icon: const Icon(Icons.edit, size: 15),
+                label: const Text("Chỉnh sửa điểm"),
+                onPressed: () {
+                  Navigator.pop(dialogCtx);
+                  _showForm(location: l);
+                },
+              ),
+            ],
+          );
+        },
+      ),
+    ).then((_) => custFilterCtrl.dispose());
+  }
+
+  List<DataCell> _locationCells(Map<String, dynamic> l, int fallbackIndex) {
+    final kind = _s(l, 'kind').isEmpty ? 'BOTH' : _s(l, 'kind');
+    final sttText = _s(l, 'stt').isNotEmpty ? _s(l, 'stt') : '$fallbackIndex';
+    final vietmapId = _s(l, 'vietmap_id');
+    final address = _s(l, 'address');
+    final radius = _s(l, 'radius_m').isNotEmpty ? _s(l, 'radius_m') : '100';
+    final allowStop = l['allow_stop'] == true ||
+        _s(l, 'allow_stop').toLowerCase() == 'true' ||
+        _s(l, 'allow_stop') == '1';
     final custNames = _customerNames(l);
+    final coordStr = _coord(l);
+    final subParts = <String>[
+      if (vietmapId.isNotEmpty) "Id: $vietmapId",
+      if (address.isNotEmpty) address,
+    ];
     return [
-      _cell(
-        _nameCell(
-          title: _s(l, 'name'),
-          subtitle: [address, note].where((e) => e.isNotEmpty).join(' • '),
-          confirmed: true,
-        ),
-      ),
-      _cell(_customerCell(custNames)),
-      _cell(
-        Tooltip(
-          message: fromGps ? "Đã duyệt từ lịch sử dừng đỗ GPS" : "Tạo thủ công",
-          child: _badge("Đã xác nhận", Colors.green),
-        ),
-      ),
-      _cell(_badge(_kindLabels[kind] ?? kind, _kindColor(kind))),
-      _cell(_plain(_coord(l), maxWidth: 170)),
+      // 1. #
       _cell(
         Text(
-          "—",
-          style: TextStyle(fontSize: 12.5, color: Colors.grey.shade400),
+          sttText,
+          style: TextStyle(
+            fontSize: 12.5,
+            fontWeight: FontWeight.w700,
+            color: Colors.blueGrey.shade700,
+          ),
         ),
       ),
+      // 2. Tên điểm / Địa chỉ
+      _cell(
+        Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Container(
+              padding: const EdgeInsets.all(6),
+              decoration: BoxDecoration(
+                color: kind == 'PICKUP'
+                    ? Colors.amber.shade100
+                    : Colors.blue.shade50,
+                borderRadius: BorderRadius.circular(4),
+              ),
+              child: Icon(
+                kind == 'PICKUP' ? Icons.warehouse_outlined : Icons.place,
+                size: 17,
+                color: kind == 'PICKUP'
+                    ? Colors.amber.shade900
+                    : Colors.blue.shade700,
+              ),
+            ),
+            const SizedBox(width: 9),
+            Flexible(
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    _s(l, 'name'),
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: TextStyle(
+                      fontWeight: FontWeight.bold,
+                      fontSize: 13,
+                      color: Colors.blueGrey.shade900,
+                    ),
+                  ),
+                  if (subParts.isNotEmpty)
+                    Text(
+                      subParts.join(' • '),
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: TextStyle(fontSize: 11, color: Colors.grey.shade600),
+                    ),
+                ],
+              ),
+            ),
+          ],
+        ),
+      ),
+      // 3. Loại điểm (Điểm nhận - dòng bôi vàng / Điểm giao)
+      _cell(_badge(_kindLabels[kind] ?? kind, _kindColor(kind))),
+      // 4. Khách hàng liên kết (thu gọn 1 dòng, bấm để bật Dialog chi tiết)
+      _cell(_customerCell(l, custNames)),
+      // 5. Tọa độ / Bán kính
+      _cell(
+        Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(
+              coordStr.isNotEmpty ? coordStr : "—",
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w600),
+            ),
+            Text(
+              "Bán kính: ${radius}m${allowStop ? ' • Cho dừng' : ''}",
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              style: TextStyle(fontSize: 11, color: Colors.grey.shade600),
+            ),
+          ],
+        ),
+      ),
+      // 6. Thao tác
       _cell(
         Row(
           mainAxisSize: MainAxisSize.min,
@@ -1247,7 +1453,7 @@ class _LocationsScreenState extends State<LocationsScreen> {
               Colors.blue.shade300,
               () => _showForm(location: l),
             ),
-            const SizedBox(width: 8),
+            const SizedBox(width: 6),
             _rowButton(
               Icons.delete_outline,
               "Xóa",
@@ -1255,96 +1461,6 @@ class _LocationsScreenState extends State<LocationsScreen> {
               Colors.red.shade200,
               () => _confirmDelete(l),
             ),
-          ],
-        ),
-      ),
-    ];
-  }
-
-  List<DataCell> _suggestionCells(Map<String, dynamic> x) {
-    final station = _s(x, 'station_name');
-    final address = _s(x, 'address');
-    final minutes = int.tryParse(_s(x, 'total_minutes')) ?? 0;
-    final duration = minutes >= 60
-        ? "${minutes ~/ 60} giờ ${minutes % 60} phút"
-        : "$minutes phút";
-    final lastSeen = _s(x, 'last_seen').replaceFirst('T', ' ');
-    final lastShort = lastSeen.length > 16
-        ? lastSeen.substring(0, 16)
-        : lastSeen;
-    final status = _s(x, 'status');
-    final ignored = status == 'IGNORED';
-    return [
-      _cell(
-        _nameCell(
-          title: station.isNotEmpty
-              ? station
-              : (address.isNotEmpty ? address : "Không rõ địa chỉ"),
-          subtitle: station.isNotEmpty && address.isNotEmpty ? address : '',
-          confirmed: false,
-        ),
-      ),
-      _cell(
-        Text(
-          "—",
-          style: TextStyle(fontSize: 12.5, color: Colors.grey.shade400),
-        ),
-      ),
-      _cell(
-        Tooltip(
-          message:
-              "Lấy từ lịch sử dừng đỗ GPS, chưa dùng được trong form đơn cho tới khi duyệt",
-          child: ignored
-              ? _badge("Đã bỏ qua", Colors.grey)
-              : _badge("Chờ duyệt", Colors.amber),
-        ),
-      ),
-      _cell(
-        Text(
-          "—",
-          style: TextStyle(fontSize: 12.5, color: Colors.grey.shade400),
-        ),
-      ),
-      _cell(_plain(_coord(x), maxWidth: 170)),
-      _cell(
-        Tooltip(
-          message:
-              "Xe: ${_s(x, 'vehicles')}\nTổng thời gian: $duration\nLần cuối: $lastShort",
-          child: Text(
-            "${_s(x, 'visit_count')} lần • ${_s(x, 'vehicle_count')} xe",
-            style: const TextStyle(fontSize: 12.5, fontWeight: FontWeight.w600),
-          ),
-        ),
-      ),
-      _cell(
-        Row(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            if (ignored)
-              _rowButton(
-                Icons.undo,
-                "Khôi phục",
-                Colors.blue.shade800,
-                Colors.blue.shade300,
-                () => _restore(x),
-              )
-            else ...[
-              _rowButton(
-                Icons.check,
-                "Duyệt",
-                Colors.green.shade800,
-                Colors.green.shade300,
-                () => _approve(x),
-              ),
-              const SizedBox(width: 8),
-              _rowButton(
-                Icons.block,
-                "Bỏ qua",
-                Colors.grey.shade700,
-                Colors.grey.shade400,
-                () => _ignore(x),
-              ),
-            ],
           ],
         ),
       ),
@@ -1373,140 +1489,6 @@ class _LocationsScreenState extends State<LocationsScreen> {
         style: const TextStyle(fontSize: 12, fontWeight: FontWeight.bold),
       ),
       onPressed: onPressed,
-    );
-  }
-
-  Widget _buildPagination({
-    required int totalItems,
-    required int startIndex,
-    required int endIndex,
-    required int validPage,
-    required int totalPages,
-  }) {
-    Widget navBtn(IconData icon, String tip, bool enabled, int page) =>
-        IconButton(
-          icon: Icon(icon, size: 18),
-          padding: EdgeInsets.zero,
-          constraints: const BoxConstraints(minWidth: 28, minHeight: 28),
-          tooltip: tip,
-          onPressed: enabled ? () => setState(() => _currentPage = page) : null,
-        );
-
-    return Container(
-      height: 40,
-      padding: const EdgeInsets.symmetric(horizontal: 16),
-      decoration: BoxDecoration(
-        color: Colors.white,
-        border: Border(top: BorderSide(color: Colors.grey.shade400, width: 1)),
-      ),
-      child: Row(
-        mainAxisAlignment: MainAxisAlignment.spaceBetween,
-        children: [
-          Text(
-            "Hiển thị ${startIndex + 1} - $endIndex trên tổng số $totalItems điểm",
-            style: TextStyle(
-              fontSize: 12,
-              color: Colors.grey.shade700,
-              fontWeight: FontWeight.w500,
-            ),
-          ),
-          Row(
-            children: [
-              const Text(
-                "Số dòng/trang: ",
-                style: TextStyle(fontSize: 12, color: Colors.black87),
-              ),
-              const SizedBox(width: 4),
-              PopupMenuButton<int>(
-                tooltip: "Số dòng mỗi trang",
-                initialValue: _pageSize,
-                position: PopupMenuPosition.over,
-                constraints: const BoxConstraints(minWidth: 64),
-                onSelected: (val) => setState(() {
-                  _pageSize = val;
-                  _currentPage = 1;
-                }),
-                itemBuilder: (_) => const [5, 10, 20, 50]
-                    .map(
-                      (n) => PopupMenuItem<int>(
-                        value: n,
-                        height: 36,
-                        child: Text(
-                          "$n",
-                          style: const TextStyle(fontSize: 12.5),
-                        ),
-                      ),
-                    )
-                    .toList(),
-                child: Padding(
-                  padding: const EdgeInsets.symmetric(
-                    horizontal: 4,
-                    vertical: 2,
-                  ),
-                  child: Row(
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      Text(
-                        "$_pageSize",
-                        style: const TextStyle(
-                          fontSize: 12,
-                          color: Colors.blueGrey,
-                          fontWeight: FontWeight.bold,
-                        ),
-                      ),
-                      const Icon(
-                        Icons.arrow_drop_down,
-                        size: 18,
-                        color: Colors.blueGrey,
-                      ),
-                    ],
-                  ),
-                ),
-              ),
-              const SizedBox(width: 14),
-              navBtn(Icons.first_page, "Trang đầu", validPage > 1, 1),
-              navBtn(
-                Icons.chevron_left,
-                "Trang trước",
-                validPage > 1,
-                validPage - 1,
-              ),
-              const SizedBox(width: 4),
-              Container(
-                padding: const EdgeInsets.symmetric(
-                  horizontal: 10,
-                  vertical: 3,
-                ),
-                decoration: BoxDecoration(
-                  color: Colors.blue.shade50,
-                  borderRadius: BorderRadius.circular(4),
-                ),
-                child: Text(
-                  "$validPage / $totalPages",
-                  style: TextStyle(
-                    fontSize: 12,
-                    fontWeight: FontWeight.bold,
-                    color: Colors.blue.shade800,
-                  ),
-                ),
-              ),
-              const SizedBox(width: 4),
-              navBtn(
-                Icons.chevron_right,
-                "Trang sau",
-                validPage < totalPages,
-                validPage + 1,
-              ),
-              navBtn(
-                Icons.last_page,
-                "Trang cuối",
-                validPage < totalPages,
-                totalPages,
-              ),
-            ],
-          ),
-        ],
-      ),
     );
   }
 
@@ -1733,6 +1715,17 @@ class _LocationsScreenState extends State<LocationsScreen> {
 
   Future<void> _showForm({Map<String, dynamic>? location}) async {
     final isEdit = location != null;
+    final sttCtrl = TextEditingController(
+      text: isEdit ? _s(location, 'stt') : '',
+    );
+    final vietmapIdCtrl = TextEditingController(
+      text: isEdit ? _s(location, 'vietmap_id') : '',
+    );
+    final categoryCtrl = TextEditingController(
+      text: isEdit && _s(location, 'category').isNotEmpty
+          ? _s(location, 'category')
+          : 'Chưa phân loại',
+    );
     final nameCtrl = TextEditingController(
       text: isEdit ? _s(location, 'name') : '',
     );
@@ -1745,15 +1738,31 @@ class _LocationsScreenState extends State<LocationsScreen> {
     final lngCtrl = TextEditingController(
       text: isEdit ? _s(location, 'longitude') : '',
     );
+    final phoneCtrl = TextEditingController(
+      text: isEdit ? _s(location, 'phone') : '',
+    );
     final radiusCtrl = TextEditingController(
       text: isEdit ? _s(location, 'radius_m') : '100',
     );
+    final contactPersonCtrl = TextEditingController(
+      text: isEdit ? _s(location, 'contact_person') : '',
+    );
+    final mobileCtrl = TextEditingController(
+      text: isEdit ? _s(location, 'mobile') : '',
+    );
+    final emailCtrl = TextEditingController(
+      text: isEdit ? _s(location, 'email') : '',
+    );
+    bool allowStop = isEdit &&
+        (location['allow_stop'] == true ||
+            _s(location, 'allow_stop').toLowerCase() == 'true' ||
+            _s(location, 'allow_stop') == '1');
     final noteCtrl = TextEditingController(
       text: isEdit ? _s(location, 'note') : '',
     );
     String kind = isEdit && _kindLabels.containsKey(_s(location, 'kind'))
         ? _s(location, 'kind')
-        : 'BOTH';
+        : 'DELIVERY';
     // Multiselect khách hàng liên kết với điểm: rỗng = điểm dùng chung cho mọi khách hàng
     final selectedCustomerIds = (isEdit
             ? ((location['customer_ids'] as List?) ?? const [])
@@ -1922,7 +1931,7 @@ class _LocationsScreenState extends State<LocationsScreen> {
               style: const TextStyle(fontSize: 17, fontWeight: FontWeight.bold),
             ),
             content: SizedBox(
-              width: 480,
+              width: 540,
               child: Form(
                 key: formKey,
                 child: SingleChildScrollView(
@@ -1930,11 +1939,45 @@ class _LocationsScreenState extends State<LocationsScreen> {
                     mainAxisSize: MainAxisSize.min,
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
+                      Row(
+                        children: [
+                          Expanded(
+                            flex: 2,
+                            child: _textField(
+                              sttCtrl,
+                              "# (STT)",
+                              Icons.format_list_numbered,
+                              hint: "VD: 1",
+                              type: TextInputType.number,
+                            ),
+                          ),
+                          const SizedBox(width: 10),
+                          Expanded(
+                            flex: 3,
+                            child: _textField(
+                              vietmapIdCtrl,
+                              "Id (VietMap)",
+                              Icons.tag,
+                              hint: "VD: 98040",
+                            ),
+                          ),
+                          const SizedBox(width: 10),
+                          Expanded(
+                            flex: 4,
+                            child: _textField(
+                              categoryCtrl,
+                              "Danh Mục",
+                              Icons.category_outlined,
+                              hint: "VD: Chưa phân loại",
+                            ),
+                          ),
+                        ],
+                      ),
                       _textField(
                         nameCtrl,
                         "Tên điểm *",
                         Icons.place_outlined,
-                        hint: "VD: Kho Xi Măng Bỉm Sơn",
+                        hint: "VD: Ht_P.Hữu hoặc ACC244(Cầu N.Đ.Chiểu/F.Unisoil",
                         onChanged: (val) {
                           // Neu nguoi dung nhap Ten diem ma Dia chi va Toa do dang trong -> tu dong goi y toa do
                           if (addrCtrl.text.trim().isEmpty &&
@@ -1952,9 +1995,23 @@ class _LocationsScreenState extends State<LocationsScreen> {
                       ),
                       Padding(
                         padding: const EdgeInsets.only(bottom: 10),
-                        child: _kindDropdown(kind, (v) {
-                          if (!dialogClosed) setDialogState(() => kind = v);
-                        }),
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            const Text(
+                              "Loại điểm (Dòng bôi vàng = Điểm nhận, còn lại = Điểm giao)",
+                              style: TextStyle(
+                                fontSize: 12.5,
+                                fontWeight: FontWeight.w600,
+                                color: Color(0xFF1E293B),
+                              ),
+                            ),
+                            const SizedBox(height: 4),
+                            _kindDropdown(kind, (v) {
+                              if (!dialogClosed) setDialogState(() => kind = v);
+                            }),
+                          ],
+                        ),
                       ),
                       _textField(
                         addrCtrl,
@@ -2259,24 +2316,118 @@ class _LocationsScreenState extends State<LocationsScreen> {
                           ),
                         ],
                       ),
-                      _textField(
-                        radiusCtrl,
-                        "Bán kính nhận diện (m)",
-                        Icons.radar,
-                        hint: "VD: 100",
-                        type: TextInputType.number,
-                        validator: (v) {
-                          final t = (v ?? '').trim();
-                          if (t.isEmpty) return null;
-                          final n = int.tryParse(t);
-                          return (n == null || n < 10 || n > 5000)
-                              ? "Từ 10 đến 5000"
-                              : null;
-                        },
+                      Row(
+                        children: [
+                          Expanded(
+                            child: _textField(
+                              radiusCtrl,
+                              "Bán Kính (m)",
+                              Icons.radar,
+                              hint: "VD: 100",
+                              type: TextInputType.number,
+                              validator: (v) {
+                                final t = (v ?? '').trim();
+                                if (t.isEmpty) return null;
+                                final n = int.tryParse(t);
+                                return (n == null || n < 0 || n > 5000)
+                                    ? "Từ 0 đến 5000"
+                                    : null;
+                              },
+                            ),
+                          ),
+                          const SizedBox(width: 10),
+                          Expanded(
+                            child: _textField(
+                              phoneCtrl,
+                              "Số ĐT",
+                              Icons.phone_outlined,
+                              hint: "Số điện thoại bàn/trạm",
+                              type: TextInputType.phone,
+                            ),
+                          ),
+                          const SizedBox(width: 10),
+                          Expanded(
+                            child: _textField(
+                              mobileCtrl,
+                              "Di Động",
+                              Icons.smartphone_outlined,
+                              hint: "Số di động",
+                              type: TextInputType.phone,
+                            ),
+                          ),
+                        ],
+                      ),
+                      Row(
+                        children: [
+                          Expanded(
+                            child: _textField(
+                              contactPersonCtrl,
+                              "Người Liên Hệ",
+                              Icons.person_outline,
+                              hint: "Tên người liên hệ",
+                            ),
+                          ),
+                          const SizedBox(width: 10),
+                          Expanded(
+                            child: _textField(
+                              emailCtrl,
+                              "Email",
+                              Icons.email_outlined,
+                              hint: "VD: dieuphoisaomai@gmail.com",
+                              type: TextInputType.emailAddress,
+                            ),
+                          ),
+                        ],
+                      ),
+                      Padding(
+                        padding: const EdgeInsets.only(bottom: 10),
+                        child: InkWell(
+                          borderRadius: BorderRadius.circular(4),
+                          onTap: () {
+                            if (!dialogClosed) {
+                              setDialogState(() => allowStop = !allowStop);
+                            }
+                          },
+                          child: Container(
+                            padding: const EdgeInsets.symmetric(
+                              horizontal: 10,
+                              vertical: 8,
+                            ),
+                            decoration: BoxDecoration(
+                              color: Colors.grey.shade50,
+                              borderRadius: BorderRadius.circular(4),
+                              border: Border.all(color: Colors.grey.shade300),
+                            ),
+                            child: Row(
+                              children: [
+                                SizedBox(
+                                  width: 20,
+                                  height: 20,
+                                  child: Checkbox(
+                                    value: allowStop,
+                                    onChanged: (v) {
+                                      if (!dialogClosed) {
+                                        setDialogState(() => allowStop = v ?? false);
+                                      }
+                                    },
+                                  ),
+                                ),
+                                const SizedBox(width: 8),
+                                const Text(
+                                  "Cho Phép Dừng Xe (True / False)",
+                                  style: TextStyle(
+                                    fontSize: 12.5,
+                                    fontWeight: FontWeight.w600,
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ),
+                        ),
                       ),
                       _textField(
                         noteCtrl,
-                        "Ghi chú",
+                        "Ghi Chú",
                         Icons.notes_outlined,
                         maxLines: 2,
                       ),
@@ -2355,12 +2506,20 @@ class _LocationsScreenState extends State<LocationsScreen> {
                         final res = await AdminService.saveLocation(
                           id: isEdit ? int.tryParse('${location['id']}') : null,
                           data: {
+                            'stt': int.tryParse(sttCtrl.text.trim()),
+                            'vietmap_id': vietmapIdCtrl.text.trim(),
+                            'category': categoryCtrl.text.trim(),
                             'name': nameCtrl.text.trim(),
                             'address': addrCtrl.text.trim(),
                             'kind': kind,
                             'latitude': lat,
                             'longitude': lng,
+                            'phone': phoneCtrl.text.trim(),
                             'radius_m': int.tryParse(radiusCtrl.text.trim()),
+                            'contact_person': contactPersonCtrl.text.trim(),
+                            'mobile': mobileCtrl.text.trim(),
+                            'email': emailCtrl.text.trim(),
+                            'allow_stop': allowStop,
                             'note': noteCtrl.text.trim(),
                             'customer_ids': selectedCustomerIds.toList(),
                           },
@@ -2390,191 +2549,22 @@ class _LocationsScreenState extends State<LocationsScreen> {
     );
     geocodeDebounce?.cancel();
     for (final c in [
+      sttCtrl,
+      vietmapIdCtrl,
+      categoryCtrl,
       nameCtrl,
       addrCtrl,
       latCtrl,
       lngCtrl,
+      phoneCtrl,
       radiusCtrl,
+      contactPersonCtrl,
+      mobileCtrl,
+      emailCtrl,
       noteCtrl,
       custSearchCtrl,
     ]) {
       c.dispose();
-    }
-  }
-
-  Future<void> _approve(Map<String, dynamic> s) async {
-    final station = _s(s, 'station_name');
-    final address = _s(s, 'address');
-    final nameCtrl = TextEditingController(
-      text: station.isNotEmpty ? station : address,
-    );
-    final addrCtrl = TextEditingController(text: address);
-    final noteCtrl = TextEditingController();
-    String kind = 'BOTH';
-    // Multiselect khách hàng liên kết với điểm: rỗng = điểm dùng chung cho mọi khách hàng
-    final Set<int> selectedCustomerIds = {};
-    final custSearchCtrl = TextEditingController();
-    final formKey = GlobalKey<FormState>();
-    bool saving = false;
-    // Co chan moi setDialogState khi dialog dang dong: cac callback async
-    // (luu diem, tai du lieu) khong duoc cham vao dialog da pop.
-    bool dialogClosed = false;
-
-    await showDialog(
-      context: context,
-      barrierDismissible: false,
-      builder: (dialogContext) => StatefulBuilder(
-        builder: (dialogContext, setDialogState) => AlertDialog(
-          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(4)),
-          title: const Text(
-            "Duyệt gợi ý vào danh mục",
-            style: TextStyle(fontSize: 17, fontWeight: FontWeight.bold),
-          ),
-          content: SizedBox(
-            width: 460,
-            child: Form(
-              key: formKey,
-              child: SingleChildScrollView(
-                child: Column(
-                  mainAxisSize: MainAxisSize.min,
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(
-                      "${_s(s, 'visit_count')} lần dừng, ${_s(s, 'vehicle_count')} xe. Tọa độ: ${_coord(s)}",
-                      style: TextStyle(
-                        fontSize: 12,
-                        color: Colors.grey.shade700,
-                      ),
-                    ),
-                    const SizedBox(height: 12),
-                    _textField(
-                      nameCtrl,
-                      "Tên điểm *",
-                      Icons.place_outlined,
-                      hint: "VD: Kho Xi Măng Bỉm Sơn",
-                      validator: (v) => (v ?? '').trim().isEmpty
-                          ? "Đặt tên dễ nhớ, ví dụ: Kho Xi Măng Bỉm Sơn"
-                          : null,
-                    ),
-                    Padding(
-                      padding: const EdgeInsets.only(bottom: 10),
-                      child: _kindDropdown(
-                        kind,
-                        (v) { if (!dialogClosed) setDialogState(() => kind = v); },
-                      ),
-                    ),
-                    _textField(
-                      addrCtrl,
-                      "Địa chỉ",
-                      Icons.location_on_outlined,
-                      maxLines: 2,
-                      hint: "Nhập địa chỉ chi tiết",
-                    ),
-                    _textField(
-                      noteCtrl,
-                      "Ghi chú",
-                      Icons.notes_outlined,
-                      maxLines: 2,
-                    ),
-                    const SizedBox(height: 12),
-                    // Khách hàng liên kết (chọn nhiều): điểm không gán KH = dùng chung
-                    _buildCustomerMultiSelect(
-                      selectedCustomerIds: selectedCustomerIds,
-                      searchCtrl: custSearchCtrl,
-                      onChanged: () { if (!dialogClosed) setDialogState(() {}); },
-                    ),
-                  ],
-                ),
-              ),
-            ),
-          ),
-          actions: [
-            TextButton(
-              onPressed: saving
-                    ? null
-                    : () {
-                        dialogClosed = true;
-                        FocusManager.instance.primaryFocus?.unfocus();
-                        Navigator.pop(dialogContext);
-                      },
-              child: const Text("Hủy bỏ"),
-            ),
-            ElevatedButton(
-              style: ElevatedButton.styleFrom(
-                backgroundColor: Colors.green.shade700,
-                foregroundColor: Colors.white,
-                minimumSize: const Size(64, 36),
-                shape: RoundedRectangleBorder(
-                  borderRadius: BorderRadius.circular(4),
-                ),
-              ),
-              onPressed: saving
-                  ? null
-                  : () async {
-                      if (!formKey.currentState!.validate()) return;
-                      if (!dialogClosed) setDialogState(() => saving = true);
-                      final res = await AdminService.approveLocationSuggestion(
-                        int.parse('${s['id']}'),
-                        {
-                          'name': nameCtrl.text.trim(),
-                          'address': addrCtrl.text.trim(),
-                          'kind': kind,
-                          'note': noteCtrl.text.trim(),
-                          'customer_ids': selectedCustomerIds.toList(),
-                        },
-                      );
-                      if (dialogClosed || !dialogContext.mounted) return;
-                      if (!dialogClosed) setDialogState(() => saving = false);
-                      if (res['ok'] == true) {
-                        // Go focus va cho frame hien tai ket truoc khi dong
-                        // dialog (tranh loi assertion _dependents.isEmpty).
-                        FocusManager.instance.primaryFocus?.unfocus();
-                        await WidgetsBinding.instance.endOfFrame;
-                        dialogClosed = true;
-                        if (!dialogContext.mounted) return;
-                        Navigator.pop(dialogContext);
-                        _toast(
-                          "Đã thêm \"${nameCtrl.text.trim()}\" vào danh mục",
-                        );
-                        _load();
-                      } else {
-                        _toast(res['message'].toString(), error: true);
-                      }
-                    },
-              child: Text(saving ? "Đang lưu..." : "Duyệt"),
-            ),
-          ],
-        ),
-      ),
-    );
-    for (final c in [nameCtrl, addrCtrl, noteCtrl, custSearchCtrl]) {
-      c.dispose();
-    }
-  }
-
-  Future<void> _ignore(Map<String, dynamic> s) async {
-    final res = await AdminService.ignoreLocationSuggestion(
-      int.parse('${s['id']}'),
-    );
-    if (!mounted) return;
-    if (res['ok'] == true) {
-      _toast("Đã bỏ qua gợi ý");
-      _loadSuggestions();
-    } else {
-      _toast(res['message'].toString(), error: true);
-    }
-  }
-
-  Future<void> _restore(Map<String, dynamic> s) async {
-    final res = await AdminService.restoreLocationSuggestion(
-      int.parse('${s['id']}'),
-    );
-    if (!mounted) return;
-    if (res['ok'] == true) {
-      _toast("Đã đưa gợi ý về hàng chờ duyệt");
-      _loadSuggestions();
-    } else {
-      _toast(res['message'].toString(), error: true);
     }
   }
 
@@ -2585,8 +2575,7 @@ class _LocationsScreenState extends State<LocationsScreen> {
         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(4)),
         title: const Text("Xác nhận xóa điểm", style: TextStyle(fontSize: 17)),
         content: Text(
-          "Xóa điểm \"${_s(l, 'name')}\" khỏi danh mục? Đơn hàng cũ không bị ảnh hưởng. "
-          "Nếu điểm này được duyệt từ gợi ý GPS, gợi ý sẽ quay về trạng thái Chờ duyệt.",
+          "Xóa điểm \"${_s(l, 'name')}\" khỏi danh mục? Đơn hàng cũ không bị ảnh hưởng.",
           style: const TextStyle(fontSize: 13.5),
         ),
         actions: [
